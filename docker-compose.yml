@@ -1,0 +1,95 @@
+# Skill Management - one command per place, each with its own committed env file:
+#
+#   work:     docker compose --env-file work.env up --build -d
+#   home lab: docker compose --env-file home.env up --build -d
+#
+# No site's locations are written here. Every location is REQUIRED (${VAR?...}):
+# a missing env file stops compose with a message instead of silently building
+# against the wrong registry. An explicitly EMPTY value is allowed and means
+# "off" (no registry prefix, Ubuntu's own mirrors, no proxy).
+#
+# Host networking for both services. PostgreSQL listens on 127.0.0.1 only, so
+# nothing but the app on this host reaches it. Bind mounts for the data; no
+# secret in this file or the env files: the database password and the
+# session-signing secret are generated as files on the first start
+# (deploy/db-entrypoint.sh) in DATA_DIR/secrets.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    # Pinned by digest; image-pins.json records when it was pushed (>= 72 hours before pinning).
+    image: ${IMAGE_REGISTRY?set it in the env file - work.env or home.env}postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    entrypoint: ["/bin/bash", "/deploy/db-entrypoint.sh"]
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "port=${DB_PORT?set it in the env file}"]
+    environment:
+      POSTGRES_USER: skills
+      POSTGRES_DB: skills
+      PGPORT: ${DB_PORT?set it in the env file}
+      # the uid the app runs as: it must be able to read the generated secrets
+      APP_UID: "10001"
+      TZ: ${TZ?set it in the env file, e.g. Asia/Kolkata}
+    volumes:
+      # ":z" relabels for SELinux hosts and is ignored everywhere else.
+      - ${DATA_DIR?set it in the env file}/pgdata:/var/lib/postgresql/data:z
+      - ${DATA_DIR?set it in the env file}/secrets:/secrets:z
+      - ./deploy/db-entrypoint.sh:/deploy/db-entrypoint.sh:ro,z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p $${PGPORT} -U skills -d skills"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  app:
+    build:
+      context: .
+      args:
+        IMAGE_REGISTRY: ${IMAGE_REGISTRY?set it in the env file - work.env or home.env}
+        APT_MIRROR: ${APT_MIRROR?set it in the env file - work.env or home.env}
+        NPM_REGISTRY: ${NPM_REGISTRY?set it in the env file - work.env or home.env}
+        # Empty unless given in the shell for one command: NPM_TOKEN=... docker compose ...
+        NPM_TOKEN: ${NPM_TOKEN-}
+        HTTP_PROXY: ${HTTP_PROXY?set it in the env file (empty = no proxy)}
+        HTTPS_PROXY: ${HTTPS_PROXY?set it in the env file (empty = no proxy)}
+        NO_PROXY: ${NO_PROXY?set it in the env file}
+    image: skill-management:local
+    # Built here, never pulled: a pull of "skill-management:local" would go to Docker Hub.
+    pull_policy: build
+    network_mode: host
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache:uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      # The app listens on a high port on the host itself. TLS is terminated in front
+      # of it (the company load balancer, or a reverse proxy at home); APP_URL is the
+      # address people type, and must be https for secure cookies and SAML.
+      PORT: ${APP_PORT?set it in the env file}
+      HOSTNAME: ${APP_BIND?set it in the env file}
+      APP_URL: ${APP_URL?set it in the env file (the address people type)}
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS?set it in the env file (may be empty)}
+      # true = load the demo organisation once into an empty database; false = start empty.
+      SEED_DEMO: ${SEED_DEMO?set it in the env file - true or false}
+      FORCE_PASSWORD_CHANGE: ${FORCE_PASSWORD_CHANGE?set it in the env file - true or false}
+      ORG_NAME: ${ORG_NAME?set it in the env file}
+      TZ: ${TZ?set it in the env file, e.g. Asia/Kolkata}
+      DATABASE_URL: postgres://skills@127.0.0.1:${DB_PORT?set it in the env file}/skills
+      DATABASE_PASSWORD_FILE: /secrets/db_password
+      BETTER_AUTH_SECRET_FILE: /secrets/auth_secret
+    volumes:
+      - ${DATA_DIR?set it in the env file}/secrets:/secrets:ro,z

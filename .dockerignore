@@ -1,0 +1,14 @@
+# Never part of an image: dependencies are installed inside the build, and the
+# database, secrets and local development state are not code.
+node_modules
+.next
+.data
+state
+data
+secrets
+.git
+.claude
+.env*
+*.log
+research
+docs/screenshots
