@@ -55,7 +55,8 @@ export async function createLocalAdmin(db: DB): Promise<void> {
     username: "admin",
     displayUsername: "admin",
     role: "admin",
-    mustChangePassword: process.env.FORCE_PASSWORD_CHANGE !== "false",
+    // Off unless asked for: the owner disables this account once SSO setup is done.
+    mustChangePassword: process.env.FORCE_PASSWORD_CHANGE === "true",
     createdAt: now,
     updatedAt: now,
   });

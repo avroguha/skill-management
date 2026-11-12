@@ -88,7 +88,8 @@ All of it is computed in one place (`src/lib/engine/engine.ts`), unit-tested, ne
 
 ## Sign-in and access
 
-- **First start** creates `admin` / `admin`. With `FORCE_PASSWORD_CHANGE=true` (the default in both env files) it must choose a new password, of at least 10 characters, before anything else opens.
+- **First start** creates `admin` / `admin` for setup. It is not forced to change its password; set `FORCE_PASSWORD_CHANGE=true` to require that (any new password needs 10+ characters).
+- **Once single sign-on works, disable `admin`.** Sign in with SSO, have `admin` give your SSO account **Administrator** in Admin › Users & access, then sign in as yourself and **Disable** `admin` there. Nobody can disable their own account, so the last signed-in administrator can never lock everyone out. Re-enable it the same way if SSO ever breaks.
 - **Access follows who people are.** Anyone who manages a unit or has direct reports is a **manager** automatically, and sees, validates and sets targets for their people. Everyone else is a **team member**: their own profile and self-assessment. **Executive** (read everything) and **Administrator** are assigned in Admin › Users & access.
 - **Local accounts** can be added for people without SSO; they set their own password at first sign-in.
 - **SAML 2.0 single sign-on** (Admin › Single sign-on): paste the identity provider's metadata XML, or enter its entity ID, sign-in URL and signing certificate. Give the identity team the values on the same page:
@@ -101,7 +102,7 @@ All of it is computed in one place (`src/lib/engine/engine.ts`), unit-tested, ne
   | Attributes | `email` (and `displayName`); other names are configurable |
   | Signing | assertions must be signed |
 
-  Accounts are created at first sign-in and linked to the person with the same e-mail. The local `admin` stays as a break-glass login. `test/saml.test.ts` runs the whole flow against a made-up identity provider: a signed assertion signs in; a tampered one, or one signed by another key, is refused.
+  Accounts are created at first sign-in and linked to the person with the same e-mail. Then disable the local `admin` (above). `test/saml.test.ts` runs the whole flow against a made-up identity provider: a signed assertion signs in; a tampered one, or one signed by another key, is refused.
 
 ## Deploy with Docker
 

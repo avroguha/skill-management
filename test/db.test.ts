@@ -21,6 +21,7 @@ test("first start: migrations, levels 0-5, settings, admin/admin, demo organisat
 
   const [admin] = await db.select().from(s.user).where(eq(s.user.username, "admin"));
   assert.equal(admin.role, "admin");
+  assert.equal(admin.mustChangePassword, false, "no forced change unless FORCE_PASSWORD_CHANGE=true");
   const [acct] = await db.select().from(s.account).where(eq(s.account.userId, admin.id));
   assert.equal(acct.providerId, "credential");
   assert.equal(await verifyPassword({ hash: acct.password!, password: "admin" }), true);

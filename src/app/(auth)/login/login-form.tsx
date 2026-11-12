@@ -30,7 +30,11 @@ export function LoginForm({ providers, demo, error }: {
     });
     setBusy(null);
     if (error) {
-      setMessage(error.status === 429 ? "Too many attempts. Wait a minute and try again." : "That username and password do not match.");
+      setMessage(
+        error.status === 429 ? "Too many attempts. Wait a minute and try again."
+          : error.code === "BANNED_USER" ? "This account is disabled. Sign in with single sign-on, or ask an administrator."
+            : "That username and password do not match.",
+      );
       return;
     }
     router.replace("/");

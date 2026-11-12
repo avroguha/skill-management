@@ -69,7 +69,7 @@ export function UsersAdmin({ rows, roles, employees }: { rows: Row[]; roles: Opt
       )}
       {adding && (
         <RecordDialog title="Add a local account"
-          description="For people who cannot use single sign-on, and for a break-glass administrator. They choose their own password at first sign-in."
+          description="For people who cannot use single sign-on. They choose their own password at first sign-in."
           initial={{ role: "employee", employeeId: "none" }}
           fields={[
             { name: "username", label: "Username", half: true },

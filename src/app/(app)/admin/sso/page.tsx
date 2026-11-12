@@ -13,7 +13,7 @@ export default async function SsoPage() {
   return (
     <>
       <PageHeader title="Single sign-on (SAML 2.0)"
-        description="People sign in with the company identity provider; the local admin account keeps working as a break-glass login. Accounts are created on first sign-in and linked to the person with the same e-mail address." />
+        description="People sign in with the company identity provider. Accounts are created on first sign-in and linked to the person with the same e-mail address. Once it works, make your SSO account an Administrator in Users & access, sign in with it, and disable the local admin there." />
       <div className="grid gap-5 xl:grid-cols-2">
         <Section title={providers.length ? "Configured providers" : "Add the identity provider"}>
           <SsoAdmin base={base} providers={providers.map((p) => {
