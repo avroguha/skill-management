@@ -9,12 +9,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const engine = await getEngine();
 
   // Ratings waiting for this viewer's validation (any skill, not only required ones).
-  let pending = 0;
-  for (const id of v.reportIds) {
-    const emp = engine.empById.get(id);
-    if (!emp?.active) continue;
-    for (const c of engine.personProfile(emp).cells) if (c.status === "submitted") pending += 1;
-  }
+  // a count straight from the ratings: no profile is built (for an executive that is everyone)
+  const pending = engine.submittedCount(v.reportIds);
 
   const main: NavItem[] = v.canSeeOrg ? [
     { href: "/", label: "Overview", icon: "overview" },

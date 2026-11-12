@@ -26,6 +26,8 @@ import { TeamNeeds, type NeedRow } from "./team-needs";
 export const metadata = { title: "My team" };
 
 const TABS = ["people", "skills", "gaps", "training"] as const;
+// What one page sends at most; tiles always count everyone, and a lower manager narrows the list.
+const MAX_ROWS = 1000;
 
 export default async function TeamPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
@@ -33,13 +35,13 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
   const engine = await getEngine();
   const active = (e: Employee | undefined): e is Employee => !!e && e.active;
   const below = (id: string) => engine.reportsOf(id).filter(active);
-  const directOf = (id: string) => [...engine.empById.values()].filter((e) => e.active && e.managerId === id);
+  const directOf = (id: string) => engine.directReportsOf(id);
 
   // whose team: the viewer's own, or one they may open (admins and executives: anyone's;
   // a manager: their own and those of managers below them)
   const own = v.employee && below(v.employee.id).length ? v.employee : null;
   const pool: Employee[] = v.allUnits ? [...engine.empById.values()].filter(active) : own ? [own, ...below(own.id)] : [];
-  const leads = pool.filter((e) => below(e.id).length > 0);
+  const leads = pool.filter((e) => (directOf(e.id).length > 0 || engine.managedUnitIds(e.id).length > 0) && below(e.id).length > 0);
   // ?unit=<id> (from Admin › Organisation): that unit's manager, on the skills it needs
   const unitParam = param(sp, "unit");
   const requested = param(sp, "manager") ?? (unitParam ? engine.unitById.get(unitParam)?.managerId ?? undefined : undefined);
@@ -77,7 +79,11 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
 
   // ---- people ----
   const gapsAll = engine.individualGaps(people);
-  const rows = people.map((e) => {
+  const gapCount = new Map<string, number>();
+  for (const g of gapsAll) if (g.level != null) gapCount.set(g.employeeId, (gapCount.get(g.employeeId) ?? 0) + 1);
+  const openCount = new Map<string, number>();
+  for (const p of openPlans) openCount.set(p.employeeId, (openCount.get(p.employeeId) ?? 0) + 1);
+  const rows = people.slice(0, MAX_ROWS).map((e) => {
     const cells = engine.personProfile(e).cells;
     const required = cells.filter((c) => c.target != null && c.mandatory);
     const selfDone = required.filter((c) => c.selfLevel != null).length;
@@ -92,8 +98,8 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
       role: [roleName.get(e.roleId ?? ""), engine.gradeById.get(e.gradeId ?? "")?.name].filter(Boolean).join(" · "),
       selfAssessed: required.length ? `${selfDone} / ${required.length}` : "–",
       status, toValidate: v.reportIds.has(e.id) && waiting ? waiting : null,
-      onTarget: engine.aggregate([e]).pct, gaps: gapsAll.filter((g) => g.employeeId === e.id && g.level != null).length || null,
-      training: openPlans.filter((p) => p.employeeId === e.id).length || null,
+      onTarget: engine.aggregate([e]).pct, gaps: gapCount.get(e.id) || null,
+      training: openCount.get(e.id) || null,
       last: last ? new Date(last).toISOString() : null,
       team: team ? `${team} report${team === 1 ? "" : "s"}` : "", teamHref: team ? withParams("/team", { manager: e.id }) : "",
     };
@@ -101,8 +107,8 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
 
   // ---- tiles: always over everyone below ----
   const agg = engine.aggregate(everyone);
-  const waitingForMe = everyone.reduce((n, e) => n + (v.reportIds.has(e.id) ? engine.personProfile(e).cells.filter((c) => c.status === "submitted").length : 0), 0);
-  const notStarted = everyone.filter((e) => !engine.personProfile(e).cells.some((c) => c.selfLevel != null)).length;
+  const waitingForMe = engine.submittedCount(everyone.filter((e) => v.reportIds.has(e.id)).map((e) => e.id));
+  const notStarted = everyone.filter((e) => !engine.isTop(e) && !engine.ratingsOf(e.id).some((r) => r.selfLevel != null)).length;
   const needsAll = unitId ? engine.shortNeeds(unitId).map((c) => needView(engine, c, levelName)) : [];
   const short = needsAll.filter((n) => n.count < n.headcount);
   const single = needsAll.filter((n) => n.count >= n.headcount && n.spof);
@@ -128,7 +134,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     .map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId }));
 
   // ---- gaps and training ----
-  const gapRows = gapsAll.map((n) => {
+  const gapRows = gapsAll.slice(0, MAX_ROWS).map((n) => {
     const e = engine.empById.get(n.employeeId)!;
     return {
       person: e.name, personHref: `/people/${e.id}`, skill: engine.skillLabel(n.skillId),
@@ -136,7 +142,9 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
       level: n.level, target: n.target, gap: n.category, mandatory: n.mandatory ? "Required" : "Optional", interest: n.interest ? "Yes" : "",
     };
   });
-  const planRows = plans.filter((p) => people.some((e) => e.id === p.employeeId)).map((p) => ({
+  const inList = new Set(people.map((e) => e.id));
+  const planAll = plans.filter((p) => inList.has(p.employeeId));
+  const planRows = planAll.slice(0, MAX_ROWS).map((p) => ({
     person: engine.empById.get(p.employeeId)?.name ?? "", personHref: `/people/${p.employeeId}`, skill: engine.skillLabel(p.skillId),
     title: p.title, level: engine.levelOf(p.employeeId, p.skillId).level, target: p.targetLevel, due: p.dueOn, status: p.status.replace("_", " "),
   }));
@@ -186,6 +194,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
                   className={scopeAll ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Everyone ({everyone.length})</Link>
               </div>
             ) : undefined}>
+            {people.length > rows.length && <p className="mb-2 text-xs text-muted-foreground">The first {rows.length.toLocaleString("en-GB")} of {people.length.toLocaleString("en-GB")} by name. Open a manager lower down (the Team column) to see their part in full.</p>}
             <DataTable csvName="my-team" rows={rows} pageSize={20} initialSort={{ key: "name" }} searchPlaceholder="Find a person…"
               columns={[
                 { key: "name", header: "Name", kind: "link", hrefKey: "href" },
@@ -241,6 +250,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
             </div>
           )}
           <Section title="People below their target" description="Each person below their own target, or with a required skill not yet assessed.">
+            {gapsAll.length > gapRows.length && <p className="mb-2 text-xs text-muted-foreground">The worst {gapRows.length.toLocaleString("en-GB")} of {gapsAll.length.toLocaleString("en-GB")}. Open a manager lower down to see their part in full.</p>}
             <DataTable csvName="team-gaps" rows={gapRows} searchPlaceholder="Find a person or skill…" emptyText="Everyone is at or above target."
               columns={[
                 { key: "person", header: "Person", kind: "link", hrefKey: "personHref" },
@@ -257,6 +267,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
 
         <TabsContent value="training">
           <Section title="Training plans" description="Booked from a person's profile, against a gap. Open a person to add or update one.">
+            {planAll.length > planRows.length && <p className="mb-2 text-xs text-muted-foreground">{planRows.length.toLocaleString("en-GB")} of {planAll.length.toLocaleString("en-GB")} plans.</p>}
             <DataTable csvName="team-training" rows={planRows} emptyText="No training booked for this team."
               columns={[
                 { key: "person", header: "Person", kind: "link", hrefKey: "personHref" },

@@ -57,7 +57,11 @@ export async function exportBackup(db: DB, by: string, reason: BackupReason): Pr
   const tables: BackupFile["tables"] = {};
   await db.transaction(async (tx) => {
     await tx.execute(sql`set transaction isolation level repeatable read`);
-    for (const t of backupTables()) tables[t] = rowsOf(await tx.execute(sql`select * from ${sql.identifier(t)}`));
+    // only tables this database has: the backup taken before an upgrade runs on the old
+    // schema, where tables the new code adds do not exist yet
+    const present = new Set(rowsOf(await tx.execute(sql`select table_name from information_schema.tables where table_schema = current_schema()`))
+      .map((r) => String((r as { table_name: unknown }).table_name)));
+    for (const t of backupTables()) if (present.has(t)) tables[t] = rowsOf(await tx.execute(sql`select * from ${sql.identifier(t)}`));
   });
   return { format: BACKUP_FORMAT, version: 1, createdAt: new Date().toISOString(), by, reason, migrations, tables };
 }

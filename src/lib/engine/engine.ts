@@ -162,6 +162,18 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     directMembers.set(e.unitId, list);
   }
   for (const list of directMembers.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  // Reporting lines and unit managers, indexed once per data version: every page asks
+  // "who is below this person", and scanning everyone per step was O(people²) at 10k.
+  const directReports = new Map<string, Employee[]>();
+  for (const e of activeEmployees) {
+    if (!e.managerId) continue;
+    const list = directReports.get(e.managerId) ?? [];
+    list.push(e);
+    directReports.set(e.managerId, list);
+  }
+  for (const list of directReports.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+  const unitsByManager = new Map<string, string[]>();
+  for (const u of ds.units) if (u.managerId) unitsByManager.set(u.managerId, [...(unitsByManager.get(u.managerId) ?? []), u.id]);
 
   const skillById = new Map(ds.skills.map((s) => [s.id, s]));
   const activeChildCount = new Map<string, number>();
@@ -252,11 +264,14 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
 
   /** Units managed by an employee, either as unit manager or through direct reports' units. */
   function managedUnitIds(employeeId: string): string[] {
-    return ds.units.filter((u) => u.managerId === employeeId).map((u) => u.id);
+    return unitsByManager.get(employeeId) ?? [];
   }
 
   /** Everyone an employee may see and validate: their managed units' members plus reports, recursively. */
+  const reportsMemo = new Map<string, Employee[]>();
   function reportsOf(employeeId: string): Employee[] {
+    const hit = reportsMemo.get(employeeId);
+    if (hit) return hit;
     const out = new Map<string, Employee>();
     for (const uid of managedUnitIds(employeeId)) for (const e of membersOf(uid)) if (e.id !== employeeId) out.set(e.id, e);
     const stack = [employeeId];
@@ -265,17 +280,29 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       const id = stack.pop()!;
       if (seen.has(id)) continue;
       seen.add(id);
-      for (const e of activeEmployees) {
-        if (e.managerId === id && e.id !== employeeId) {
+      for (const e of directReports.get(id) ?? []) {
+        if (e.id !== employeeId) {
           out.set(e.id, e);
           stack.push(e.id);
         }
       }
     }
-    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const list = [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+    reportsMemo.set(employeeId, list);
+    return list;
   }
 
   // ---- targets and levels ------------------------------------------------------
+
+  /** Ratings waiting for validation among these people: a count, no profiles built. */
+  function submittedCount(employeeIds: Iterable<string>): number {
+    let n = 0;
+    for (const id of employeeIds) {
+      if (!empById.get(id)?.active) continue;
+      for (const r of ratingsByEmp.get(id) ?? []) if (r.status === "submitted") n += 1;
+    }
+    return n;
+  }
 
   // The top of the organisation is not asked for skills: nobody above them (no manager, or
   // one who has left) and people below them (direct reports, or the top unit they lead).
@@ -411,7 +438,16 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     });
   }
 
+  const coverageMemo = new Map<string, Coverage>();
   function coverage(d: Demand): Coverage {
+    const key = `${d.unitId}|${d.skillId}|${d.level}|${d.headcount}|${d.explicit}`;
+    const hit = coverageMemo.get(key);
+    if (hit) return hit;
+    const c = computeCoverage(d);
+    coverageMemo.set(key, c);
+    return c;
+  }
+  function computeCoverage(d: Demand): Coverage {
     const holders = holdersOf(membersOf(d.unitId), d.skillId, d.level);
     const count = holders.length;
     return {
@@ -424,8 +460,11 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     };
   }
 
+  const coverageInMemo = new Map<string, Coverage[]>();
   function coverageIn(scopeUnitId: string): Coverage[] {
-    return subtreeUnitIds(scopeUnitId).flatMap((uid) => demands(uid).map(coverage));
+    let hit = coverageInMemo.get(scopeUnitId);
+    if (!hit) { hit = subtreeUnitIds(scopeUnitId).flatMap((uid) => demands(uid).map(coverage)); coverageInMemo.set(scopeUnitId, hit); }
+    return hit;
   }
 
   /** Team needs that are short or rest on one person, worst first: nobody holds it,
@@ -576,7 +615,16 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
 
   // ---- people and skills ------------------------------------------------------------
 
+  const profileMemo = new Map<string, ReturnType<typeof buildProfile>>();
   function personProfile(emp: Employee) {
+    const hit = profileMemo.get(emp.id);
+    if (hit && empById.get(emp.id) === emp) return hit;
+    const p = buildProfile(emp);
+    if (empById.get(emp.id) === emp) profileMemo.set(emp.id, p);
+    return p;
+  }
+
+  function buildProfile(emp: Employee) {
     const req = requiredSkillIds(emp);
     const rated = (ratingsByEmp.get(emp.id) ?? []).map((r) => r.skillId).filter(isRateable);
     const ids = [...new Set([...req, ...rated])];
@@ -664,9 +712,18 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     });
   }
 
+  /** Precompute what most pages read, once per data version (see warmEngine). */
+  function warm() {
+    for (const u of ds.units) membersOf(u.id);
+    for (const id of directReports.keys()) reportsOf(id);
+    for (const id of unitsByManager.keys()) reportsOf(id);
+    for (const r of roots) coverageIn(r.id);
+  }
+
   return {
     basis,
     settings,
+    warm,
     roots,
     unitById,
     empById,
@@ -679,8 +736,11 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     membersOf,
     ancestors,
     reportsOf,
+    directReportsOf: (employeeId: string) => directReports.get(employeeId) ?? [],
     managedUnitIds,
     isTop,
+    submittedCount,
+    ratingsOf: (employeeId: string) => ratingsByEmp.get(employeeId) ?? [],
     isRateable,
     targetFor,
     requiredSkillIds,

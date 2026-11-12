@@ -17,6 +17,10 @@ import { unitOptions, needView } from "@/lib/views";
 
 export const metadata = { title: "Gaps" };
 
+// What a page sends at most; the totals are always shown, and a unit narrows the rest.
+const MAX_ROWS = 1000;
+const MAX_NEEDS = 200;
+
 export default async function GapsPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const v = await requireOrgViewer();
@@ -36,7 +40,8 @@ export default async function GapsPage({ searchParams }: { searchParams: SearchP
   const single = needs.filter((n) => n.count >= n.headcount && n.spof);
 
   const members = engine.membersOf(unitId);
-  const gaps = engine.individualGaps(members).filter((n) => inCategory(n.skillId)).map((n) => {
+  const allGaps = engine.individualGaps(members).filter((n) => inCategory(n.skillId));
+  const gaps = allGaps.slice(0, MAX_ROWS).map((n) => {
     const e = engine.empById.get(n.employeeId)!;
     return {
       person: e.name, personHref: `/people/${e.id}`,
@@ -58,7 +63,7 @@ export default async function GapsPage({ searchParams }: { searchParams: SearchP
       title: p.title, target: p.targetLevel, level, due: p.dueOn, status: p.status.replace("_", " "),
     };
   });
-  const below = gaps.filter((g) => g.gap !== "unassessed");
+  const belowAll = allGaps.filter((g) => g.category !== "unassessed");
 
   return (
     <>
@@ -72,8 +77,8 @@ export default async function GapsPage({ searchParams }: { searchParams: SearchP
       <KpiTiles items={[
         { label: "Team needs short", value: String(short.length), hint: `${needs.filter((n) => n.critical).length} with nobody at the level`, tone: short.length ? "bad" : "good" },
         { label: "Single holders", value: String(single.length), hint: "covered by one person only", tone: single.length ? "warn" : "good" },
-        { label: "People below target", value: String(new Set(below.map((g) => g.personHref)).size), hint: `${below.length} skill gaps` },
-        { label: "Not assessed", value: String(gaps.length - below.length), hint: "required skills with no rating" },
+        { label: "People below target", value: String(new Set(belowAll.map((g) => g.employeeId)).size), hint: `${belowAll.length} skill gaps` },
+        { label: "Not assessed", value: String(allGaps.length - belowAll.length), hint: "required skills with no rating" },
         { label: "Training booked", value: String(planRows.filter((p) => p.status !== "done" && p.status !== "cancelled").length), hint: `${planRows.filter((p) => p.status === "done").length} completed` },
       ]} />
       <Tabs defaultValue={tab}>
@@ -84,14 +89,18 @@ export default async function GapsPage({ searchParams }: { searchParams: SearchP
         </TabsList>
         <TabsContent value="teams" className="grid gap-5 lg:grid-cols-2">
           <Section title="Short" description="Fewer people at the level than the team needs. Worst first.">
-            <NeedList items={short} empty="No team need is short." />
+            <NeedList items={short.slice(0, MAX_NEEDS)} empty="No team need is short." />
+            {short.length > MAX_NEEDS && <p className="mt-2 text-xs text-muted-foreground">The worst {MAX_NEEDS} of {short.length}. Choose a unit to see the rest.</p>}
           </Section>
           <Section title="Single holders" description="Enough people on paper, but only one person holds it.">
-            <NeedList items={single} empty="No team need rests on one person." />
+            <NeedList items={single.slice(0, MAX_NEEDS)} empty="No team need rests on one person." />
+            {single.length > MAX_NEEDS && <p className="mt-2 text-xs text-muted-foreground">{MAX_NEEDS} of {single.length}. Choose a unit to see the rest.</p>}
           </Section>
         </TabsContent>
         <TabsContent value="people">
-          <Section title="Individual gaps" description="Each person below their own target, or with a required skill not yet assessed.">
+          <Section title="Individual gaps" description={allGaps.length > gaps.length
+            ? `Each person below their own target, or with a required skill not yet assessed. The worst ${gaps.length.toLocaleString("en-GB")} of ${allGaps.length.toLocaleString("en-GB")}: choose a unit to narrow it down.`
+            : "Each person below their own target, or with a required skill not yet assessed."}>
             <DataTable csvName="individual-gaps" rows={gaps} searchPlaceholder="Find a person or skill…"
               columns={[
                 { key: "person", header: "Person", kind: "link", hrefKey: "personHref" },
@@ -108,7 +117,7 @@ export default async function GapsPage({ searchParams }: { searchParams: SearchP
         </TabsContent>
         <TabsContent value="plans">
           <Section title="Training plans" description="Booked by managers from a person's profile.">
-            <DataTable csvName="training-plans" rows={planRows} emptyText="No training booked."
+            <DataTable csvName="training-plans" rows={planRows.slice(0, MAX_ROWS)} emptyText="No training booked."
               columns={[
                 { key: "person", header: "Person", kind: "link", hrefKey: "personHref" },
                 { key: "skill", header: "Skill" },

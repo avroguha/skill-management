@@ -4,6 +4,8 @@
 import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { actionViewer, canSeeEmployee, getEngine } from "@/lib/server";
+import { orgForest, orgCards, type OrgCard } from "@/lib/org-nodes";
+import { photoUrls } from "@/lib/photos";
 
 export interface OrgInfo {
   userName: string | null; email: string; manager: string | null; unit: string | null; role: string | null; grade: string | null;
@@ -79,4 +81,38 @@ export async function orgInfo(id: string): Promise<{ ok: true; info: OrgInfo } |
       },
     };
   } catch (err) { return { ok: false, error: (err as Error).message }; }
+}
+
+/** Find people in the org chart the viewer may see (the chart holds only what is open). */
+export async function findInOrg(query: string): Promise<{ id: string; name: string; title: string; level: number }[]> {
+  const v = await actionViewer({ read: true });
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const engine = await getEngine();
+  const f = orgForest(engine, v);
+  const out: { id: string; name: string; title: string; level: number }[] = [];
+  for (const id of f.visible) {
+    const e = engine.empById.get(id)!;
+    if (!`${e.name} ${e.title} ${e.email}`.toLowerCase().includes(q)) continue;
+    out.push({ id, name: e.name, title: e.title, level: f.depth.get(id) ?? 0 });
+    if (out.length >= 12) break;
+  }
+  return out;
+}
+
+/** The people reporting to one person, as cards, when their card is expanded. */
+export async function orgChildren(id: string): Promise<{ ok: true; nodes: OrgCard[] } | { ok: false; error: string }> {
+  try {
+    const v = await actionViewer({ read: true });
+    if (!canSeeEmployee(v, id)) return { ok: false, error: "Not allowed." };
+    const engine = await getEngine();
+    const f = orgForest(engine, v);
+    const kids = f.kids.get(id) ?? [];
+    const nodes = orgCards(engine, f, kids, await photoUrls(), new Set(kids))
+      .map((n) => ({ ...n, more: n.direct > 0 || undefined }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { ok: true, nodes };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }

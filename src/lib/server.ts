@@ -90,6 +90,22 @@ export const getEngine = cache(async (basis: Basis = "validated"): Promise<Engin
   return e;
 });
 
+/**
+ * Build the picture before anyone asks: called every few seconds by each worker, it notices a
+ * new data version, loads the data, builds the engine and precomputes what every page reads
+ * (reporting lines, unit members, the organisation's coverage), so the first request after a
+ * change does not pay for it. Does nothing while the picture is current.
+ */
+export async function warmEngine(): Promise<boolean> {
+  const before = shared.__skillsShared;
+  const s = await sharedState();
+  if (s === before && s.engines.has("validated")) return false;
+  let e = s.engines.get("validated");
+  if (!e) { e = s.dataset.then((ds) => createEngine(ds, { basis: "validated" })); s.engines.set("validated", e); }
+  (await e).warm();
+  return true;
+}
+
 function asRole(r: string | null | undefined): AccessRole {
   return r === "admin" || r === "executive" || r === "manager" ? r : "employee";
 }

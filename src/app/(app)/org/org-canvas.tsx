@@ -23,7 +23,7 @@ import { InfoBody, useOrgInfo } from "./org-info";
 
 type Thresholds = { greenAt: number; amberAt: number };
 type PersonData = {
-  n: OrgNode; expanded: boolean; selected: boolean; onPath: boolean; thresholds: Thresholds;
+  n: OrgNode; expanded: boolean; selected: boolean; onPath: boolean; thresholds: Thresholds; busy: boolean;
   onToggle: (id: string) => void; onSelect: (id: string) => void;
 };
 type PersonNodeT = Node<PersonData, "person">;
@@ -32,7 +32,7 @@ type OrgEdgeT = Edge<{ path: string; hot: boolean }, "org">;
 const hidden = "!pointer-events-none !opacity-0 !min-h-0 !min-w-0 !border-0";
 
 function PersonNode({ data }: NodeProps<PersonNodeT>) {
-  const { n, expanded, selected, onPath, thresholds, onToggle, onSelect } = data;
+  const { n, expanded, selected, onPath, thresholds, busy, onToggle, onSelect } = data;
   const lead = n.direct > 0;
   const band = pctBand(n.onTargetPct, thresholds);
   return (
@@ -64,10 +64,10 @@ function PersonNode({ data }: NodeProps<PersonNodeT>) {
         </span>
       </button>
       {lead && (
-        <button type="button" onClick={(e) => { e.stopPropagation(); onToggle(n.id); }} aria-expanded={expanded}
+        <button type="button" onClick={(e) => { e.stopPropagation(); onToggle(n.id); }} aria-expanded={expanded} aria-busy={busy || undefined} disabled={busy}
           aria-label={`${expanded ? "Hide" : "Show"} the ${n.direct} people reporting to ${n.name}`}
           className="nodrag nopan absolute -bottom-3 left-1/2 z-10 inline-flex h-6 -translate-x-1/2 cursor-pointer items-center gap-0.5 rounded-full border bg-background px-2 text-[11px] font-medium text-foreground shadow-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          {expanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}{n.direct}
+          {expanded ? <ChevronUp className="size-3" /> : <ChevronDown className={cn("size-3", busy && "animate-bounce")} />}{n.direct}
         </button>
       )}
       <Handle type="source" position={Position.Bottom} isConnectable={false} className={hidden} />
@@ -108,8 +108,9 @@ function Details({ n, href, onClose }: { n: OrgNode; href: (id: string) => strin
   );
 }
 
-function Canvas({ nodes, rootIds, thresholds, href, focus }: {
+function Canvas({ nodes, rootIds, thresholds, href, focus, loadKids, loading }: {
   nodes: OrgNode[]; rootIds: string[]; thresholds: Thresholds; href: (id: string) => string; focus: { id: string; at: number } | null;
+  loadKids: (id: string) => Promise<string[] | null>; loading: Set<string>;
 }) {
   const rf = useReactFlow();
   const { resolvedTheme } = useTheme();
@@ -125,13 +126,8 @@ function Canvas({ nodes, rootIds, thresholds, href, focus }: {
     return m;
   }, [nodes, byId]);
 
-  // open on three levels: the top and two below it
-  const [expanded, setExpanded] = useState<Set<string>>(() => {
-    const s = new Set<string>();
-    const walk = (id: string, d: number) => { if (d < 2 && kids.has(id)) { s.add(id); for (const k of kids.get(id)!) walk(k.id, d + 1); } };
-    rootIds.forEach((r) => walk(r, 0));
-    return s;
-  });
+  // open on the top and one level down; every other card shows its numbers until expanded
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(rootIds.filter((r) => kids.has(r))));
   const [selected, setSelected] = useState<string | null>(null);
   const after = useRef<{ center?: string; fit?: boolean; fitIds?: string[] } | null>(null);
 
@@ -166,19 +162,26 @@ function Canvas({ nodes, rootIds, thresholds, href, focus }: {
     return s;
   }, [selected, byId]);
 
-  const onToggle = useCallback((id: string) => {
+  const onToggle = useCallback(async (id: string) => {
     const opening = !openRef.current.has(id);
+    let revealed = (kids.get(id) ?? []).map((k) => k.id);
+    // their people were not loaded yet: ask for them first
+    if (opening && byId.get(id)?.more) {
+      const got = await loadKids(id);
+      if (!got) return;
+      revealed = got;
+    }
     setExpanded((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
     // opening: bring the person and everyone just revealed into view; closing: keep them in view
-    after.current = opening ? { fitIds: [id, ...(kids.get(id) ?? []).map((k) => k.id)] } : { center: id };
-  }, [kids]);
+    after.current = opening ? { fitIds: [id, ...revealed] } : { center: id };
+  }, [kids, byId, loadKids]);
   const onSelect = useCallback((id: string) => setSelected((cur) => (cur === id ? null : id)), []);
 
   const rfNodes: PersonNodeT[] = useMemo(() => layout.nodes.map((p) => ({
     id: p.id, type: "person", position: { x: p.x, y: p.y }, width: CARD.w, height: CARD.h,
     draggable: false, selectable: false, connectable: false,
-    data: { n: byId.get(p.id)!, expanded: expanded.has(p.id), selected: selected === p.id, onPath: onPath.has(p.id) && selected !== p.id, thresholds, onToggle, onSelect },
-  })), [layout, byId, expanded, selected, onPath, thresholds, onToggle, onSelect]);
+    data: { n: byId.get(p.id)!, expanded: expanded.has(p.id), selected: selected === p.id, onPath: onPath.has(p.id) && selected !== p.id, thresholds, busy: loading.has(p.id), onToggle, onSelect },
+  })), [layout, byId, expanded, selected, onPath, thresholds, loading, onToggle, onSelect]);
   const rfEdges: OrgEdgeT[] = useMemo(() => layout.edges.map((e) => ({
     id: e.id, source: e.source, target: e.target, type: "org", selectable: false, focusable: false,
     data: { path: e.path, hot: onPath.has(e.source) && onPath.has(e.target) },

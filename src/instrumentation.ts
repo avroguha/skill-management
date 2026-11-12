@@ -9,6 +9,10 @@ export async function register() {
   const { syncIfDue } = await import("./lib/directory/schedule.ts");
   const { refreshGate } = await import("./lib/sso-gate.ts");
   const { backupIfDue } = await import("./lib/backup.ts");
+  const { warmEngine } = await import("./lib/server.ts");
+  const warm = async () => {
+    try { await warmEngine(); } catch (err) { console.error("engine warm-up: failed -", (err as Error).message); }
+  };
   const db = await getDb();
   const { withLease } = await import("./lib/lease.ts");
   const snapshot = async () => {
@@ -40,10 +44,13 @@ export async function register() {
     setInterval(snapshot, Number(process.env.SNAPSHOT_HOURS || 6) * 3600e3),
     setInterval(directory, 10 * 60e3),
     setInterval(gate, 60e3),
+    // precompute after every data change, before a request needs it
+    setInterval(() => void warm(), Number(process.env.WARM_SECONDS || 3) * 1000),
     // automatic backups (Admin › Import & export): checked every 10 minutes, taken when due
     setInterval(() => void backupIfDue(db), 10 * 60e3),
   ];
   for (const t of g.__skillsTimers) t.unref?.();
   void directory();
   void backupIfDue(db);
+  void warm();
 }

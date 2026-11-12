@@ -122,3 +122,17 @@ export function ClearFilters({ keys }: { keys: string[] }) {
 export function FilterBar({ children }: { children: React.ReactNode }) {
   return <div className="mb-4 flex flex-wrap items-center gap-2">{children}</div>;
 }
+
+/** A search box kept in the URL (?q=): the server filters, so it finds people beyond what one page shows. */
+export function SearchParamInput({ name = "q", value, placeholder }: { name?: string; value: string | null; placeholder: string }) {
+  const { set, pending } = useSetParams();
+  const [text, setText] = useState(value ?? "");
+  return (
+    <form role="search" className="relative" onSubmit={(e) => { e.preventDefault(); set({ [name]: text.trim() || null, page: null }); }}>
+      <input value={text} onChange={(e) => setText(e.target.value)} placeholder={placeholder} aria-label={placeholder}
+        onBlur={() => { if ((value ?? "") !== text.trim()) set({ [name]: text.trim() || null, page: null }); }}
+        className="h-8 w-56 rounded-md border bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50" />
+      {pending && <Loader2 className="absolute top-2 right-2 size-4 animate-spin text-muted-foreground" />}
+    </form>
+  );
+}

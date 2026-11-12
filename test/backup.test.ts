@@ -94,3 +94,15 @@ test("the automatic backup runs when due and not again until the interval has pa
   await B.writeBackupSettings(db, { enabled: false, everyHours: 24, keep: 5 });
   assert.equal(await B.backupIfDue(db, Date.now() + 100 * 3600e3), null, "switched off: never");
 });
+
+test("the backup before an upgrade runs on the old schema, where newer tables do not exist yet", async () => {
+  const db = await getDb();
+  await db.execute(sql`alter table api_client rename to api_client_later`);
+  try {
+    const b = await B.exportBackup(db, "tester", "before-upgrade");
+    assert.ok(!("api_client" in b.tables), "a table the database lacks is left out, not an error");
+    assert.ok(b.tables.employee.length > 0);
+  } finally {
+    await db.execute(sql`alter table api_client_later rename to api_client`);
+  }
+});

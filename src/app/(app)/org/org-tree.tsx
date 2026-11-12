@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import Link from "next/link";
 import { ChevronRight, Search, Network, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,18 +10,37 @@ import { BAND_CLASS, pctBand } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { OrgCanvas } from "./org-canvas";
 import { InfoPopover } from "./org-info";
+import { findInOrg, orgChildren } from "@/app/actions/org";
+import type { OrgCard } from "@/lib/org-nodes";
 
-export interface OrgNode {
-  id: string; name: string; title: string; managerId: string | null; level: number;
-  direct: number; total: number; onTargetPct: number | null; photo: string | null;
-}
+export type OrgNode = OrgCard;
 
 export type OrgView = "chart" | "list";
 
-export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
+export function OrgTree({ nodes: initial, rootIds, thresholds, view, viewHref, total }: {
   nodes: OrgNode[]; rootIds: string[]; thresholds: { greenAt: number; amberAt: number };
-  view: OrgView; viewHref: Record<OrgView, string>;
+  view: OrgView; viewHref: Record<OrgView, string>; total: number;
 }) {
+  // the top and one level arrive with the page; a card's people load when it is expanded
+  const [nodes, setNodes] = useState(initial);
+  const [loading, setLoading] = useState<Set<string>>(new Set());
+  const loadKids = useCallback(async (id: string): Promise<string[] | null> => {
+    setLoading((s) => new Set(s).add(id));
+    try {
+      const r = await orgChildren(id);
+      if (!r.ok) { toast.error(r.error); return null; }
+      setNodes((cur) => {
+        const have = new Set(cur.map((n) => n.id));
+        return [...cur.map((n) => (n.id === id ? { ...n, more: undefined } : n)), ...r.nodes.filter((n) => !have.has(n.id))];
+      });
+      return r.nodes.map((n) => n.id);
+    } catch {
+      toast.error("Could not load their people. Try again.");
+      return null;
+    } finally {
+      setLoading((s) => { const x = new Set(s); x.delete(id); return x; });
+    }
+  }, []);
   // going inside keeps the chosen view
   const href = (id: string) => `/org?root=${id}${view === "list" ? "&view=list" : ""}`;
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
@@ -38,9 +58,18 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
     for (const n of nodes) m.set(n.level, (m.get(n.level) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   }, [nodes]);
-  const matches = query.trim().length >= 2
-    ? nodes.filter((n) => `${n.name} ${n.title}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 12)
-    : [];
+  // the chart holds only what is open, so search asks the server for everyone
+  const partial = nodes.length < total;
+  const [remote, setRemote] = useState<{ q: string; hits: { id: string; name: string; title: string; photo: string | null; level?: number }[] }>({ q: "", hits: [] });
+  const q = query.trim();
+  useEffect(() => {
+    if (!partial || q.length < 2) return;
+    const t = setTimeout(() => { findInOrg(q).then((hits) => setRemote({ q, hits: hits.map((h) => ({ ...h, photo: null })) })).catch(() => setRemote({ q, hits: [] })); }, 200);
+    return () => clearTimeout(t);
+  }, [q, partial]);
+  const matches: { id: string; name: string; title: string; photo: string | null; level?: number }[] = q.length < 2 ? []
+    : partial ? (remote.q === q ? remote.hits.map((h) => ({ ...h, photo: byId.get(h.id)?.photo ?? h.photo })) : [])
+    : nodes.filter((n) => `${n.name} ${n.title}`.toLowerCase().includes(q.toLowerCase())).slice(0, 12);
 
   const expandTo = (level: number) => setOpen(new Set(nodes.filter((n) => n.level < level && kids.has(n.id)).map((n) => n.id)));
 
@@ -51,10 +80,13 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
     return (
       <li>
         <div className="group flex items-center gap-2 rounded-md py-1 pr-2 hover:bg-muted/60" style={{ paddingLeft: depth * 24 + 4 }}>
-          <button type="button" aria-label={isOpen ? `Collapse ${n.name}` : `Expand ${n.name}`} disabled={!children.length}
-            onClick={() => setOpen((s) => { const x = new Set(s); if (x.has(n.id)) x.delete(n.id); else x.add(n.id); return x; })}
-            className={cn("flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent", !children.length && "invisible")}>
-            <ChevronRight className={cn("size-4 transition-transform", isOpen && "rotate-90")} />
+          <button type="button" aria-label={isOpen ? `Collapse ${n.name}` : `Expand ${n.name}`} disabled={!n.direct || loading.has(n.id)}
+            onClick={async () => {
+              if (!isOpen && n.more && !(await loadKids(n.id))) return;
+              setOpen((s) => { const x = new Set(s); if (x.has(n.id)) x.delete(n.id); else x.add(n.id); return x; });
+            }}
+            className={cn("flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent", !n.direct && "invisible")}>
+            <ChevronRight className={cn("size-4 transition-transform", isOpen && "rotate-90", loading.has(n.id) && "animate-pulse")} />
           </button>
           <PersonAvatar name={n.name} src={n.photo} className="size-7" />
           <div className="min-w-0 flex-1">
@@ -90,10 +122,10 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
             <ul className="absolute z-20 mt-1 w-80 rounded-md border bg-popover p-1 shadow-md">
               {matches.map((m) => (
                 <li key={m.id}>
-                  <Link href={href(m.id)} onClick={(e) => { setQuery(""); if (view === "chart") { e.preventDefault(); setFocus({ id: m.id, at: Date.now() }); } }} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
+                  <Link href={href(m.id)} onClick={(e) => { setQuery(""); if (view === "chart" && byId.has(m.id)) { e.preventDefault(); setFocus({ id: m.id, at: Date.now() }); } }} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
                     <PersonAvatar name={m.name} src={m.photo} className="size-6" />
                     <span className="min-w-0 flex-1 truncate">{m.name}<span className="ml-1 text-xs text-muted-foreground">{m.title}</span></span>
-                    <span className="text-[10px] text-muted-foreground">L{m.level}</span>
+                    {m.level != null && <span className="text-[10px] text-muted-foreground">L{m.level}</span>}
                   </Link>
                 </li>
               ))}
@@ -119,14 +151,14 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
         </>}
       </div>
       {view === "chart" ? (
-        <OrgCanvas nodes={nodes} rootIds={rootIds} href={href} thresholds={thresholds} focus={focus} />
+        <OrgCanvas nodes={nodes} rootIds={rootIds} href={href} thresholds={thresholds} focus={focus} loadKids={loadKids} loading={loading} />
       ) : (
         <div className="rounded-lg border bg-card p-2">
           <ul>{rootIds.map((id) => byId.get(id)).filter((n): n is OrgNode => !!n).map((n) => <Row key={n.id} n={n} depth={0} />)}</ul>
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        {view === "chart" ? "Blue cards lead a team; olive cards are team members. Drag to move, scroll or pinch to zoom; the number under a card shows or hides their people. " : ""}Level L0 is the top of the organisation. The percentage is the share of required skill ratings at or above target, for the person and everyone below them.
+        {view === "chart" ? "Blue cards lead a team; olive cards are team members. Expand a card (the number under it) to see the people reporting to them. Drag to move, scroll or pinch to zoom. " : ""}Level L0 is the top of the organisation. The percentage is the share of required skill ratings at or above target, for the person and everyone below them.
       </p>
     </div>
   );
