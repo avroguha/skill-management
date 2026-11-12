@@ -10,7 +10,7 @@ import { hashPassword } from "better-auth/crypto";
 import { getDb, schema } from "@/db";
 import { actionViewer, audit, type Viewer } from "@/lib/server";
 import { getAuth, appUrl, MIN_PASSWORD_LENGTH } from "@/lib/auth";
-import { samlProviderBody } from "@/lib/saml";
+import { samlProviderBody, DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN } from "@/lib/saml";
 import { refreshGate } from "@/lib/sso-gate";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
@@ -427,7 +427,8 @@ export async function setBanned(userId: string, banned: boolean): Promise<Result
 // ---- single sign-on (SAML 2.0) ---------------------------------------------------------
 
 const samlIn = z.object({
-  providerId: z.string().trim().toLowerCase().regex(/^[a-z0-9-]{2,40}$/, "Provider ID: 2-40 lower-case letters, digits or dashes."),
+  providerId: z.string().trim().toLowerCase().regex(/^[a-z0-9-]{2,40}$/, "Provider ID: 2-40 lower-case letters, digits or dashes.").default(DEFAULT_PROVIDER_ID),
+  spEntityId: z.string().trim().max(300).refine((v) => !v || ENTITY_ID_PATTERN.test(v), "The Entity ID is an address (https://...) or a urn: name, with no spaces.").default(""),
   domain: z.string().trim().toLowerCase().min(3, "The e-mail domain people sign in with, e.g. company.com"),
   metadata: z.string().trim().optional().default(""),
   entityId: z.string().trim().optional().default(""),
@@ -440,13 +441,31 @@ export async function registerSaml(data: Data): Promise<Result> {
   try {
     const v = await admin();
     const d = samlIn.parse(data);
-    if (!d.metadata && !(d.entityId && d.ssoUrl && d.cert)) {
-      return { ok: false, error: "Paste the identity provider's metadata XML, or give its entity ID, sign-in URL and signing certificate." };
+    const db = await getDb();
+    // saving again replaces the provider; what is left blank keeps its current value
+    const [existing] = await db.select().from(schema.ssoProvider).where(eq(schema.ssoProvider.providerId, d.providerId));
+    if (existing && !d.metadata && !(d.entityId && d.ssoUrl && d.cert)) {
+      let cfg: { entryPoint?: string; cert?: string; idpMetadata?: { metadata?: string; entityID?: string; cert?: string }; mapping?: { email?: string; name?: string } } = {};
+      try { cfg = JSON.parse(existing.samlConfig ?? "{}"); } catch { /* unreadable: the form must give it */ }
+      if (cfg.idpMetadata?.metadata) d.metadata = cfg.idpMetadata.metadata;
+      else Object.assign(d, { entityId: cfg.idpMetadata?.entityID ?? "", ssoUrl: cfg.entryPoint ?? "", cert: cfg.cert || cfg.idpMetadata?.cert || "" });
+      d.emailAttr ||= cfg.mapping?.email && cfg.mapping.email !== "email" ? cfg.mapping.email : "";
+      d.nameAttr ||= cfg.mapping?.name && cfg.mapping.name !== "displayName" ? cfg.mapping.name : "";
     }
+    if (!d.metadata && !(d.entityId && d.ssoUrl && d.cert)) {
+      return { ok: false, error: "Paste the identity provider's metadata XML (Entra ID: Federation Metadata XML), or give its entity ID, sign-in URL and signing certificate." };
+    }
+    const body = samlProviderBody(d, appUrl());
     const auth = await getAuth();
-    await auth.api.registerSSOProvider({ headers: await headers(), body: samlProviderBody(d, appUrl()) as never });
-    await audit(v, "register_sso", "sso_provider", d.providerId, { domain: d.domain, byMetadata: !!d.metadata });
-    return done(["/admin/sso", "/login"], "Single sign-on provider saved. Give the service-provider details below to the identity team.");
+    if (existing) await db.delete(schema.ssoProvider).where(eq(schema.ssoProvider.providerId, d.providerId));
+    try {
+      await auth.api.registerSSOProvider({ headers: await headers(), body: body as never });
+    } catch (e) {
+      if (existing) await db.insert(schema.ssoProvider).values(existing); // put the old one back
+      throw e;
+    }
+    await audit(v, existing ? "update_sso" : "register_sso", "sso_provider", d.providerId, { domain: d.domain, entityId: body.issuer, byMetadata: !!d.metadata });
+    return done(["/admin/sso", "/login"], existing ? "Single sign-on provider updated." : "Single sign-on provider saved.");
   } catch (e) {
     const body = (e as { body?: { message?: string } }).body;
     return fail(body?.message ? new Error(body.message) : e);

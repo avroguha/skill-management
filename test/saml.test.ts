@@ -23,7 +23,7 @@ delete process.env.DATABASE_URL;
 
 const { getDb, closeDb, schema } = await import("../src/db/index.ts");
 const { getAuth } = await import("../src/lib/auth.ts");
-const { samlProviderBody, acsUrl, spEntityId } = await import("../src/lib/saml.ts");
+const { samlProviderBody, acsUrl, defaultSpEntityId } = await import("../src/lib/saml.ts");
 const { recentAttempts, writeSsoSettings, readSsoSettings, linkSignedInUser, matchValue, findPerson } = await import("../src/lib/sso-gate.ts");
 
 // ---- a minimal X.509 certificate, DER by hand ---------------------------------------
@@ -150,22 +150,23 @@ test("an employee cannot register an identity provider; the admin can, from meta
   const md = await call(`/sso/saml2/sp/metadata?providerId=corporate`);
   const xml = await md.text();
   assert.match(xml, new RegExp(`Location="${acsUrl(APP, "corporate").replace(/[.?]/g, "\\$&")}"`), "SP metadata names our ACS URL");
+  assert.ok(xml.includes(`entityID="${defaultSpEntityId(APP)}"`), "by default the Entity ID is the app address");
 });
 
-async function startLogin() {
-  const res = await call("/sign-in/sso", { json: { providerId: "corporate", callbackURL: "/", errorCallbackURL: "/sso-test/done" } });
+async function startLogin(providerId = "corporate") {
+  const res = await call("/sign-in/sso", { json: { providerId, callbackURL: "/", errorCallbackURL: "/sso-test/done" } });
   assert.equal(res.status, 200, await res.clone().text());
   const { url } = (await res.json()) as { url: string };
   const u = new URL(url);
   assert.equal(`${u.origin}${u.pathname}`, idp.ssoUrl, "sent to the identity provider");
   const request = zlib.inflateRawSync(Buffer.from(u.searchParams.get("SAMLRequest")!, "base64")).toString("utf8");
   const requestId = /ID="([^"]+)"/.exec(request)![1];
-  return { requestId, relayState: u.searchParams.get("RelayState") ?? "", cookie: cookieOf(res) };
+  return { requestId, request, relayState: u.searchParams.get("RelayState") ?? "", cookie: cookieOf(res) };
 }
 
 async function signIn(email: string, name: string) {
   const { requestId, relayState, cookie } = await startLogin();
-  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: spEntityId(APP, "corporate"), email, name });
+  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: defaultSpEntityId(APP), email, name });
   return call(`/sso/saml2/sp/acs/corporate`, { form: { SAMLResponse, RelayState: relayState }, cookie, origin: "https://login.idp.avro.test" });
 }
 
@@ -232,7 +233,7 @@ test("a tampered assertion is refused and creates no session", async () => {
   const db = await getDb();
   const before = (await db.select().from(schema.session)).length;
   const { requestId, relayState, cookie } = await startLogin();
-  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: spEntityId(APP, "corporate"), email: "dan@avro.com", name: "Dan", tamper: true });
+  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: defaultSpEntityId(APP), email: "dan@avro.com", name: "Dan", tamper: true });
   const res = await call(`/sso/saml2/sp/acs/corporate`, { form: { SAMLResponse, RelayState: relayState }, cookie, origin: "https://login.idp.avro.test" });
   assert.doesNotMatch(cookieOf(res), /session_token=[^;]+/, "no session cookie");
   assert.equal((await db.select().from(schema.session)).length, before, "no new session row");
@@ -243,7 +244,28 @@ test("a tampered assertion is refused and creates no session", async () => {
 test("an assertion signed by a different key is refused", async () => {
   const other = identityProvider();
   const { requestId, relayState, cookie } = await startLogin();
-  const SAMLResponse = samlResponse({ ...other, entityId: idp.entityId }, { requestId, acs: acsUrl(APP, "corporate"), audience: spEntityId(APP, "corporate"), email: "eve@avro.com", name: "Eve" });
+  const SAMLResponse = samlResponse({ ...other, entityId: idp.entityId }, { requestId, acs: acsUrl(APP, "corporate"), audience: defaultSpEntityId(APP), email: "eve@avro.com", name: "Eve" });
   const res = await call(`/sso/saml2/sp/acs/corporate`, { form: { SAMLResponse, RelayState: relayState }, cookie, origin: "https://login.idp.avro.test" });
   assert.doesNotMatch(cookieOf(res), /session_token=[^;]+/);
+});
+
+test("the Entity ID can be chosen: sign-in requests carry it, and only answers addressed to it are accepted", async () => {
+  const db = await getDb();
+  const entity = "urn:avro:skills";
+  const reg = await call("/sso/register", { cookie: adminCookie, json: samlProviderBody({ providerId: "custom", spEntityId: entity, domain: "custom.avro.test", metadata: metadata(idp) }, APP) });
+  assert.equal(reg.status, 200, await reg.clone().text());
+  const md = await (await call("/sso/saml2/sp/metadata?providerId=custom")).text();
+  assert.ok(md.includes(`entityID="${entity}"`), "the service-provider metadata names the chosen Entity ID");
+
+  const [emp] = await db.select().from(schema.employee).where(eq(schema.employee.active, true)).limit(1);
+  const send = async (audience: string) => {
+    const { requestId, request, relayState, cookie } = await startLogin("custom");
+    assert.match(request, new RegExp(`<(?:saml:)?Issuer[^>]*>${entity}</`), "the sign-in request is issued by the chosen Entity ID");
+    const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "custom"), audience, email: emp.email, name: emp.name });
+    return call(`/sso/saml2/sp/acs/custom`, { form: { SAMLResponse, RelayState: relayState }, cookie, origin: "https://login.idp.avro.test" });
+  };
+  const wrong = await send(defaultSpEntityId(APP));
+  assert.doesNotMatch(cookieOf(wrong), /session_token=[^;]+/, "an answer for another Entity ID is refused");
+  const right = await send(entity);
+  assert.match(cookieOf(right), /session_token=[^;]+/, `an answer for the chosen Entity ID signs in: ${right.status} ${right.headers.get("location")}`);
 });

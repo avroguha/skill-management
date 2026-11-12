@@ -124,15 +124,17 @@ The running app needs to reach the instance. Behind a proxy, set `RUNTIME_HTTPS_
 - **Once single sign-on works, disable `admin`.** Sign in with SSO, have `admin` give your SSO account **Administrator** in Admin › Users & access, then sign in as yourself and **Disable** `admin` there. Nobody can disable their own account, so the last signed-in administrator can never lock everyone out. Re-enable it the same way if SSO ever breaks.
 - **Access follows who people are.** Anyone who manages a unit or has direct reports is a **manager** automatically, and sees, validates and sets targets for their people. Everyone else is a **team member**: their own profile and self-assessment. **Executive** (read everything) and **Administrator** are assigned in Admin › Users & access.
 - **Local accounts** can be added for people without SSO; they set their own password at first sign-in.
-- **SAML 2.0 single sign-on** (Admin › Single sign-on): paste the identity provider's metadata XML, or enter its entity ID, sign-in URL and signing certificate. Give the identity team the values on the same page:
+- **SAML 2.0 single sign-on** (Admin › Single sign-on). No provider ID is needed. The page shows the exact values to set at the identity provider, with copy buttons, in the order Entra ID asks for them (Enterprise application › Single sign-on › SAML › Basic SAML Configuration):
 
-  | | |
+  | Entra ID field | Value |
   |---|---|
-  | Entity ID (Audience) | `${APP_URL}/api/auth/sso/saml2/sp/metadata?providerId=<id>` |
-  | ACS URL (HTTP-POST) | `${APP_URL}/api/auth/sso/saml2/sp/acs/<id>` |
-  | Name ID | e-mail address |
-  | Attributes | `email` (and `displayName`); other names are configurable |
-  | Signing | assertions must be signed |
+  | Identifier (Entity ID) | `${APP_URL}` by default; editable on the page (any `https://` or `urn:` value, the same on both sides) |
+  | Reply URL (Assertion Consumer Service URL) | `${APP_URL}/api/auth/sso/saml2/sp/acs/corporate` |
+  | Sign on URL (optional) | `${APP_URL}/login` |
+  | Unique User Identifier (Name ID) | `user.mail`, format Email address |
+  | Signing | assertions signed, SHA-256 |
+
+  Then download Entra's **Federation Metadata XML** and paste it on the page (or enter the identity provider's entity ID, sign-in URL and certificate by hand). Saving again replaces the setup; whatever is left blank keeps its current value, so changing the Entity ID is one field and Save. Entra accepts only `https://` Reply URLs (localhost excepted), so `APP_URL` must be the https address people use.
 
   Then, on the same page:
 
@@ -211,7 +213,7 @@ npm run typecheck
 | `test/engine.test.ts` | Every rule in *How the numbers work* |
 | `test/db.test.ts` | Migrations, seeding (idempotent), `admin`/`admin`, the demo story |
 | `test/transfer.test.ts` | CSV round trip of everything, dry run, line-numbered errors |
-| `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, tampered and wrongly signed assertions refused |
+| `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, a chosen Entity ID (requests carry it, other audiences refused), tampered and wrongly signed assertions refused |
 | `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, teams from the chain, no empty second top, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs |
 | `test/servicenow.live.test.ts` | The same walk against a real instance; skipped unless `SN_LIVE_INSTANCE`, `SN_LIVE_USER`, `SN_LIVE_PASS` and `SN_LIVE_ROOT` are set |
 | `test/org-layout.test.ts` | The org chart geometry: nothing overlaps, parents centred over their people, two-column blocks for large teams, one connector per reporting line |

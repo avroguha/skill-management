@@ -1,7 +1,10 @@
 // The SAML provider registration body, in one place: Admin › Single sign-on sends it,
 // and test/saml.test.ts signs in through exactly this configuration.
 export interface SamlInput {
+  /** internal name, part of the Reply URL; nobody has to choose it */
   providerId: string;
+  /** this app's Entity ID (Entra: Identifier); empty = the app's own address */
+  spEntityId?: string;
   domain: string;
   /** identity provider metadata XML; or entityId + ssoUrl + cert */
   metadata?: string;
@@ -12,7 +15,19 @@ export interface SamlInput {
   nameAttr?: string;
 }
 
-export function spEntityId(base: string, providerId: string): string {
+/** The provider name used when nobody gives one. It only appears in the Reply URL. */
+export const DEFAULT_PROVIDER_ID = "corporate";
+
+/** This app's Entity ID when none is given: its own address, e.g. https://skills.avro.com */
+export function defaultSpEntityId(base: string): string {
+  return base.replace(/\/+$/, "");
+}
+
+/** An Entity ID is an absolute URI: an http(s) address or a urn: name. */
+export const ENTITY_ID_PATTERN = /^(https?:\/\/[^\s]+|urn:[^\s]+)$/i;
+
+/** Where this app publishes its service-provider metadata (once the provider is saved). */
+export function spMetadataUrl(base: string, providerId: string): string {
   return `${base}/api/auth/sso/saml2/sp/metadata?providerId=${providerId}`;
 }
 
@@ -31,7 +46,9 @@ export function ssoUrlFromMetadata(xml: string): string | null {
 }
 
 export function samlProviderBody(d: SamlInput, base: string) {
-  const issuer = spEntityId(base, d.providerId);
+  // the Entity ID goes out as the Issuer of every sign-in request and is the Audience the
+  // identity provider's answers must carry
+  const issuer = d.spEntityId?.trim() || defaultSpEntityId(base);
   const entryPoint = d.ssoUrl || (d.metadata ? ssoUrlFromMetadata(d.metadata) : null);
   if (!entryPoint) throw new Error("No sign-in URL: the metadata has no SingleSignOnService, and none was given.");
   return {
@@ -44,7 +61,7 @@ export function samlProviderBody(d: SamlInput, base: string) {
       cert: d.cert || undefined,
       callbackUrl: `${base}/`,
       idpMetadata: d.metadata ? { metadata: d.metadata } : { entityID: d.entityId ?? "", cert: d.cert },
-      spMetadata: {},
+      spMetadata: { entityID: issuer },
       // the identity provider must sign its assertions
       wantAssertionsSigned: true,
       identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
