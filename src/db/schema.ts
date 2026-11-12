@@ -70,7 +70,8 @@ export const employee = pgTable("employee", {
   attributes: jsonb("attributes").$type<Record<string, string>>().notNull().default({}),
   syncedAt: timestamp("synced_at", { withTimezone: true }),
   createdAt: created(),
-}, (t) => [index("employee_unit_idx").on(t.unitId), index("employee_manager_idx").on(t.managerId), index("employee_user_name_idx").on(t.userName)]);
+}, (t) => [index("employee_unit_idx").on(t.unitId), index("employee_manager_idx").on(t.managerId), index("employee_user_name_idx").on(t.userName),
+  index("employee_role_idx").on(t.roleId), index("employee_grade_idx").on(t.gradeId)]);
 
 // ---- taxonomy and proficiency ---------------------------------------------------
 
@@ -110,7 +111,7 @@ export const roleSkill = pgTable("role_skill", {
   skillId: text("skill_id").notNull().references(() => skill.id, { onDelete: "cascade" }),
   target: integer("target").notNull(),
   mandatory: boolean("mandatory").notNull().default(true),
-}, (t) => [uniqueIndex("role_skill_uq").on(t.roleId, t.gradeId, t.skillId)]);
+}, (t) => [uniqueIndex("role_skill_uq").on(t.roleId, t.gradeId, t.skillId), index("role_skill_skill_idx").on(t.skillId)]);
 
 // A team's demand: "this unit needs at least N people at level L in skill S".
 export const unitRequirement = pgTable("unit_requirement", {
@@ -120,7 +121,7 @@ export const unitRequirement = pgTable("unit_requirement", {
   minLevel: integer("min_level").notNull(),
   headcount: integer("headcount").notNull().default(1),
   note: text("note").notNull().default(""),
-}, (t) => [uniqueIndex("unit_requirement_uq").on(t.unitId, t.skillId)]);
+}, (t) => [uniqueIndex("unit_requirement_uq").on(t.unitId, t.skillId), index("unit_requirement_skill_idx").on(t.skillId)]);
 
 // A manager's per-person required level. Wins over the role standard, and says so.
 export const employeeTarget = pgTable("employee_target", {
@@ -130,7 +131,7 @@ export const employeeTarget = pgTable("employee_target", {
   reason: text("reason").notNull().default(""),
   setBy: text("set_by"),
   setAt: timestamp("set_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [primaryKey({ columns: [t.employeeId, t.skillId] })]);
+}, (t) => [primaryKey({ columns: [t.employeeId, t.skillId] }), index("employee_target_skill_idx").on(t.skillId)]);
 
 // ---- assessment -----------------------------------------------------------------
 
@@ -161,7 +162,7 @@ export const rating = pgTable("rating", {
   status: text("status").notNull().default("draft"),
   cycleId: text("cycle_id"),
   lastUsedOn: date("last_used_on"),
-}, (t) => [primaryKey({ columns: [t.employeeId, t.skillId] }), index("rating_status_idx").on(t.status)]);
+}, (t) => [primaryKey({ columns: [t.employeeId, t.skillId] }), index("rating_status_idx").on(t.status), index("rating_skill_idx").on(t.skillId)]);
 
 // Append-only history of every rating change (audit + trends).
 export const ratingEvent = pgTable("rating_event", {
@@ -175,7 +176,7 @@ export const ratingEvent = pgTable("rating_event", {
   actorId: text("actor_id"),
   cycleId: text("cycle_id"),
   at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [index("rating_event_emp_idx").on(t.employeeId, t.skillId)]);
+}, (t) => [index("rating_event_emp_idx").on(t.employeeId, t.skillId), index("rating_event_at_idx").on(t.at)]);
 
 // ---- closing the loop -----------------------------------------------------------
 
@@ -191,7 +192,7 @@ export const trainingPlan = pgTable("training_plan", {
   status: text("status").notNull().default("planned"),
   createdBy: text("created_by"),
   createdAt: created(),
-}, (t) => [index("training_plan_emp_idx").on(t.employeeId)]);
+}, (t) => [index("training_plan_emp_idx").on(t.employeeId), index("training_plan_skill_idx").on(t.skillId)]);
 
 // Monthly roll-up per unit, so trends exist from day one and never need reconstructing.
 export const snapshot = pgTable("snapshot", {

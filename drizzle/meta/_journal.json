@@ -22,6 +22,13 @@
       "when": 1794482195064,
       "tag": "0002_scale_help_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794484300003,
+      "tag": "0003_foreign_key_indexes",
+      "breakpoints": true
     }
   ]
 }
