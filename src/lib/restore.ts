@@ -3,13 +3,14 @@
 import { getDb } from "@/db";
 import { decodeBackup, restoreBackup, saveBackup, summarise } from "@/lib/backup";
 import { refreshGate } from "@/lib/sso-gate";
-import { audit, type Viewer } from "@/lib/server";
+import { audit, forgetSharedEngine, type Viewer } from "@/lib/server";
 
 export async function restoreFrom(buf: Buffer, v: Viewer, source: string) {
   const b = decodeBackup(buf);
   const db = await getDb();
   const safety = await saveBackup(db, v.name, "before-restore");
   await restoreBackup(db, b);
+  forgetSharedEngine();
   await refreshGate(db);
   await audit(v, "restore_backup", "backup", source, { from: b.createdAt, by: b.by, safetyBackup: safety.name, ...summarise(b) });
   return { safety: safety.name, from: b.createdAt, summary: summarise(b) };

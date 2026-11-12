@@ -236,3 +236,72 @@ export const auditLog = pgTable("audit_log", {
   entityId: text("entity_id"),
   detail: jsonb("detail"),
 }, (t) => [index("audit_log_at_idx").on(t.at)]);
+
+// ---- scale: shared state for several app workers -------------------------------------
+
+// Bumped by database triggers whenever data the engine reads changes (migration 0002), so
+// every worker can keep its computed picture in memory and rebuild it only on change.
+export const dataVersion = pgTable("data_version", {
+  id: integer("id").primaryKey(),
+  v: integer("v").notNull().default(0),
+});
+
+// A job (directory sync, scheduled backup, snapshot) runs in one worker at a time: the
+// worker that holds the lease until it expires.
+export const jobLease = pgTable("job_lease", {
+  name: text("name").primaryKey(),
+  holder: text("holder").notNull(),
+  until: timestamp("until", { withTimezone: true }).notNull(),
+});
+
+// Single sign-on test captures (Admin › Single sign-on), shared by all workers.
+export const ssoAttempt = pgTable("sso_attempt", {
+  id: id(),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+  payload: jsonb("payload").notNull(),
+}, (t) => [index("sso_attempt_at_idx").on(t.at)]);
+
+// The person a single sign-on was matched to, until the account is linked on first use.
+export const ssoPending = pgTable("sso_pending", {
+  email: text("email").primaryKey(),
+  employeeId: text("employee_id").notNull(),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---- help and integrations --------------------------------------------------------------
+
+// Feedback and contact requests from the Help page; handled in Admin › Feedback.
+export const feedback = pgTable("feedback", {
+  id: id(),
+  at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
+  userId: text("user_id"),
+  name: text("name").notNull().default(""),
+  email: text("email").notNull().default(""),
+  // bug | data | idea | question | access | other
+  kind: text("kind").notNull().default("question"),
+  message: text("message").notNull(),
+  page: text("page").notNull().default(""),
+  // new | in_progress | done
+  status: text("status").notNull().default("new"),
+  adminNote: text("admin_note").notNull().default(""),
+  handledBy: text("handled_by"),
+  handledAt: timestamp("handled_at", { withTimezone: true }),
+}, (t) => [index("feedback_at_idx").on(t.at), index("feedback_status_idx").on(t.status)]);
+
+// Read-only reporting integrations (Power BI, Tableau, CSV) set up by an administrator.
+// Only a hash of the key is stored; the key is shown once when it is created.
+export const apiClient = pgTable("api_client", {
+  id: id(),
+  name: text("name").notNull(),
+  // powerbi | tableau | csv | other
+  tool: text("tool").notNull(),
+  tokenHash: text("token_hash").notNull().unique(),
+  tokenHint: text("token_hint").notNull(),
+  datasets: jsonb("datasets").$type<string[]>().notNull(),
+  createdBy: text("created_by").notNull().default(""),
+  createdAt: created(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  useCount: integer("use_count").notNull().default(0),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+});

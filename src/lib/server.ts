@@ -4,12 +4,12 @@
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getAuth } from "@/lib/auth";
 import { readViewAsCookie, VIEW_AS_COOKIE as COOKIE } from "@/lib/view-as-cookie";
 import { loadDatasetFrom } from "@/lib/dataset";
-import { createEngine, type Basis, type Employee, type Engine } from "@/lib/engine/engine";
+import { createEngine, type Basis, type Dataset, type Employee, type Engine } from "@/lib/engine/engine";
 import { linkSignedInUser } from "@/lib/sso-gate";
 
 export type AccessRole = "admin" | "executive" | "manager" | "employee";
@@ -47,10 +47,48 @@ export const getSession = cache(async () => {
   return auth.api.getSession({ headers: await headers() });
 });
 
-export const loadDataset = cache(async () => loadDatasetFrom(await getDb()));
+// ---- the computed picture, shared across requests -----------------------------------------
+// Loading every person and rating and building the engine is the expensive part of a page.
+// Each worker keeps it in memory and rebuilds only when the data changed: database triggers
+// bump data_version on every change (migration 0002), and a request reads that one number.
+// Every 10 minutes it is rebuilt anyway, so "stale" (age of a rating) stays current.
 
-export const getEngine = cache(async (basis: Basis = "validated"): Promise<Engine> =>
-  createEngine(await loadDataset(), { basis }));
+type Shared = { version: number; at: number; dataset: Promise<Dataset>; engines: Map<Basis, Promise<Engine>> };
+const shared = globalThis as unknown as { __skillsShared?: Shared };
+const REBUILD_MS = 10 * 60e3;
+
+async function dataVersionNow(): Promise<number> {
+  try {
+    const r = (await (await getDb()).execute(sql`select v from data_version where id = 1`)) as unknown as { rows: { v: number }[] };
+    return Number(r.rows[0]?.v ?? -1);
+  } catch { return -1; } // before the migration: no caching
+}
+
+async function sharedState(): Promise<Shared> {
+  const version = await dataVersionNow();
+  const cur = shared.__skillsShared;
+  if (cur && version >= 0 && cur.version === version && Date.now() - cur.at < REBUILD_MS) return cur;
+  const db = await getDb();
+  const next: Shared = { version, at: Date.now(), dataset: loadDatasetFrom(db), engines: new Map() };
+  next.dataset.catch(() => { if (shared.__skillsShared === next) shared.__skillsShared = undefined; });
+  shared.__skillsShared = next;
+  return next;
+}
+
+/** Forget the shared picture (after a restore, which loads data with triggers off). */
+export function forgetSharedEngine() { shared.__skillsShared = undefined; }
+
+export const loadDataset = cache(async () => (await sharedState()).dataset);
+
+export const getEngine = cache(async (basis: Basis = "validated"): Promise<Engine> => {
+  const s = await sharedState();
+  let e = s.engines.get(basis);
+  if (!e) {
+    e = s.dataset.then((ds) => createEngine(ds, { basis }));
+    s.engines.set(basis, e);
+  }
+  return e;
+});
 
 function asRole(r: string | null | undefined): AccessRole {
   return r === "admin" || r === "executive" || r === "manager" ? r : "employee";

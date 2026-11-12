@@ -79,6 +79,8 @@ COPY --from=build /usr/local/bin/node /usr/local/bin/node
 
 WORKDIR /app
 COPY --from=build /build/.next/standalone ./
+# several workers sharing the port (APP_WORKERS); see deploy/cluster.cjs
+COPY --from=build /build/deploy/cluster.cjs ./cluster.cjs
 
 # Ubuntu 24.04 already has a user "ubuntu" (uid 1000); the app gets its own
 # system user. The app keeps no state on disk: everything is in PostgreSQL.
@@ -108,4 +110,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=6s --start-period=40s --retries=3 \
     CMD curl -fsS --noproxy '*' -o /dev/null --max-time 4 "http://127.0.0.1:${PORT}/api/health" || exit 1
 
-CMD ["node", "server.js"]
+CMD ["node", "cluster.cjs"]

@@ -1,5 +1,6 @@
 // Runs the directory sync on its schedule (checked every 10 minutes) and on demand.
-// One run at a time per server; a run left "running" by a crash is ignored after an hour.
+// One run at a time across every worker (a lease); a run left "running" by a crash is
+// ignored after an hour.
 import { desc } from "drizzle-orm";
 import type { DB } from "../../db/index.ts";
 import * as s from "../../db/schema.ts";
@@ -8,11 +9,12 @@ import { createServiceNow } from "./servicenow.ts";
 import { runSync } from "./sync.ts";
 import { takeSnapshot } from "../snapshots.ts";
 import { refreshGate } from "../sso-gate.ts";
+import { takeLease, releaseLease } from "../lease.ts";
 
 const g = globalThis as unknown as { __skillsSyncRunning?: boolean };
 
 export async function syncNow(db: DB, trigger: "manual" | "schedule", actorName = "") {
-  if (g.__skillsSyncRunning) throw new Error("A sync is already running.");
+  if (g.__skillsSyncRunning || !(await takeLease(db, "directory-sync", 3600e3))) throw new Error("A sync is already running.");
   g.__skillsSyncRunning = true;
   try {
     const c = await readDirectoryConfig(db);
@@ -25,6 +27,7 @@ export async function syncNow(db: DB, trigger: "manual" | "schedule", actorName 
     return run;
   } finally {
     g.__skillsSyncRunning = false;
+    await releaseLease(db, "directory-sync").catch(() => undefined);
   }
 }
 

@@ -79,7 +79,9 @@ function makeAuth(db: DB) {
         mustChangePassword: { type: "boolean", defaultValue: false, input: false },
       },
     },
-    session: { expiresIn: 60 * 60 * 12, updateAge: 60 * 60 },
+    // the session is read from a signed cookie for up to a minute instead of the database on
+    // every request (scale); disabling someone or changing access applies within a minute
+    session: { expiresIn: 60 * 60 * 12, updateAge: 60 * 60, cookieCache: { enabled: true, maxAge: 60 } },
     advanced: { useSecureCookies: appUrl().startsWith("https://") },
     plugins: [
       username(),

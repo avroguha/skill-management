@@ -5,7 +5,7 @@ import { count } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { actionViewer, audit } from "@/lib/server";
-import { readSsoSettings, writeSsoSettings, recentAttempts, findPerson, matchValue, type SsoAttempt, type SsoSettings } from "@/lib/sso-gate";
+import { readSsoSettings, writeSsoSettings, loadAttempts, findPerson, matchValue, type SsoAttempt, type SsoSettings } from "@/lib/sso-gate";
 
 type Fail = { ok: false; error: string };
 
@@ -18,7 +18,8 @@ async function admin() {
 export async function ssoState(): Promise<{ ok: true; settings: SsoSettings; attempts: SsoAttempt[] } | Fail> {
   try {
     await admin();
-    return { ok: true, settings: await readSsoSettings(await getDb()), attempts: recentAttempts() };
+    const db = await getDb();
+    return { ok: true, settings: await readSsoSettings(db), attempts: await loadAttempts(db) };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
 
@@ -32,7 +33,7 @@ export async function previewMatch(input: z.input<typeof mapping>): Promise<{ ok
   try {
     await admin();
     const m = mapping.parse(input);
-    const last = recentAttempts()[0];
+    const [last] = await loadAttempts(await getDb());
     if (!last) return { ok: false, error: "Run a test sign-in first." };
     const value = matchValue({ active: false, ...m }, last.nameId, last.attributes);
     const p = await findPerson(await getDb(), m.matchField, value);
@@ -48,7 +49,7 @@ export async function saveSso(input: z.input<typeof mapping> & { active: boolean
     if (input.active) {
       const [{ n }] = await db.select({ n: count() }).from(schema.ssoProvider);
       if (!n) return { ok: false, error: "Add the identity provider first." };
-      const last = recentAttempts()[0];
+      const [last] = await loadAttempts(await getDb());
       if (!last) return { ok: false, error: "Run a test sign-in first, so the mapping is checked against what the identity provider really sends." };
       const p = await findPerson(db, m.matchField, matchValue({ active: false, ...m }, last.nameId, last.attributes));
       if (!p) return { ok: false, error: `With this mapping the last test sign-in matches nobody (${m.matchField} = "${matchValue({ active: false, ...m }, last.nameId, last.attributes) || "(empty)"}"). Activating would lock people out.` };

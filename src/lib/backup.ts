@@ -17,9 +17,11 @@ import { getTableName, is, sql } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import type { DB } from "../db/index.ts";
 import * as schema from "../db/schema.ts";
+import { withLease } from "./lease.ts";
 
 export const BACKUP_FORMAT = "skill-management-backup";
-const SKIP = new Set(["session", "verification"]);
+// transient: sessions, one-time codes, the cache version, job leases, sign-on captures
+const SKIP = new Set(["session", "verification", "data_version", "job_lease", "sso_attempt", "sso_pending"]);
 export type BackupReason = "manual" | "scheduled" | "before-restore" | "before-clear" | "before-upgrade" | "uploaded";
 
 export interface BackupFile {
@@ -113,6 +115,8 @@ export async function restoreBackup(db: DB, b: BackupFile): Promise<Record<strin
         await tx.execute(sql`insert into ${sql.identifier(t)} (${list}) select ${list} from json_populate_recordset(null::${sql.identifier(t)}, ${chunk}::json)`);
       }
     }
+    // the triggers were off while loading: tell every worker the data changed
+    await tx.execute(sql`update data_version set v = v + 1 where id = 1`);
   });
   return counts;
 }
@@ -200,9 +204,12 @@ export async function backupIfDue(db: DB, now = Date.now()): Promise<StoredBacku
     const last = listBackups().find((b) => b.reason === "scheduled");
     if (last && now - Date.parse(last.at) < s.everyHours * 3600e3) return null;
     g.__skillsBackupRunning = true;
-    const saved = await saveBackup(db, "schedule", "scheduled");
-    pruneBackups(s.keep);
-    return saved;
+    // one worker takes it; the others see it as not due on their next check
+    return await withLease(db, "scheduled-backup", 30 * 60e3, async () => {
+      const saved = await saveBackup(db, "schedule", "scheduled");
+      pruneBackups(s.keep);
+      return saved;
+    });
   } catch (e) {
     console.error(`[backup] the automatic backup failed: ${(e as Error).message}`);
     return null;

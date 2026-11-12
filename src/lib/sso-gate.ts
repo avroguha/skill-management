@@ -14,7 +14,7 @@
 //    embedded database). It works from an in-memory snapshot of the settings and the
 //    active people, refreshed at start, every minute, and after anything that changes
 //    who may sign in (refreshGate).
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { DB } from "../db/index.ts";
 import * as s from "../db/schema.ts";
 
@@ -83,19 +83,42 @@ export interface SsoAttempt {
   matchedPerson?: string;
 }
 
-// The last attempts, in memory: enough for the test pop-up, never persisted (they hold
-// identity data an administrator only needs for a few minutes).
+// The last attempts and the pending matches. Kept in memory for the worker that handled the
+// sign-in, and written to the database AFTER the sign-in step (never inside it: that runs
+// in the auth transaction, and a write there would wait on itself), so every worker sees
+// them. Only the newest 20 attempts are kept; a pending match lasts 30 minutes.
 const g = globalThis as unknown as { __skillsSsoAttempts?: SsoAttempt[]; __skillsSsoPending?: Map<string, { employeeId: string; at: number }> };
 const attempts = (g.__skillsSsoAttempts ??= []);
 const pending = (g.__skillsSsoPending ??= new Map());
 
+/** Runs a database write once the current request's auth step is over; failures only log. */
+function later(write: (db: DB) => Promise<unknown>) {
+  setTimeout(() => {
+    import("../db/index.ts").then(({ getDb }) => getDb()).then(write)
+      .catch((e: Error) => console.error(`[sso] could not save: ${e.message}`));
+  }, 0);
+}
+
 export function recordAttempt(a: SsoAttempt) {
   attempts.unshift(a);
   attempts.length = Math.min(attempts.length, 20);
+  later(async (db) => {
+    await db.insert(s.ssoAttempt).values({ at: new Date(a.at), payload: a });
+    await db.execute(sql`delete from sso_attempt where id not in (select id from sso_attempt order by at desc limit 20)`);
+  });
 }
 
+/** This worker's attempts (in memory). */
 export function recentAttempts(): SsoAttempt[] {
   return attempts.slice();
+}
+
+/** Every worker's attempts, newest first. */
+export async function loadAttempts(db: DB): Promise<SsoAttempt[]> {
+  try {
+    const rows = await db.select().from(s.ssoAttempt).orderBy(desc(s.ssoAttempt.at)).limit(20);
+    return rows.length ? rows.map((r) => r.payload as SsoAttempt) : attempts.slice();
+  } catch { return attempts.slice(); }
 }
 
 export function normaliseAttributes(raw: Record<string, unknown>): Record<string, string[]> {
@@ -122,16 +145,25 @@ export async function findPerson(db: DB, field: SsoSettings["matchField"], value
 
 /** Remembered between the gate (inside the auth transaction) and the first request after it. */
 export function rememberPending(email: string, employeeId: string) {
-  pending.set(email.toLowerCase(), { employeeId, at: Date.now() });
+  const key = email.toLowerCase();
+  pending.set(key, { employeeId, at: Date.now() });
   for (const [k, v] of pending) if (Date.now() - v.at > 30 * 60e3) pending.delete(k);
+  later((db) => db.insert(s.ssoPending).values({ email: key, employeeId }).onConflictDoUpdate({ target: s.ssoPending.email, set: { employeeId, at: new Date() } }));
+}
+
+async function pendingFor(db: DB, email: string): Promise<string | undefined> {
+  const key = email.toLowerCase();
+  const mem = pending.get(key);
+  if (mem) return mem.employeeId;
+  const [row] = await db.select().from(s.ssoPending).where(and(eq(s.ssoPending.email, key), sql`${s.ssoPending.at} > now() - interval '30 minutes'`));
+  return row?.employeeId;
 }
 
 /** Links a signed-in account to its person: the one the gate matched, else the same e-mail. */
 export async function linkSignedInUser(db: DB, user: { id: string; email: string; role?: string | null }): Promise<string | null> {
   const [already] = await db.select({ id: s.employee.id }).from(s.employee).where(eq(s.employee.userId, user.id));
   if (already) return already.id;
-  const p = pending.get(user.email.toLowerCase());
-  let target: string | undefined = p?.employeeId;
+  let target: string | undefined = await pendingFor(db, user.email);
   if (!target) {
     const [byEmail] = await db.select({ id: s.employee.id }).from(s.employee)
       .where(and(sql`lower(${s.employee.email}) = lower(${user.email})`, isNull(s.employee.userId)));
@@ -141,6 +173,7 @@ export async function linkSignedInUser(db: DB, user: { id: string; email: string
   const done = await db.update(s.employee).set({ userId: user.id })
     .where(and(eq(s.employee.id, target), isNull(s.employee.userId))).returning({ id: s.employee.id });
   pending.delete(user.email.toLowerCase());
+  await db.delete(s.ssoPending).where(eq(s.ssoPending.email, user.email.toLowerCase()));
   if (!user.role) await db.update(s.user).set({ role: "employee" }).where(eq(s.user.id, user.id));
   if (done[0]) await refreshGate(db); // the next sign-in links straight to this account
   return done[0]?.id ?? null;

@@ -27,7 +27,8 @@ services:
     restart: unless-stopped
     logging: *logging
     entrypoint: ["/bin/bash", "/deploy/db-entrypoint.sh"]
-    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "port=${DB_PORT?set it in the env file}"]
+    # room for every app worker pool (APP_WORKERS x DATABASE_POOL_MAX) and maintenance
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "port=${DB_PORT?set it in the env file}", "-c", "max_connections=200"]
     environment:
       POSTGRES_USER: skills
       POSTGRES_DB: skills
@@ -92,6 +93,10 @@ services:
       TZ: ${TZ?set it in the env file, e.g. Asia/Kolkata}
       DATABASE_URL: postgres://skills@127.0.0.1:${DB_PORT?set it in the env file}/skills
       DATABASE_PASSWORD_FILE: /secrets/db_password
+      # Worker processes sharing the port (empty = one per core, at most 8) and each one's
+      # database connections: APP_WORKERS x DATABASE_POOL_MAX must stay under 200.
+      APP_WORKERS: ${APP_WORKERS?set it in the env file (empty = one per core)}
+      DATABASE_POOL_MAX: "10"
       BETTER_AUTH_SECRET_FILE: /secrets/auth_secret
       # Runtime proxy: the only outbound call is the ServiceNow user sync. Node's fetch
       # honours it (NODE_USE_ENV_PROXY in the image); the database is on loopback (NO_PROXY).

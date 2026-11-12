@@ -10,9 +10,10 @@ export async function register() {
   const { refreshGate } = await import("./lib/sso-gate.ts");
   const { backupIfDue } = await import("./lib/backup.ts");
   const db = await getDb();
+  const { withLease } = await import("./lib/lease.ts");
   const snapshot = async () => {
     try {
-      await takeSnapshot(db);
+      await withLease(db, "snapshot", 10 * 60e3, () => takeSnapshot(db));
     } catch (err) {
       console.error("snapshot: failed -", (err as Error).message);
     }
