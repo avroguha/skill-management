@@ -53,7 +53,7 @@ export const getSession = cache(async () => {
 // bump data_version on every change (migration 0002), and a request reads that one number.
 // Every 10 minutes it is rebuilt anyway, so "stale" (age of a rating) stays current.
 
-type Shared = { version: number; at: number; dataset: Promise<Dataset>; engines: Map<Basis, Promise<Engine>> };
+type Shared = { factory: typeof createEngine; version: number; at: number; dataset: Promise<Dataset>; engines: Map<Basis, Promise<Engine>> };
 const shared = globalThis as unknown as { __skillsShared?: Shared };
 const REBUILD_MS = 10 * 60e3;
 
@@ -67,9 +67,9 @@ async function dataVersionNow(): Promise<number> {
 async function sharedState(): Promise<Shared> {
   const version = await dataVersionNow();
   const cur = shared.__skillsShared;
-  if (cur && version >= 0 && cur.version === version && Date.now() - cur.at < REBUILD_MS) return cur;
+  if (cur && cur.factory === createEngine && version >= 0 && cur.version === version && Date.now() - cur.at < REBUILD_MS) return cur;
   const db = await getDb();
-  const next: Shared = { version, at: Date.now(), dataset: loadDatasetFrom(db), engines: new Map() };
+  const next: Shared = { factory: createEngine, version, at: Date.now(), dataset: loadDatasetFrom(db), engines: new Map() };
   next.dataset.catch(() => { if (shared.__skillsShared === next) shared.__skillsShared = undefined; });
   shared.__skillsShared = next;
   return next;

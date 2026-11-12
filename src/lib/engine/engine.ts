@@ -102,6 +102,28 @@ export interface Aggregate {
   pct: number | null;
 }
 
+export interface TalentSkill {
+  skillId: string;
+  /** rated at level 1 or above */ holders: number;
+  /** level 3 or above */ proficient: number;
+  /** level 4 or above */ expert: number;
+  levelSum: number;
+  /** people whose own target asks for it */ needed: number;
+  /** of those, at or above their target */ onTarget: number;
+  /** level 3 or above without their target asking for it */ extra: number;
+  interested: number;
+}
+
+export interface Talent {
+  people: number;
+  rated: number;
+  avgLevel: number | null;
+  skills: Map<string, TalentSkill>;
+  byCategory: Map<string, number[]>;
+  roles: Map<string, number>;
+  grades: Map<string, number>;
+}
+
 export interface Demand {
   unitId: string;
   skillId: string;
@@ -435,6 +457,59 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     return out;
   }
 
+  /**
+   * The talent a unit has, in one pass over its people: per skill, how many hold it and how
+   * well, how many need it and how many of those are on target, who has it without their
+   * role asking for it, and who wants it; levels by category; the role and grade mix.
+   */
+  const talentMemo = new Map<string, Talent>();
+  function talent(scopeUnitId: string): Talent {
+    const hit = talentMemo.get(scopeUnitId);
+    if (hit) return hit;
+    const emps = membersOf(scopeUnitId);
+    const skills = new Map<string, TalentSkill>();
+    const at = (sid: string) => {
+      let x = skills.get(sid);
+      if (!x) { x = { skillId: sid, holders: 0, proficient: 0, expert: 0, levelSum: 0, needed: 0, onTarget: 0, extra: 0, interested: 0 }; skills.set(sid, x); }
+      return x;
+    };
+    const byCategory = new Map<string, number[]>();
+    const roles = new Map<string, number>();
+    const grades = new Map<string, number>();
+    let rated = 0, levelSum = 0, levelN = 0;
+    for (const e of emps) {
+      roles.set(e.roleId ?? "", (roles.get(e.roleId ?? "") ?? 0) + 1);
+      grades.set(e.gradeId ?? "", (grades.get(e.gradeId ?? "") ?? 0) + 1);
+      const req = new Set(requiredSkillIds(e));
+      for (const sid of req) {
+        const x = at(sid);
+        x.needed += 1;
+        if (cell(e, sid).met) x.onTarget += 1;
+      }
+      let any = false;
+      for (const r of ratingsByEmp.get(e.id) ?? []) {
+        if (!isRateable(r.skillId)) continue;
+        const x = at(r.skillId);
+        if (r.interest) x.interested += 1;
+        const lvl = levelOf(r).level;
+        if (lvl == null) continue;
+        any = true;
+        levelSum += lvl; levelN += 1;
+        if (lvl >= 1) { x.holders += 1; x.levelSum += lvl; }
+        if (lvl >= 3) { x.proficient += 1; if (!req.has(r.skillId)) x.extra += 1; }
+        if (lvl >= 4) x.expert += 1;
+        const cat = skillById.get(r.skillId)?.categoryId ?? "";
+        const dist = byCategory.get(cat) ?? [0, 0, 0, 0, 0, 0];
+        dist[Math.max(0, Math.min(5, lvl))] += 1;
+        byCategory.set(cat, dist);
+      }
+      if (any) rated += 1;
+    }
+    const out: Talent = { people: emps.length, rated, avgLevel: levelN ? Math.round((levelSum / levelN) * 10) / 10 : null, skills, byCategory, roles, grades };
+    talentMemo.set(scopeUnitId, out);
+    return out;
+  }
+
   // ---- team demand and coverage ---------------------------------------------------
 
   const demandMemo = new Map<string, Demand[]>();
@@ -750,7 +825,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     for (const u of ds.units) membersOf(u.id);
     for (const id of directReports.keys()) reportsOf(id);
     for (const id of unitsByManager.keys()) reportsOf(id);
-    for (const r of roots) coverageIn(r.id);
+    for (const r of roots) { coverageIn(r.id); talent(r.id); }
   }
 
   return {
@@ -793,6 +868,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     personProfile,
     skillStats,
     skillSummaryIn,
+    talent,
     find,
     skillLabel,
     snapshotRows,

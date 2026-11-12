@@ -310,3 +310,19 @@ test("precomputed views agree with the plain ones: per-skill summary, reporting 
     assert.deepEqual(e.directReportsOf(m.id).map((x) => x.id).sort(), active.filter((x) => x.managerId === m.id).map((x) => x.id).sort());
   }
 });
+
+test("talent: holders, need and on-target agree with the plain roll-ups", () => {
+  const e = createEngine(dataset());
+  for (const root of e.roots) {
+    const t = e.talent(root.id);
+    const sum = e.skillSummaryIn(root.id);
+    assert.equal(t.people, e.membersOf(root.id).length);
+    for (const [sid, s] of t.skills) {
+      assert.equal(s.needed, sum.get(sid)?.agg.required ?? 0, `${sid} needed`);
+      assert.equal(s.onTarget, sum.get(sid)?.agg.met ?? 0, `${sid} on target`);
+      assert.equal(s.proficient, sum.get(sid)?.proficient ?? 0, `${sid} proficient`);
+      assert.ok(s.extra <= s.proficient && s.expert <= s.proficient && s.proficient <= s.holders);
+    }
+    assert.equal([...t.roles.values()].reduce((a, b) => a + b, 0), t.people);
+  }
+});

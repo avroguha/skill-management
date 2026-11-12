@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  LayoutDashboard, Crosshair, Users, Shapes, ClipboardCheck, PencilLine, Settings, UserRound,
+  LayoutDashboard, Sparkles, Crosshair, Users, Shapes, ClipboardCheck, PencilLine, Settings, UserRound,
   LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound,
 } from "lucide-react";
 import {
@@ -20,7 +20,7 @@ import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/format";
 
 const ICONS = {
-  overview: LayoutDashboard, gaps: Crosshair, people: Users, skills: Shapes,
+  overview: LayoutDashboard, talent: Sparkles, gaps: Crosshair, people: Users, skills: Shapes,
   validate: ClipboardCheck, assess: PencilLine, admin: Settings, profile: UserRound, team: UsersRound, org: Network,
 };
 

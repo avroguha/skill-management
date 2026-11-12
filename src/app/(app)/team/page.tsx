@@ -8,7 +8,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { asc, eq, inArray } from "drizzle-orm";
-import { CheckCheck, LayoutGrid, Network } from "lucide-react";
+import { CheckCheck, LayoutGrid, Network, Sparkles } from "lucide-react";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { FilterBar, UnitPicker, type UnitOption } from "@/components/filter-bar";
@@ -166,6 +166,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
           <div className="flex flex-wrap gap-2">
             {waitingForMe > 0 && <Button asChild size="sm"><Link href="/validate"><CheckCheck />Validate {waitingForMe}</Link></Button>}
             {unitId && <Button asChild size="sm" variant="outline"><Link href={withParams("/", { unit: unitId, view: "people" })}><LayoutGrid />Heatmap</Link></Button>}
+            {unitId && <Button asChild size="sm" variant="outline"><Link href={withParams("/talent", { unit: unitId })}><Sparkles />Talent</Link></Button>}
             <Button asChild size="sm" variant="outline"><Link href={`/org?root=${manager.id}`}><Network />Org chart</Link></Button>
           </div>
         } />
