@@ -15,6 +15,8 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 - [Deploy with Docker](#deploy-with-docker)
 - [Backups and starting over](#backups-and-starting-over)
 - [Import and export](#import-and-export)
+- [Integrations: Power BI, Tableau, Excel](#integrations-power-bi-tableau-excel)
+- [Scale and sizing](#scale-and-sizing)
 - [Develop](#develop)
 - [Stack and supply chain](#stack-and-supply-chain)
 - [Not built yet](#not-built-yet)
@@ -25,8 +27,9 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 
 - **Overview** for any unit: five tiles (on target, assessed, critical gaps, single points of failure, stale), a **heatmap of units by skill category** coloured by the share of required skill ratings on target, **where teams are thin** (team needs with fewer people at the level than needed, worst first), a 12-month **trend**, and **rating calibration** by team.
 - Click a unit to go down a level; click a category to see its skills. Every filter (unit, category, role, validated or self-assessed levels) lives in the URL, so any view can be bookmarked or shared.
+- **Talent** for any unit, at any level of the organisation: strengths (skills most people hold at level 3 or above), **what is lacking** (skills people need and do not have, team needs nobody covers), depth by category, the role and grade mix, people with skills **beyond their role**, what people want to learn, and the same picture for each team one level down. Every skill in one table to sort, search or download.
 - **Gaps**: team needs that are short, skills only one person holds, people below their targets, required skills nobody has rated, and training booked. It shows capability only, with no hiring or staffing advice. Every table exports to CSV.
-- **Org chart**: who reports to whom, on a canvas you drag to move and scroll or pinch to zoom, with zoom and fit buttons and a minimap. Each card shows the photo, name, designation, level (L0 is the top), headcount and how much of what everyone below them needs is on target; blue cards lead a team, olive cards are team members. Connectors turn at rounded right angles, and a team of three or more individual contributors stacks in two columns either side of a spine, so a wide team does not stretch the chart. It opens on three levels; the number under a card shows or hides that person's people, and **Expand all** opens everyone. Selecting a person highlights the line up to the top and shows their details (login, e-mail, manager, team, source, weakest skills below them, team needs that are short) in a panel beside the chart, or a sheet from the bottom on a phone, never on top of the cards. Searching for a person opens the way down to them. A **List** view keeps the expandable list. The layout follows the pattern of established org chart tools (d3-org-chart, BALKAN OrgChart JS, GoJS); the canvas is React Flow.
+- **Org chart**: who reports to whom, on a canvas you drag to move and scroll or pinch to zoom, with zoom and fit buttons and a minimap. Each card shows the photo, name, designation, level (L0 is the top), headcount and how much of what everyone below them needs is on target; blue cards lead a team, olive cards are team members. Connectors turn at rounded right angles, and a team of three or more individual contributors stacks in two columns either side of a spine, so a wide team does not stretch the chart. It opens on the top person and one level down, every card collapsed to its numbers; the number under a card loads and shows that person's people (from the server, so a 10,000-person organisation is never sent whole), and **Expand all** opens what is loaded. Selecting a person highlights the line up to the top and shows their details (login, e-mail, manager, team, source, weakest skills below them, team needs that are short) in a panel beside the chart, or a sheet from the bottom on a phone, never on top of the cards. Searching (on the server) finds anyone; one already on the chart is brought into view, anyone else opens their part of the chart. A **List** view keeps the expandable list. The layout follows the pattern of established org chart tools (d3-org-chart, BALKAN OrgChart JS, GoJS); the canvas is React Flow.
 
 | Team heatmap | Gaps |
 |---|---|
@@ -56,6 +59,8 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 
 - **Self-assessment**: rate each skill 0–5 against plain-language level definitions. The person's role target is marked, and so is what their team needs. Add a comment, flag "I want to grow this", add skills they have beyond their role, or **suggest a skill** the catalogue lacks (an administrator approves it).
 - **My profile**: role fit, self against validated against target by category (radar), what the next grade needs, training plans, and skills well above target.
+- **Help**: the FAQ (with questions for managers and administrators shown only to them), who to contact, a **feedback** form (it notes the page it came from) and the replies to your own feedback.
+- **Guided tour** for each audience (team member, manager, executive, administrator): each step goes to the real page and spotlights the button it explains, which stays clickable. It is offered once and can be started again from Help. On a phone, steps about menu items point at the menu button.
 
 | Self-assessment | Profile |
 |---|---|
@@ -73,7 +78,9 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 | Users & access | Accounts, access role, which person an account is, local passwords, disable |
 | ServiceNow | The `sys_user` connection, the top-level user, which user types come in, field mapping, the sync schedule, **Test**, **Sync now** and the sync history; the photo URL |
 | Single sign-on | SAML 2.0 identity provider from metadata or by hand; a **test sign-in pop-up** showing what the provider returns; which value identifies the person; **Activate** |
-| Import & export | CSV in and out for everything below; dry run first; remove the demo data to go live |
+| Integrations | A key per report or tool (Power BI, Tableau, Excel/CSV, scripts), limited to chosen datasets, shown once with that tool's connection steps; last use, request count, expiry, **revoke**. See [Integrations](#integrations-power-bi-tableau-excel) |
+| Help & feedback | The feedback inbox (status, a reply the person sees on their Help page; new ones show as a badge on Admin), the FAQ and the contact details |
+| Import & export | CSV in and out for everything below; dry run first; backups, restore, automatic backups, start from scratch |
 | Settings | When a rating goes stale; colour thresholds |
 | Audit log | Every change: who, what, when |
 
@@ -194,6 +201,7 @@ docker compose --env-file work.env up --build -d
 | `DB_PORT` | PostgreSQL's loopback port |
 | `SEED_DEMO`, `FORCE_PASSWORD_CHANGE`, `ORG_NAME` | First start |
 | `DATA_DIR`, `TZ` | Where the data lives (outside the code folder); time zone |
+| `APP_WORKERS` | App processes serving requests. Empty: one per CPU core, at most 8. See [Scale and sizing](#scale-and-sizing). |
 | `BACKUP_DIR` | Where backups go. Put it on another disk or a network share, so losing the server does not lose the backups. |
 
 ## Backups and starting over
@@ -269,6 +277,47 @@ src/lib/auth.ts, saml.ts   local sign-in and SAML single sign-on
 src/app/(app)/             the pages; src/app/actions/ the server actions
 deploy/db-entrypoint.sh    generates the secrets on the first start
 ```
+
+## Integrations: Power BI, Tableau, Excel
+
+Admin › Integrations › **New integration**: name it, choose the tool, the datasets it may read and when the key expires. The key is shown **once**, with the steps for that tool; only a hash is stored. Make one integration per report, so each can be revoked alone.
+
+| Dataset | Rows |
+|---|---|
+| `people` | Everyone active: unit, manager, role, grade, required skills on target |
+| `units` | The organisation tree with headcount, on target, assessed, uncovered team needs |
+| `skills` | The catalogue |
+| `ratings` | Person × skill: self and validated level, target, gap, wanted, stale |
+| `team-needs` | What each team needs (set or implied) and how many cover it |
+| `talent` | Unit × skill: holders, level 3+, level 4+, average, need it, on target, beyond role, want it |
+
+The same data three ways, read-only, manager-validated levels, rebuilt whenever anything changes:
+
+- **OData v4** at `/api/odata` (with `$metadata`, `$top`, `$skip`, `$select`, `$count`, pages of 5,000 joined by `@odata.nextLink`): Power BI *OData feed* and Tableau *OData* connect to it natively.
+- **CSV** at `/api/v1/<dataset>.csv`: Excel *From Web*, or any script.
+- **JSON** at `/api/v1/<dataset>?page=&size=` (up to 10,000 a page, follow `next`); `/api/v1` lists what the key may read, with every column.
+
+The key goes in `Authorization: Bearer <key>`, in `X-API-Key`, or as the **password of Basic authentication** (any user name), which is how Power BI, Tableau and Excel ask for it. Never in a URL. Without a key the answer is 401 with a Basic challenge, so the tools prompt for it; a dataset the key was not given is 403. Up to 240 requests a minute per key. A scheduled refresh in the Power BI service or Tableau Cloud reaches a server on the company network through their gateway (on-premises data gateway, Tableau Bridge).
+
+## Scale and sizing
+
+Built and measured for **8,000-10,000 people** using the portal.
+
+- **The picture is computed once per change, not per request.** Every page reads one in-memory engine. A `data_version` counter is moved by database triggers on every table the engine reads; each app process checks it every few seconds and, when it moves, rebuilds the engine and precomputes reporting lines, unit members, team-need coverage and the talent summary **before** anyone asks. Reporting lines are indexed once (a manager's whole tree was a scan of everyone per step).
+- **Pages send what fits on a screen.** The org chart sends two levels and loads more on demand; long lists (team, gaps, people, validation) send a page or the worst first, with the totals always counted over everyone.
+- **Several processes.** `APP_WORKERS` app processes share the port (default: one per core, at most 8); sessions live in the database, scheduled jobs take a lease so one process runs each, start-up work (backup, migrations, seed) runs in one process at a time.
+- **PostgreSQL 17** with an index on every foreign key; the app's own lookups use primary keys.
+
+Measured on the lab container (4 vCPU, 4 GB, 3 app processes, PostgreSQL on the same box) with a synthetic organisation of **10,404 people, 734 units and 55,397 ratings**, a mix of 70% team members, 22% managers and 8% executives requesting whole pages (`scripts/loadtest`):
+
+| | before | after |
+|---|---|---|
+| Throughput | 4-6 pages/s | **91-98 pages/s** (the 4 cores saturated) |
+| Slowest 5% of pages (p95) | 22-65 s | **1.2 s** at 50 concurrent users, **2.4 s** at 150; no errors |
+| Executive org chart | 5.1 s, 2.4 MB | 0.04 s, 51 KB |
+| Executive My team | 21.9 s, 9.7 MB | 0.4 s, 0.7 MB |
+
+Most of the 8,000-10,000 people are not clicking at the same moment: at one page every 30-60 seconds each, they ask for 150-350 pages a second at the busiest. That is roughly **8-16 vCPU and 12-16 GB** for the app server (about 0.8 GB per app process at 10,000 people, `APP_WORKERS` = cores), with PostgreSQL alongside or on its own host. Add cores before memory; put two app servers behind the load balancer against the same database if one is not enough.
 
 ## Not built yet
 

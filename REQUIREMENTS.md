@@ -45,7 +45,7 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | A schedule keeps the data up to date | Sync every N hours, or **Sync now**; history of every run |
 | Fields user_name, display name, e-mail, manager | Mapped fields, plus designation (`title`) and any extra columns to keep |
 | SSO: a test pop-up showing the fields the provider returns, a mapping to identify the person, an Activate button | Admin › Single sign-on: Test sign-in (captured, nobody signed in), Identify the person with Check, Activate |
-| A tree view of who is at what level: high-level info, "i" for important info, click to go inside; drawn like an org-chart template (cards with photos, connectors) | Org chart: cards with photo, level, headcount and on-target share, connectors, three levels at a time, the **i** panel, drill-in with breadcrumbs; a List view |
+| A tree view of who is at what level: high-level info, "i" for important info, click to go inside; drawn like an org-chart template (cards with photos, connectors) | Org chart: cards with photo, level, headcount and on-target share, connectors, collapsed cards that load their people on Expand, the **i** panel, drill-in with breadcrumbs; a List view |
 | New people get a role from their ServiceNow designation |  Admin › ServiceNow › Roles from designation: ordered rules (is / starts with / contains -> role, grade), fill empty roles by default, Create from current roles, shown in Test |
 | Administrators can impersonate a user to see exactly what they see and troubleshoot |  View as on a profile or in Users & access: their exact view, read-only, one hour, banner with Stop viewing, audited under the administrator |
 | People with reports get My team: their people, the skills their team needs, and what else a manager looks after |  My team: tiles; People (direct or everyone below, self-assessment progress, to validate, on target, gaps, training); Skills needed; Gaps; Training |
@@ -57,6 +57,13 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | User images from a URL with a placeholder replaced by a field of the user | Admin › ServiceNow › Photos: `{user_name}`, `{email}`, `{sys_id}` or a kept column |
 | No reliable source of organisation data | Teams are built from the manager chain (switchable); other organisation sources are not built |
 | Only team and individual capability; no suggestions such as hiring | The train / develop / move / hire plan is removed; Overview and Gaps report capability only |
+| An overview at each level: what talent the organisation has and what is lacking | Talent (any unit): strengths, what is lacking, depth by category, role and grade mix, beyond the role, wanted, one level down, every skill |
+| Endpoints for Tableau, Power BI or CSV, set up by an administrator like creating users | Admin › Integrations: a key per tool and report, chosen datasets and expiry, steps per tool, last use, revoke; OData, CSV and JSON endpoints |
+| Robust for 8-10k people active on the portal | Engine rebuilt and precomputed once per data change, pages capped, org chart loaded a level at a time, several app processes, indexes; load-tested at 10,404 people (README › Scale and sizing) |
+| Indexing, and PostgreSQL if it helps | Production already runs PostgreSQL 17 (the embedded database is for development and tests only); an index on every foreign key (migration 0003) |
+| Org chart cards collapsed to their numbers; one level down by default; more on Expand | The chart opens on the top and one level; a card loads its people when expanded |
+| FAQ, feedback and contact us | Help: FAQ by audience, contact details, feedback form and replies; Admin › Help & feedback: inbox, FAQ and contact editors |
+| A guided tour per persona that highlights the buttons with what they do | The tour: team member, manager, executive and administrator steps on the real pages, offered once, restarted from Help |
 
 ## Open questions for the requirement owner
 
