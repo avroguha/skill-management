@@ -7,7 +7,7 @@ import { getDb, schema } from "@/db";
 import { actionViewer, audit, type Viewer } from "@/lib/server";
 import {
   readDirectoryConfig, writeDirectoryConfig, sealPassword, directoryPassword, publicDirectoryConfig,
-  type DirectoryConfig, photoUrl,
+  type DirectoryConfig, type RoleRule, photoUrl, matchRoleRule,
 } from "@/lib/directory/config";
 import { createServiceNow, assertFieldName } from "@/lib/directory/servicenow";
 import { fetchDirectory } from "@/lib/directory/sync";
@@ -37,6 +37,13 @@ const formSchema = z.object({
   extraFields: z.array(field).max(20).default([]),
   orgFromHierarchy: z.boolean(),
   syncEveryHours: z.coerce.number().int().min(0).max(168),
+  roleRules: z.array(z.object({
+    op: z.enum(["is", "contains", "starts"]),
+    text: z.string().trim().min(1, "Each designation rule needs some text to match.").max(120),
+    roleId: z.string().min(1, "Each designation rule needs a role."),
+    gradeId: z.string().default(""),
+  })).max(200).default([]),
+  roleRulesOverwrite: z.boolean().default(false),
 });
 export type DirectoryForm = z.input<typeof formSchema>;
 
@@ -77,7 +84,18 @@ export interface TestResult {
   excluded: number;
   byType: Record<string, number>;
   truncated: boolean;
-  sample: { userName: string; name: string; email: string; title: string; manager: string; userType: string; depth: number; included: boolean }[];
+  sample: { userName: string; name: string; email: string; title: string; manager: string; userType: string; depth: number; included: boolean; role: string }[];
+  /** people a designation rule gives a role to */
+  ruleHits: number;
+}
+
+/** "Role · Grade" for the rule that matched, or "" when none did. */
+async function roleNames() {
+  const db = await getDb();
+  const roles = new Map((await db.select().from(schema.jobRole)).map((r) => [r.id, r.name]));
+  const grades = new Map((await db.select().from(schema.grade)).map((g) => [g.id, g.name]));
+  return (rule: RoleRule | null) => (rule && roles.has(rule.roleId)
+    ? `${roles.get(rule.roleId)}${rule.gradeId && grades.has(rule.gradeId) ? ` · ${grades.get(rule.gradeId)}` : ""}` : "");
 }
 
 /** A full walk with the form's settings; nothing is saved or written. */
@@ -87,17 +105,19 @@ export async function testDirectory(form: DirectoryForm): Promise<TestResult | F
     const c = await merged(form);
     const r = await fetchDirectory(client(c), c, { maxPeople: Math.min(c.maxPeople, 5000) });
     const nameOf = new Map(r.people.map((p) => [p.externalId, p.name]));
+    const roleOf = await roleNames();
+    const ruleHits = r.people.filter((p) => roleOf(matchRoleRule(c.roleRules, p.title))).length;
     const sample = [
       ...r.people.sort((a, b) => a.depth - b.depth || a.name.localeCompare(b.name)).slice(0, 40).map((p) => ({
         userName: p.userName, name: p.name, email: p.email, title: p.title, manager: p.managerExternalId ? nameOf.get(p.managerExternalId) ?? "" : "",
-        userType: p.userType, depth: p.depth, included: true,
+        userType: p.userType, depth: p.depth, included: true, role: roleOf(matchRoleRule(c.roleRules, p.title)),
       })),
-      ...r.excluded.slice(0, 15).map((p) => ({ userName: p.userName, name: p.name, email: "", title: "", manager: "", userType: p.userType, depth: -1, included: false })),
+      ...r.excluded.slice(0, 15).map((p) => ({ userName: p.userName, name: p.name, email: "", title: "", manager: "", userType: p.userType, depth: -1, included: false, role: "" })),
     ];
     await audit(v, "test_directory", "app_setting", "directory", { included: r.people.length, excluded: r.excluded.length });
     return {
       ok: true, root: { name: r.root.name, title: r.root.title, email: r.root.email },
-      included: r.people.length, excluded: r.excluded.length, byType: r.byType, truncated: r.truncated, sample,
+      included: r.people.length, excluded: r.excluded.length, byType: r.byType, truncated: r.truncated, sample, ruleHits,
     };
   } catch (e) { return { ok: false, error: message(e) }; }
 }
@@ -109,6 +129,39 @@ export async function fieldValues(form: DirectoryForm, fieldName: string): Promi
     const c = await merged(form);
     const values = await client(c).distinct(c.table, assertFieldName(fieldName), c.extraQuery);
     return { ok: true, values: values.slice(0, 50) };
+  } catch (e) { return { ok: false, error: message(e) }; }
+}
+
+/**
+ * Rules that reproduce the current assignments: one "designation is ..." rule per
+ * designation among synced people who have a role, with the role and grade most of them
+ * hold. Nothing is saved; the page adds them to the form.
+ */
+export async function learnRoleRules(): Promise<{ ok: true; rules: RoleRule[]; conflicts: string[] } | Fail> {
+  try {
+    await admin();
+    const db = await getDb();
+    const people = await db.select().from(schema.employee).where(eq(schema.employee.source, "directory"));
+    const byTitle = new Map<string, { title: string; counts: Map<string, number> }>();
+    for (const p of people) {
+      const title = p.title.trim().replace(/\s+/g, " ");
+      if (!p.active || !p.roleId || !title) continue;
+      const k = title.toLowerCase();
+      const e = byTitle.get(k) ?? { title, counts: new Map<string, number>() };
+      const pair = `${p.roleId}|${p.gradeId ?? ""}`;
+      e.counts.set(pair, (e.counts.get(pair) ?? 0) + 1);
+      byTitle.set(k, e);
+    }
+    const rules: RoleRule[] = [];
+    const conflicts: string[] = [];
+    for (const { title, counts } of [...byTitle.values()].sort((a, b) => a.title.localeCompare(b.title))) {
+      const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const [pair, n] = ranked[0];
+      if (ranked.length > 1) conflicts.push(`${title}: ${n} of ${ranked.reduce((a, x) => a + x[1], 0)} people hold the role chosen`);
+      const [roleId, gradeId] = pair.split("|");
+      rules.push({ op: "is", text: title, roleId, gradeId });
+    }
+    return { ok: true, rules, conflicts };
   } catch (e) { return { ok: false, error: message(e) }; }
 }
 

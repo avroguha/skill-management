@@ -13,12 +13,15 @@ import {
   type DirectoryForm as Form, type TestResult,
 } from "@/app/actions/directory";
 import { cn } from "@/lib/utils";
+import type { RoleRule } from "@/lib/directory/config";
+import { RoleRules, type Option } from "./role-rules";
 
 interface Initial {
   enabled: boolean; instanceUrl: string; username: string; hasPassword: boolean; table: string; rootUserName: string;
   typeField: string; typeValues: string[]; extraQuery: string;
   fields: { userName: string; name: string; email: string; manager: string; title: string };
   extraFields: string[]; orgFromHierarchy: boolean; syncEveryHours: number;
+  roleRules: RoleRule[]; roleRulesOverwrite: boolean;
 }
 
 function Field({ label, help, children, className }: { label: string; help?: string; children: React.ReactNode; className?: string }) {
@@ -31,7 +34,7 @@ function Field({ label, help, children, className }: { label: string; help?: str
   );
 }
 
-export function DirectoryForm({ initial }: { initial: Initial }) {
+export function DirectoryForm({ initial, roles, grades }: { initial: Initial; roles: Option[]; grades: Option[] }) {
   const router = useRouter();
   const [f, setF] = useState({ ...initial, password: "", extraFieldsText: initial.extraFields.join(", ") });
   const [values, setValues] = useState<{ value: string; count: number }[] | null>(null);
@@ -45,7 +48,7 @@ export function DirectoryForm({ initial }: { initial: Initial }) {
     enabled: f.enabled, instanceUrl: f.instanceUrl, username: f.username, password: f.password, table: f.table,
     rootUserName: f.rootUserName, typeField: f.typeField, typeValues: f.typeValues, extraQuery: f.extraQuery, fields: f.fields,
     extraFields: f.extraFieldsText.split(",").map((x) => x.trim()).filter(Boolean), orgFromHierarchy: f.orgFromHierarchy,
-    syncEveryHours: f.syncEveryHours,
+    syncEveryHours: f.syncEveryHours, roleRules: f.roleRules, roleRulesOverwrite: f.roleRulesOverwrite,
   });
   const run = (name: string, fn: () => Promise<void>) => start(async () => { setBusy(name); try { await fn(); } finally { setBusy(null); } });
 
@@ -108,6 +111,11 @@ export function DirectoryForm({ initial }: { initial: Initial }) {
         </label>
       </div>
 
+      <div className="border-t pt-5">
+        <RoleRules rules={f.roleRules} overwrite={f.roleRulesOverwrite} roles={roles} grades={grades}
+          onChange={(r) => set("roleRules", r)} onOverwrite={(v) => set("roleRulesOverwrite", v)} />
+      </div>
+
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" disabled={!!busy} onClick={() => run("test", async () => {
           setError(null); setResult(null);
@@ -134,7 +142,8 @@ export function DirectoryForm({ initial }: { initial: Initial }) {
           <div className="text-sm">
             <b>Connected.</b> Top-level user <b>{result.root.name}</b>{result.root.title && ` (${result.root.title})`}.{" "}
             <b className="tabular">{result.included}</b> people would come in, <b className="tabular">{result.excluded}</b> left out by the type filter
-            {result.truncated && " - stopped at the test limit"}. Nothing was saved.
+            {result.truncated && " - stopped at the test limit"}.
+            {f.roleRules.length > 0 && <> Designation rules give <b className="tabular">{result.ruleHits}</b> of them a role.</>} Nothing was saved.
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
             {Object.entries(result.byType).map(([t, n]) => (
@@ -148,6 +157,7 @@ export function DirectoryForm({ initial }: { initial: Initial }) {
                 <th className="px-2 text-left font-medium">user_name</th><th className="px-2 text-left font-medium">Name</th>
                 <th className="px-2 text-left font-medium">Designation</th><th className="px-2 text-left font-medium">Manager</th>
                 <th className="px-2 text-left font-medium">E-mail</th><th className="px-2 text-left font-medium">Type</th>
+                <th className="px-2 text-left font-medium">Role from rules</th>
               </tr></thead>
               <tbody>
                 {result.sample.map((p) => (
@@ -156,6 +166,7 @@ export function DirectoryForm({ initial }: { initial: Initial }) {
                     <td className="px-2 tabular">{p.depth >= 0 ? p.depth : "–"}</td>
                     <td className="px-2 font-mono">{p.userName}</td><td className="px-2">{p.name}</td><td className="px-2">{p.title}</td>
                     <td className="px-2">{p.manager}</td><td className="px-2">{p.email}</td><td className="px-2">{p.userType}</td>
+                    <td className="px-2">{p.role || <span className="text-muted-foreground">–</span>}</td>
                   </tr>
                 ))}
               </tbody>

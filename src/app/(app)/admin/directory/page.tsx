@@ -10,11 +10,13 @@ export const metadata = { title: "ServiceNow · Admin" };
 
 export default async function DirectoryAdmin() {
   const db = await getDb();
-  const [cfg, profile, runs, [sample]] = await Promise.all([
+  const [cfg, profile, runs, [sample], roles, grades] = await Promise.all([
     readDirectoryConfig(db),
     readProfileSettings(db),
     db.select().from(schema.syncRun).orderBy(desc(schema.syncRun.startedAt)).limit(25),
     db.select().from(schema.employee).where(eq(schema.employee.active, true)).orderBy(asc(schema.employee.name)).limit(1),
+    db.select({ id: schema.jobRole.id, name: schema.jobRole.name }).from(schema.jobRole).orderBy(asc(schema.jobRole.name)),
+    db.select({ id: schema.grade.id, name: schema.grade.name }).from(schema.grade).orderBy(asc(schema.grade.rank)),
   ]);
   const placeholders = ["user_name", "email", "sys_id", ...cfg.extraFields];
   return (
@@ -23,7 +25,7 @@ export default async function DirectoryAdmin() {
         description="People, their managers and designations come from sys_user: everyone under a top-level user, recursively, of the user types you choose. Only people brought in this way (or added by an administrator) can sign in with single sign-on." />
       <div className="grid gap-5">
         <Section title="Connection and filter">
-          <DirectoryForm initial={publicDirectoryConfig(cfg)} />
+          <DirectoryForm initial={publicDirectoryConfig(cfg)} roles={roles} grades={grades} />
         </Section>
         <div className="grid gap-5 xl:grid-cols-3">
           <Section className="xl:col-span-2" title="Sync history">

@@ -101,8 +101,9 @@ Admin › ServiceNow brings people in from the `sys_user` table, so names, e-mai
 2. **Who comes in**: a **top-level user** by `user_name`. The sync walks down the manager field from that person, recursively, to everyone below them.
 3. **Which kinds of user**: a **user type field** (`identity_type` by default; any field works) and the values to bring in. **Load values** lists the values in the table with counts, so service accounts are easy to leave out. People below a left-out record are still found, and report to the nearest person who came in. An **extra filter** (an encoded query, `active=true` by default) applies to every record below the top user.
 4. **Fields**: login name (`user_name`), display name (`name`), e-mail, manager and designation (`title`), each mappable to another column. **Also keep** stores extra columns, for example `employee_number` for the photo URL.
-5. **Test** runs the whole walk and shows who would come in, at what level, under which manager, and who the type filter leaves out. Nothing is saved.
-6. **Sync now**, or a **schedule** every N hours. Each run is listed in the sync history with what it created, updated and deactivated, or why it failed. A failed run changes nothing.
+5. **Roles from designation**: an ordered list of rules, "designation is / starts with / contains *text*" gives a role and, optionally, a grade. The first matching rule wins, so specific rules go above broad ones; matching ignores case and extra spaces. By default rules only fill an empty role, so a role set by hand is kept; a switch lets them change existing roles too. **Create from current roles** writes one rule per designation from the roles synced people already have.
+6. **Test** runs the whole walk and shows who would come in, at what level, under which manager, which role the rules give them, and who the type filter leaves out. Nothing is saved.
+7. **Sync now**, or a **schedule** every N hours. Each run is listed in the sync history with what it created, updated and deactivated, or why it failed. A failed run changes nothing.
 
 What a sync does:
 
@@ -211,7 +212,7 @@ npm run typecheck
 | `test/db.test.ts` | Migrations, seeding (idempotent), `admin`/`admin`, the demo story |
 | `test/transfer.test.ts` | CSV round trip of everything, dry run, line-numbered errors |
 | `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, tampered and wrongly signed assertions refused |
-| `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, teams from the chain, deactivation, failed runs, the sealed password, photo URLs |
+| `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, teams from the chain, no empty second top, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs |
 | `test/servicenow.live.test.ts` | The same walk against a real instance; skipped unless `SN_LIVE_INSTANCE`, `SN_LIVE_USER`, `SN_LIVE_PASS` and `SN_LIVE_ROOT` are set |
 | `test/deployment.test.ts` | The deployment rules: pins, the 72-hour gate, no site locations baked in, no secrets in env files, anchored ignores |
 

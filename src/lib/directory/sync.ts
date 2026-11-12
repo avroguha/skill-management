@@ -12,7 +12,7 @@
 import { eq, inArray, sql } from "drizzle-orm";
 import type { DB } from "../../db/index.ts";
 import * as s from "../../db/schema.ts";
-import type { DirectoryConfig } from "./config.ts";
+import { matchRoleRule, type DirectoryConfig } from "./config.ts";
 import { assertFieldName, assertQueryValue, SnError, type ServiceNow, type SnRecord } from "./servicenow.ts";
 
 export interface DirPerson {
@@ -124,12 +124,12 @@ export async function fetchDirectory(sn: ServiceNow, c: DirectoryConfig, opts: {
   return { root, people, excluded, byType, truncated };
 }
 
-export interface ApplyResult { created: number; updated: number; deactivated: number; skipped: number; messages: string[]; units: number }
+export interface ApplyResult { created: number; updated: number; deactivated: number; skipped: number; messages: string[]; units: number; rolesSet: number }
 
 const KIND_BY_DEPTH = ["company", "division", "department"];
 
 export async function applyDirectory(db: DB, r: FetchResult, c: DirectoryConfig): Promise<ApplyResult> {
-  const out: ApplyResult = { created: 0, updated: 0, deactivated: 0, skipped: 0, messages: [], units: 0 };
+  const out: ApplyResult = { created: 0, updated: 0, deactivated: 0, skipped: 0, messages: [], units: 0, rolesSet: 0 };
   const now = new Date();
   await db.transaction(async (tx) => {
     const existing = await tx.select().from(s.employee);
@@ -173,6 +173,28 @@ export async function applyDirectory(db: DB, r: FetchResult, c: DirectoryConfig)
       if (!id) continue;
       const mgr = p.managerExternalId ? localId.get(p.managerExternalId) ?? null : null;
       await tx.update(s.employee).set({ managerId: mgr }).where(eq(s.employee.id, id));
+    }
+
+    // roles from designations: fill an empty role, or (when allowed) change one
+    if (c.roleRules.length) {
+      const roleIds = new Set((await tx.select({ id: s.jobRole.id }).from(s.jobRole)).map((x) => x.id));
+      const gradeIds = new Set((await tx.select({ id: s.grade.id }).from(s.grade)).map((x) => x.id));
+      let missingRole = false;
+      for (const p of r.people) {
+        const id = localId.get(p.externalId);
+        if (!id) continue;
+        const rule = matchRoleRule(c.roleRules, p.title);
+        if (!rule) continue;
+        if (!roleIds.has(rule.roleId)) { missingRole = true; continue; }
+        const before = byId.get(id);
+        const hadRole = before?.roleId ?? null;
+        if (hadRole && !c.roleRulesOverwrite) continue;
+        const gradeId = rule.gradeId && gradeIds.has(rule.gradeId) ? rule.gradeId : undefined;
+        if (hadRole === rule.roleId && (gradeId === undefined || before?.gradeId === gradeId)) continue;
+        await tx.update(s.employee).set(gradeId === undefined ? { roleId: rule.roleId } : { roleId: rule.roleId, gradeId }).where(eq(s.employee.id, id));
+        out.rolesSet += 1;
+      }
+      if (missingRole) out.messages.push("a designation rule names a role that no longer exists; fix it in Admin › ServiceNow");
     }
 
     // gone from the directory: deactivated, never deleted
@@ -258,6 +280,7 @@ export async function runSync(db: DB, sn: ServiceNow, c: DirectoryConfig, trigge
     const message = [
       `${fetched.people.length} people under ${fetched.root.name} (${fetched.excluded.length} left out by the type filter)`,
       fetched.truncated ? `stopped at the limit of ${c.maxPeople}` : "",
+      applied.rolesSet ? `${applied.rolesSet} role${applied.rolesSet === 1 ? "" : "s"} set from designations` : "",
       ...applied.messages.slice(0, 20),
     ].filter(Boolean).join("; ");
     const [done] = await db.update(s.syncRun).set({
