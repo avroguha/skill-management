@@ -62,8 +62,8 @@ test("every export re-imports into an empty database and exports again identical
     for (const key of ["people", "required", "onTargetPct", "assessedPct", "criticalGaps", "spof", "pendingValidation"] as const) {
       assert.equal(kb[key], ka[key], `KPI ${key}`);
     }
-    assert.deepEqual(b.hiringPlan(b.roots[0].id).map((h) => [b.skillLabel(h.skillId), h.count]),
-      a.hiringPlan(a.roots[0].id).map((h) => [a.skillLabel(h.skillId), h.count]));
+    const short = (x: typeof a) => x.shortNeeds(x.roots[0].id).map((c) => [x.unitById.get(c.unitId)?.name, x.skillLabel(c.skillId), c.count, c.headcount]);
+    assert.deepEqual(short(b), short(a));
   } finally {
     await target.close();
   }

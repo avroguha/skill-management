@@ -46,4 +46,3 @@ export const LEVEL_CLASS = [
   "bg-primary text-primary-foreground",
 ];
 
-export const ACTION_LABEL = { train: "Train", develop: "Develop", move: "Move or share", hire: "Hire", assess: "Assess" } as const;

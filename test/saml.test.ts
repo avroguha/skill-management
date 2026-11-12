@@ -6,7 +6,7 @@
 //   -> registers the provider with the metadata, through the same body the admin page sends
 //   -> a person starts SSO and is sent to the identity provider with an AuthnRequest
 //   -> the identity provider posts back a signed assertion to the ACS URL
-//   -> a session exists, the user exists, and it is linked to the employee with that e-mail
+//   -> before activation: captured and refused; after: only synced people get a session
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -24,6 +24,7 @@ delete process.env.DATABASE_URL;
 const { getDb, closeDb, schema } = await import("../src/db/index.ts");
 const { getAuth } = await import("../src/lib/auth.ts");
 const { samlProviderBody, acsUrl, spEntityId } = await import("../src/lib/saml.ts");
+const { recentAttempts, writeSsoSettings, readSsoSettings, linkSignedInUser, matchValue, findPerson } = await import("../src/lib/sso-gate.ts");
 
 // ---- a minimal X.509 certificate, DER by hand ---------------------------------------
 const len = (n: number) => {
@@ -152,7 +153,7 @@ test("an employee cannot register an identity provider; the admin can, from meta
 });
 
 async function startLogin() {
-  const res = await call("/sign-in/sso", { json: { providerId: "corporate", callbackURL: "/" } });
+  const res = await call("/sign-in/sso", { json: { providerId: "corporate", callbackURL: "/", errorCallbackURL: "/sso-test/done" } });
   assert.equal(res.status, 200, await res.clone().text());
   const { url } = (await res.json()) as { url: string };
   const u = new URL(url);
@@ -162,24 +163,69 @@ async function startLogin() {
   return { requestId, relayState: u.searchParams.get("RelayState") ?? "", cookie: cookieOf(res) };
 }
 
-test("a signed assertion signs the person in and links them to their employee record", async () => {
+async function signIn(email: string, name: string) {
+  const { requestId, relayState, cookie } = await startLogin();
+  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: spEntityId(APP, "corporate"), email, name });
+  return call(`/sso/saml2/sp/acs/corporate`, { form: { SAMLResponse, RelayState: relayState }, cookie, origin: "https://login.idp.avro.test" });
+}
+
+test("before activation every SSO sign-in is a test: attributes captured, refused, nobody created", async () => {
   const db = await getDb();
   const [emp] = await db.select().from(schema.employee).where(eq(schema.employee.active, true)).limit(1);
-  const name = emp.name;
-  const { requestId, relayState, cookie } = await startLogin();
-  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: spEntityId(APP, "corporate"), email: emp.email, name });
-  const res = await call(`/sso/saml2/sp/acs/corporate`, { form: { SAMLResponse, RelayState: relayState }, cookie, origin: "https://login.idp.avro.test" });
+  const usersBefore = (await db.select().from(schema.user)).length;
+  const res = await signIn(emp.email, emp.name);
+  assert.ok([302, 303].includes(res.status), `redirect, got ${res.status}: ${await res.clone().text()}`);
+  assert.match(res.headers.get("location") ?? "", /\/sso-test\/done\?.*error=SSO_TEST/i, `back to the test page: ${res.headers.get("location")}`);
+  assert.doesNotMatch(cookieOf(res), /session_token=[^;]+/, "no session");
+  assert.equal((await db.select().from(schema.user)).length, usersBefore, "no user created");
+  const [captured] = recentAttempts();
+  assert.equal(captured.outcome, "test");
+  assert.equal(captured.nameId, emp.email);
+  assert.deepEqual(captured.attributes.email, [emp.email]);
+  assert.deepEqual(captured.attributes.displayName, [emp.name]);
+});
+
+test("once active, a synced person signs in and is linked to their record", async () => {
+  const db = await getDb();
+  await writeSsoSettings(db, { active: true, matchAttribute: "email", matchField: "email" });
+  const [emp] = await db.select().from(schema.employee).where(eq(schema.employee.active, true)).limit(1);
+  const res = await signIn(emp.email, emp.name);
   assert.ok([302, 303].includes(res.status), `redirect after ACS, got ${res.status}: ${await res.clone().text()}`);
   assert.doesNotMatch(res.headers.get("location") ?? "", /error/i, `no error redirect: ${res.headers.get("location")}`);
   const session = cookieOf(res);
   assert.match(session, /session_token=/);
   const me = await call("/get-session", { cookie: session });
-  const body = (await me.json()) as { user: { email: string; role: string } };
+  const body = (await me.json()) as { user: { id: string; email: string; role: string } };
   assert.equal(body.user.email, emp.email);
+  assert.equal(recentAttempts()[0].outcome, "allowed");
+  assert.equal(recentAttempts()[0].matchedPerson, emp.name);
+  // the first page after sign-in links the account (outside the auth transaction)
+  assert.equal(await linkSignedInUser(db, body.user), emp.id);
   const [linked] = await db.select().from(schema.employee).where(eq(schema.employee.id, emp.id));
-  assert.ok(linked.userId, "employee linked to the new user");
-  const [user] = await db.select().from(schema.user).where(eq(schema.user.id, linked.userId!));
+  assert.equal(linked.userId, body.user.id);
+  const [user] = await db.select().from(schema.user).where(eq(schema.user.id, body.user.id));
   assert.equal(user.role, "employee", "SSO users start as employees; managing people makes them managers");
+  // a second sign-in goes to the same account
+  const again = await signIn(emp.email, emp.name);
+  const me2 = (await (await call("/get-session", { cookie: cookieOf(again) })).json()) as { user: { id: string } };
+  assert.equal(me2.user.id, body.user.id);
+});
+
+test("someone the identity provider knows but who is not a synced person is refused", async () => {
+  const db = await getDb();
+  const usersBefore = (await db.select().from(schema.user)).length;
+  const res = await signIn("svc.integration@avro.com", "Integration Account");
+  assert.match(res.headers.get("location") ?? "", /error=NOT_ALLOWED/i, `refused: ${res.headers.get("location")}`);
+  assert.doesNotMatch(cookieOf(res), /session_token=[^;]+/);
+  assert.equal((await db.select().from(schema.user)).length, usersBefore);
+  assert.equal(recentAttempts()[0].outcome, "refused");
+  // matching on the login name instead
+  const [emp] = await db.select().from(schema.employee).where(eq(schema.employee.active, true)).limit(1);
+  await db.update(schema.employee).set({ userName: "the.login" }).where(eq(schema.employee.id, emp.id));
+  await writeSsoSettings(db, { active: true, matchAttribute: "login", matchField: "user_name" });
+  assert.equal(matchValue(await readSsoSettings(db), "x", { login: ["THE.LOGIN"] }), "THE.LOGIN");
+  assert.equal((await findPerson(db, "user_name", "THE.LOGIN"))?.id, emp.id, "case-insensitive");
+  await writeSsoSettings(db, { active: true, matchAttribute: "email", matchField: "email" });
 });
 
 test("a tampered assertion is refused and creates no session", async () => {

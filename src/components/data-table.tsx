@@ -17,13 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { Separator } from "@/components/ui/separator";
-import { ActionBadge } from "@/components/actions";
+
 import { GAP_CLASS, GAP_LABEL, LEVEL_CLASS } from "@/lib/status";
 import type { GapCategory } from "@/lib/engine/engine";
 import { cn } from "@/lib/utils";
 import { substringFilter } from "@/lib/search";
 
-export type ColKind = "text" | "link" | "number" | "pct" | "date" | "level" | "gap" | "action" | "muted" | "badge";
+export type ColKind = "text" | "link" | "number" | "pct" | "date" | "level" | "gap" | "muted" | "badge";
 export interface ColSpec {
   key: string;
   header: string;
@@ -59,8 +59,6 @@ function renderCell(c: ColSpec, row: Row) {
       const g = v as GapCategory;
       return g ? <span className={cn("inline-flex rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", GAP_CLASS[g])}>{GAP_LABEL[g]}</span> : null;
     }
-    case "action":
-      return v ? <ActionBadge action={v as "train"} /> : null;
     case "badge":
       return v ? <span className="inline-flex rounded-md border px-1.5 py-0.5 text-xs whitespace-nowrap">{String(v)}</span> : null;
     case "muted":

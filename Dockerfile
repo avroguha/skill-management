@@ -90,11 +90,13 @@ RUN set -eux; \
     node --version
 
 # Nothing from the build environment reaches the runtime layer: no registry,
-# no token, no proxy. The running app makes no outbound calls.
+# no token, no proxy. The one outbound call (the ServiceNow user sync) uses the
+# runtime proxy from the compose file, which NODE_USE_ENV_PROXY makes fetch honour.
 ENV NODE_ENV=production \
     PORT=8080 \
     HOSTNAME=0.0.0.0 \
     NEXT_TELEMETRY_DISABLED=1 \
+    NODE_USE_ENV_PROXY=1 \
     MIGRATIONS_DIR=/app/drizzle \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 

@@ -11,6 +11,7 @@ import { getDb, schema } from "@/db";
 import { actionViewer, audit, type Viewer } from "@/lib/server";
 import { getAuth, appUrl, MIN_PASSWORD_LENGTH } from "@/lib/auth";
 import { samlProviderBody } from "@/lib/saml";
+import { refreshGate } from "@/lib/sso-gate";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 type Data = Record<string, unknown>;
@@ -298,6 +299,7 @@ export async function saveEmployee(data: Data): Promise<Result> {
     await db.execute(sql`update employee set user_id = u.id from "user" u
       where employee.id = ${id} and employee.user_id is null and lower(u.email) = lower(employee.email)
       and not exists (select 1 from employee e2 where e2.user_id = u.id)`);
+    await refreshGate(db);
     await audit(v, d.id ? "update_employee" : "create_employee", "employee", id, values);
     return done(["/admin/org", "/people"], "Saved.", id);
   } catch (e) { return fail(e); }
@@ -365,6 +367,7 @@ export async function setUserAccess(input: { userId: string; role: string; emplo
     if (input.employeeId && input.employeeId !== "none") {
       await db.update(schema.employee).set({ userId: input.userId }).where(eq(schema.employee.id, input.employeeId));
     }
+    await refreshGate(db);
     await audit(v, "set_access", "user", input.userId, { role, employeeId: input.employeeId });
     return done(["/admin/users"], "Access saved.");
   } catch (e) { return fail(e); }
@@ -484,6 +487,7 @@ export async function clearOrganisation(confirmText: string): Promise<Result> {
       const demo = await tx.select({ id: schema.user.id }).from(schema.user).where(inArray(schema.user.username, ["exec", "manager", "employee"]));
       if (demo.length) await tx.delete(schema.user).where(inArray(schema.user.id, demo.map((d) => d.id)));
     });
+    await refreshGate(db);
     await audit(v, "clear_organisation", "organisation", null);
     return done(["/admin", "/admin/data"], "Organisation cleared. Import your own data or build it in Organisation and Taxonomy.");
   } catch (e) { return fail(e); }

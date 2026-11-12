@@ -6,7 +6,7 @@
 // - only leaf skills are rated (a skill with active sub-skills is a heading)
 // - self and validated levels are two columns, never one overwritten by the other
 // - "not assessed" is NULL, never 0
-// - gaps, coverage, on-target % and hire/train tags are computed, never stored
+// - gaps, coverage and on-target % are computed, never stored
 import {
   pgTable, text, integer, boolean, timestamp, date, jsonb, primaryKey, uniqueIndex, index, real,
 } from "drizzle-orm/pg-core";
@@ -27,6 +27,8 @@ export const orgUnit = pgTable("org_unit", {
   parentId: text("parent_id"),
   managerId: text("manager_id"),
   sort: integer("sort").notNull().default(0),
+  // set when the directory sync owns this unit ("mgr:<directory id>" - a manager's team)
+  externalKey: text("external_key").unique(),
   createdAt: created(),
 }, (t) => [index("org_unit_parent_idx").on(t.parentId)]);
 
@@ -55,8 +57,20 @@ export const employee = pgTable("employee", {
   userId: text("user_id").references(() => user.id, { onDelete: "set null" }).unique(),
   location: text("location").notNull().default(""),
   active: boolean("active").notNull().default(true),
+  // ---- from the user directory (ServiceNow sys_user) when the sync is in use
+  /** manual (created here or by CSV) | directory (owned by the sync) */
+  source: text("source").notNull().default("manual"),
+  /** the directory's record id (sys_id) */
+  externalId: text("external_id").unique(),
+  /** the directory login name (user_name) */
+  userName: text("user_name"),
+  /** the value of the configured user-type field, e.g. human / machine */
+  userType: text("user_type").notNull().default(""),
+  /** every synced field, raw, for the photo URL template and the info panel */
+  attributes: jsonb("attributes").$type<Record<string, string>>().notNull().default({}),
+  syncedAt: timestamp("synced_at", { withTimezone: true }),
   createdAt: created(),
-}, (t) => [index("employee_unit_idx").on(t.unitId), index("employee_manager_idx").on(t.managerId)]);
+}, (t) => [index("employee_unit_idx").on(t.unitId), index("employee_manager_idx").on(t.managerId), index("employee_user_name_idx").on(t.userName)]);
 
 // ---- taxonomy and proficiency ---------------------------------------------------
 
@@ -190,6 +204,22 @@ export const snapshot = pgTable("snapshot", {
   avgLevel: real("avg_level"),
   takenAt: timestamp("taken_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [primaryKey({ columns: [t.unitId, t.period] })]);
+
+// One row per directory sync (manual, scheduled or a dry run from the Test button).
+export const syncRun = pgTable("sync_run", {
+  id: id(),
+  trigger: text("trigger").notNull(), // manual | schedule
+  status: text("status").notNull().default("running"), // running | ok | failed
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  fetched: integer("fetched").notNull().default(0),
+  created: integer("created").notNull().default(0),
+  updated: integer("updated").notNull().default(0),
+  deactivated: integer("deactivated").notNull().default(0),
+  skipped: integer("skipped").notNull().default(0),
+  message: text("message").notNull().default(""),
+  actorName: text("actor_name").notNull().default(""),
+}, (t) => [index("sync_run_started_idx").on(t.startedAt)]);
 
 export const appSetting = pgTable("app_setting", {
   key: text("key").primaryKey(),

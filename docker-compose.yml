@@ -91,5 +91,9 @@ services:
       DATABASE_URL: postgres://skills@127.0.0.1:${DB_PORT?set it in the env file}/skills
       DATABASE_PASSWORD_FILE: /secrets/db_password
       BETTER_AUTH_SECRET_FILE: /secrets/auth_secret
+      # Runtime proxy: the only outbound call is the ServiceNow user sync. Node's fetch
+      # honours it (NODE_USE_ENV_PROXY in the image); the database is on loopback (NO_PROXY).
+      HTTPS_PROXY: ${RUNTIME_HTTPS_PROXY?set it in the env file (empty = no proxy)}
+      NO_PROXY: ${NO_PROXY?set it in the env file}
     volumes:
       - ${DATA_DIR?set it in the env file}/secrets:/secrets:ro,z

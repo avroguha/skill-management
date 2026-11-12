@@ -160,66 +160,33 @@ test("coverage: single point of failure when exactly one person holds the level"
   assert.deepEqual(ec2.holders, ["ann"]);
 });
 
-test("explicit requirement: shortfall drives train, then move, then hire", () => {
+test("explicit requirement: the shortfall is the people missing at the level", () => {
   const e = createEngine(dataset({ unitRequirements: [{ unitId: "cloud", skillId: "ec2", minLevel: 3, headcount: 5 }] }));
-  const r = e.recommendations("acme").find((x) => x.unitId === "cloud" && x.skillId === "ec2")!;
-  // holders at >=3: ann only, need 4. Bob is at 2 (= L-1): train. Cat at 1 = L-2 but not interested: no develop.
-  // Fay (Ops) and Dan (Data) each hold EC2 in a team where nobody else needs it: spare 2, move. The last one: hire.
-  assert.equal(r.shortfall, 4);
-  assert.deepEqual(r.steps.map((s) => [s.action, s.count]), [["train", 1], ["move", 2], ["hire", 1]]);
-  assert.deepEqual(r.steps[0].people, ["bob"]);
-  assert.equal(r.primary, "hire");
+  const c = e.shortNeeds("acme").find((x) => x.unitId === "cloud" && x.skillId === "ec2")!;
+  // holders at >=3: Ann only; 5 needed
+  assert.deepEqual([c.count, c.headcount, c.shortfall, c.explicit], [1, 5, 4, true]);
 });
 
-test("develop needs interest; move uses spare holders in other teams before hiring", () => {
-  const ds = dataset({ unitRequirements: [{ unitId: "cloud", skillId: "ec2", minLevel: 3, headcount: 3 }] });
-  ds.ratings = ds.ratings.map((r) => (r.employeeId === "cat" && r.skillId === "ec2" ? { ...r, interest: true } : r));
-  ds.employees.push({ id: "hal", name: "Hal", email: "hal@x", title: "", unitId: "ops", roleId: "ana", gradeId: null, managerId: null, active: true });
-  ds.ratings.push(rating("hal", "ec2", 3));
-  const e = createEngine(ds);
-  const r = e.recommendations("cloud").find((x) => x.skillId === "ec2")!;
-  assert.deepEqual(r.steps.map((s) => [s.action, s.count]), [["train", 1], ["develop", 1]]);
-  // without Cat's interest, Ops has Fay(4) and Hal(3) holding >=3 with its own demand of 1 -> spare 1 -> move
-  ds.ratings = ds.ratings.map((x) => (x.employeeId === "cat" && x.skillId === "ec2" ? { ...x, interest: false } : x));
-  const r2 = createEngine(ds).recommendations("cloud").find((x) => x.skillId === "ec2")!;
-  assert.deepEqual(r2.steps.map((s) => [s.action, s.count]), [["train", 1], ["move", 1]]);
-  assert.equal(r2.steps[1].units?.[0].unitId, "ops");
-  assert.equal(r2.primary, "move");
-});
-
-test("zero holders of a mandatory skill is critical and ranks first; a lone holder asks for a backup", () => {
+test("short needs: nobody first, then the biggest shortfall, then single holders; covered needs left out", () => {
   const e = createEngine(dataset());
-  const recs = e.recommendations("acme");
-  const sqlData = recs.find((x) => x.unitId === "data" && x.skillId === "sql")!;
+  const needs = e.shortNeeds("acme");
+  const sqlData = needs.find((x) => x.unitId === "data" && x.skillId === "sql")!;
   assert.equal(sqlData.critical, true, "Eve and Ivy both need SQL; Eve is self-rated only, Ivy unrated");
-  assert.equal(recs[0].critical, true);
-  const ec2Cloud = recs.find((x) => x.unitId === "cloud" && x.skillId === "ec2")!;
-  assert.equal(ec2Cloud.backupOnly, true);
-  assert.equal(ec2Cloud.need, 1);
+  assert.equal(needs[0].critical, true);
+  const ec2Cloud = needs.find((x) => x.unitId === "cloud" && x.skillId === "ec2")!;
+  assert.deepEqual([ec2Cloud.spof, ec2Cloud.shortfall], [true, 0], "covered, but by one person");
+  assert.ok(needs.every((x) => x.shortfall > 0 || x.spof));
 });
 
-test("hiring plan sums hire steps by skill and level", () => {
-  const e = createEngine(dataset({ unitRequirements: [
-    { unitId: "cloud", skillId: "ec2", minLevel: 3, headcount: 4 },
-    { unitId: "data", skillId: "ec2", minLevel: 3, headcount: 3 },
-  ] }));
-  const plan = e.hiringPlan("acme");
-  const ec2 = plan.find((p) => p.skillId === "ec2" && p.level === 3)!;
-  // cloud (worse, first): ann holds, need 3: train Bob, borrow Fay from Ops, hire 1.
-  // data: dan holds, need 2: nobody to train, Fay is already promised to cloud, hire 2.
-  assert.equal(ec2.count, 3);
-  assert.deepEqual(ec2.unitIds.sort(), ["cloud", "data"]);
-});
-
-test("training needs: gap 1 trains, gap 2+ develops, unassessed asks for an assessment", () => {
+test("individual gaps: everyone below their own target, or not assessed; no suggestion attached", () => {
   const e = createEngine(dataset());
-  const needs = e.trainingNeeds(e.membersOf("cloud"));
-  const by = (emp: string, s: string) => needs.find((n) => n.employeeId === emp && n.skillId === s);
-  assert.equal(by("bob", "ec2")?.action, "train");
-  assert.equal(by("cat", "ec2")?.action, "develop");
+  const gaps = e.individualGaps(e.membersOf("cloud"));
+  const by = (emp: string, s: string) => gaps.find((n) => n.employeeId === emp && n.skillId === s);
+  assert.equal(by("bob", "ec2")?.category, "minor");
   assert.equal(by("cat", "ec2")?.category, "critical", "target 3, level 1: critical even though the gap is 2");
-  assert.equal(by("bob", "k8s")?.action, "assess");
+  assert.equal(by("bob", "k8s")?.category, "unassessed");
   assert.equal(by("ann", "ec2"), undefined, "met");
+  assert.ok(gaps.every((g) => !("action" in g)));
 });
 
 test("calibration: average self minus validated per team, needing at least three pairs", () => {

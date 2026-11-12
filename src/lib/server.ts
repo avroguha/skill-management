@@ -9,6 +9,7 @@ import { getDb, schema } from "@/db";
 import { getAuth } from "@/lib/auth";
 import { loadDatasetFrom } from "@/lib/dataset";
 import { createEngine, type Basis, type Employee, type Engine } from "@/lib/engine/engine";
+import { linkSignedInUser } from "@/lib/sso-gate";
 
 export type AccessRole = "admin" | "executive" | "manager" | "employee";
 export const ACCESS_ROLES: { value: AccessRole; label: string; description: string }[] = [
@@ -58,9 +59,16 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
   const u = session.user as typeof session.user & { role?: string | null; username?: string | null; mustChangePassword?: boolean };
   const engine = await getEngine();
   const db = await getDb();
-  const [row] = await db.select({ id: schema.employee.id }).from(schema.employee).where(eq(schema.employee.userId, u.id));
+  // First request after an SSO sign-in: link the new account to the person the gate matched.
+  let [row] = await db.select({ id: schema.employee.id }).from(schema.employee).where(eq(schema.employee.userId, u.id));
+  if (!row) {
+    const linked = await linkSignedInUser(db, u);
+    if (linked) row = { id: linked };
+  }
   const employee = row ? engine.empById.get(row.id) ?? null : null;
   const assignedRole = asRole(u.role);
+  // Someone who left (deactivated by the directory sync) keeps no access, unless an administrator.
+  if (employee && !employee.active && assignedRole !== "admin") return null;
   const reports = employee ? engine.reportsOf(employee.id) : [];
   const managed = employee ? engine.managedUnitIds(employee.id) : [];
   let role = assignedRole;
@@ -82,7 +90,7 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
 
   // Home scope: the whole organisation, or the highest unit this person manages, or their own unit.
   let homeUnitId: string | null = null;
-  if (allUnits) homeUnitId = engine.roots[0]?.id ?? null;
+  if (allUnits) homeUnitId = [...engine.roots].sort((a, b) => engine.membersOf(b.id).length - engine.membersOf(a.id).length)[0]?.id ?? null;
   else if (managed.length) homeUnitId = managed.find((m) => !engine.ancestors(m).some((a) => managed.includes(a.id))) ?? managed[0];
   else homeUnitId = employee?.unitId ?? null;
 

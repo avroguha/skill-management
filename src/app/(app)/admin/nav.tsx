@@ -11,6 +11,7 @@ export const ADMIN_SECTIONS = [
   { href: "/admin/levels", label: "Levels" },
   { href: "/admin/cycles", label: "Cycles" },
   { href: "/admin/users", label: "Users & access" },
+  { href: "/admin/directory", label: "ServiceNow" },
   { href: "/admin/sso", label: "Single sign-on" },
   { href: "/admin/data", label: "Import & export" },
   { href: "/admin/settings", label: "Settings" },

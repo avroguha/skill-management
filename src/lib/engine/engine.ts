@@ -19,13 +19,12 @@
 //    when at least two members need it - a skill one person alone is expected to
 //    have is that person's gap, not a team bus-factor risk. A stricter or
 //    different need is what an explicit requirement is for. Coverage = members at or above L.
-//  * Shortfall plan, in order: train (one level below), develop (two below and
-//    interested), move (another team has spare holders), hire (the rest).
+//  * Capability only: the engine reports what is short and where, never what to
+//    do about it (no hire / train suggestions - owner, 2026-11-12).
 
 export type Basis = "validated" | "self";
 export type GapCategory = "meets" | "minor" | "significant" | "critical" | "unassessed" | "not_required";
 export type TargetSource = "person" | "grade" | "role";
-export type Action = "train" | "develop" | "move" | "hire";
 
 export interface Settings {
   staleMonths: number;
@@ -117,17 +116,6 @@ export interface Coverage extends Demand {
   shortfall: number;
   spof: boolean;
   critical: boolean;
-}
-
-export interface PlanStep { action: Action; count: number; people: string[]; units?: { unitId: string; spare: number }[] }
-
-export interface Recommendation extends Coverage {
-  need: number;
-  /** true when the team has enough holders but only one: the plan is a backup */
-  backupOnly: boolean;
-  steps: PlanStep[];
-  primary: Action;
-  severity: number;
 }
 
 const DAY = 86400e3;
@@ -424,119 +412,31 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     };
   }
 
-  /** Units that have their own members: where implicit demand and spare capacity live. */
-  const teamIds = ds.units.filter((u) => (directMembers.get(u.id) ?? []).length > 0).map((u) => u.id);
-
-  function spareElsewhere(d: Demand, excludeUnitIds: Set<string>): { unitId: string; spare: number }[] {
-    const out: { unitId: string; spare: number }[] = [];
-    for (const tid of teamIds) {
-      if (excludeUnitIds.has(tid)) continue;
-      const holders = holdersOf(directMembers.get(tid) ?? [], d.skillId, d.level).length;
-      if (!holders) continue;
-      const own = demands(tid).find((x) => x.skillId === d.skillId);
-      const spare = holders - (own ? own.headcount : 0);
-      if (spare > 0) out.push({ unitId: tid, spare });
-    }
-    return out.sort((a, b) => b.spare - a.spare);
-  }
-
-  /** ledger: spare holders already promised to an earlier (more severe) gap, by unit|skill */
-  function recommend(cov: Coverage, ledger: Map<string, number> = new Map()): Recommendation | null {
-    const backupOnly = cov.shortfall === 0 && cov.spof;
-    if (cov.shortfall === 0 && !backupOnly) return null;
-    let need = backupOnly ? 1 : cov.shortfall;
-    const members = membersOf(cov.unitId).filter((e) => !cov.holders.includes(e.id));
-    const levelFor = (e: Employee) => levelOf(ratingByKey.get(`${e.id}|${cov.skillId}`)).level;
-    const interested = (e: Employee) => ratingByKey.get(`${e.id}|${cov.skillId}`)?.interest ?? false;
-    const byInterest = (a: Employee, b: Employee) => Number(interested(b)) - Number(interested(a)) || a.name.localeCompare(b.name);
-
-    const steps: PlanStep[] = [];
-    const train = members.filter((e) => levelFor(e) === cov.level - 1).sort(byInterest);
-    if (need > 0 && train.length) {
-      const take = train.slice(0, need);
-      steps.push({ action: "train", count: take.length, people: take.map((e) => e.id) });
-      need -= take.length;
-    }
-    const develop = members.filter((e) => levelFor(e) === cov.level - 2 && interested(e)).sort(byInterest);
-    if (need > 0 && develop.length) {
-      const take = develop.slice(0, need);
-      steps.push({ action: "develop", count: take.length, people: take.map((e) => e.id) });
-      need -= take.length;
-    }
-    if (need > 0) {
-      const exclude = new Set([...subtreeUnitIds(cov.unitId), ...ancestors(cov.unitId).map((u) => u.id)]);
-      const spare = spareElsewhere(cov, exclude)
-        .map((x) => ({ ...x, spare: x.spare - (ledger.get(`${x.unitId}|${cov.skillId}`) ?? 0) }))
-        .filter((x) => x.spare > 0);
-      const total = spare.reduce((s, x) => s + x.spare, 0);
-      if (total > 0) {
-        const n = Math.min(need, total);
-        let left = n;
-        const used: { unitId: string; spare: number }[] = [];
-        for (const x of spare) {
-          if (!left) break;
-          const take = Math.min(left, x.spare);
-          const key = `${x.unitId}|${cov.skillId}`;
-          ledger.set(key, (ledger.get(key) ?? 0) + take);
-          used.push(x);
-          left -= take;
-        }
-        steps.push({ action: "move", count: n, people: [], units: used.slice(0, 3) });
-        need -= n;
-      }
-    }
-    if (need > 0) steps.push({ action: "hire", count: need, people: [] });
-    const primary = steps[steps.length - 1]?.action ?? "train";
-    const severity = cov.critical ? 100 + cov.shortfall * 10 : cov.shortfall > 0 ? 50 + cov.shortfall * 10 : 20;
-    return { ...cov, need: backupOnly ? 1 : cov.shortfall, backupOnly, steps, primary, severity };
-  }
-
   function coverageIn(scopeUnitId: string): Coverage[] {
     return subtreeUnitIds(scopeUnitId).flatMap((uid) => demands(uid).map(coverage));
   }
 
-  /** Every short team need in scope, worst first. Spare people elsewhere are promised
-   *  once, to the most severe gap, so two teams are never told to borrow the same person. */
-  function recommendations(scopeUnitId: string): Recommendation[] {
-    const base = (c: Coverage) => (c.critical ? 100 + c.shortfall * 10 : c.shortfall > 0 ? 50 + c.shortfall * 10 : 20);
-    const ledger = new Map<string, number>();
+  /** Team needs that are short or rest on one person, worst first: nobody holds it,
+   *  then by how many people are missing, then a single holder. Capability only. */
+  function shortNeeds(scopeUnitId: string): Coverage[] {
+    const rank = (c: Coverage) => (c.critical ? 1000 : 0) + c.shortfall * 10 + (c.spof ? 1 : 0);
     return coverageIn(scopeUnitId)
-      .sort((a, b) => base(b) - base(a))
-      .map((c) => recommend(c, ledger))
-      .filter((r): r is Recommendation => !!r)
-      .sort((a, b) => b.severity - a.severity
+      .filter((c) => c.shortfall > 0 || c.spof)
+      .sort((a, b) => rank(b) - rank(a)
         || (skillById.get(a.skillId)?.name ?? "").localeCompare(skillById.get(b.skillId)?.name ?? ""));
   }
 
-  /** Hiring plan: the "hire" steps summed by skill and level. A backup for a lone expert is a
-   *  recommendation, not headcount, so backup-only cases are left out. */
-  function hiringPlan(scopeUnitId: string) {
-    const out = new Map<string, { skillId: string; level: number; count: number; unitIds: string[] }>();
-    for (const r of recommendations(scopeUnitId)) {
-      if (r.backupOnly) continue;
-      for (const s of r.steps) {
-        if (s.action !== "hire") continue;
-        const key = `${r.skillId}|${r.level}`;
-        const row = out.get(key) ?? { skillId: r.skillId, level: r.level, count: 0, unitIds: [] };
-        row.count += s.count;
-        row.unitIds.push(r.unitId);
-        out.set(key, row);
-      }
-    }
-    return [...out.values()].sort((a, b) => b.count - a.count);
-  }
-
-  /** Individual gaps: each person below their own target. */
-  function trainingNeeds(emps: Employee[]) {
-    const out: { employeeId: string; skillId: string; target: number; level: number | null; gap: number; category: GapCategory; action: "train" | "develop" | "assess"; interest: boolean; mandatory: boolean }[] = [];
+  /** Individual gaps: each person below their own target, or not assessed yet. */
+  function individualGaps(emps: Employee[]) {
+    const out: { employeeId: string; skillId: string; target: number; level: number | null; gap: number; category: GapCategory; interest: boolean; mandatory: boolean }[] = [];
     for (const e of emps) {
       for (const sid of requiredSkillIds(e)) {
         const c = cell(e, sid);
         if (c.target == null || c.met) continue;
         if (c.level == null) {
-          out.push({ employeeId: e.id, skillId: sid, target: c.target, level: null, gap: c.target, category: c.category, action: "assess", interest: c.interest, mandatory: c.mandatory });
+          out.push({ employeeId: e.id, skillId: sid, target: c.target, level: null, gap: c.target, category: c.category, interest: c.interest, mandatory: c.mandatory });
         } else if (c.gap! > 0) {
-          out.push({ employeeId: e.id, skillId: sid, target: c.target, level: c.level, gap: c.gap!, category: c.category, action: c.gap === 1 ? "train" : "develop", interest: c.interest, mandatory: c.mandatory });
+          out.push({ employeeId: e.id, skillId: sid, target: c.target, level: c.level, gap: c.gap!, category: c.category, interest: c.interest, mandatory: c.mandatory });
         }
       }
     }
@@ -778,9 +678,8 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     demands,
     coverage,
     coverageIn,
-    recommendations,
-    hiringPlan,
-    trainingNeeds,
+    shortNeeds,
+    individualGaps,
     calibration,
     kpis,
     unitHeatmap,

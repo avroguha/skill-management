@@ -16,7 +16,7 @@ export function LoginForm({ providers, demo, error }: {
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"local" | "sso" | null>(null);
-  const [message, setMessage] = useState<string | null>(error ? "Single sign-on did not complete. Try again or use a local account." : null);
+  const [message, setMessage] = useState<string | null>(error === "NOT_ALLOWED" ? "Signed in at your company, but you are not one of the people this app is for. Ask an administrator." : error ? "Single sign-on did not complete. Try again or use a local account." : null);
   const [ssoEmail, setSsoEmail] = useState("");
 
   async function signIn(e: React.FormEvent<HTMLFormElement>) {

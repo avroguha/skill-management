@@ -17,7 +17,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const main: NavItem[] = v.canSeeOrg ? [
     { href: "/", label: "Overview", icon: "overview" },
-    { href: "/gaps", label: "Gaps & actions", icon: "gaps" },
+    { href: "/org", label: "Org chart", icon: "org" },
+    { href: "/gaps", label: "Gaps", icon: "gaps" },
     { href: "/people", label: "People", icon: "people" },
     { href: "/skills", label: "Skills", icon: "skills" },
   ] : [];

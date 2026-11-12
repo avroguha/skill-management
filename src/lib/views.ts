@@ -1,5 +1,6 @@
 // Shapes engine results into the plain, serialisable props the view components take.
-import type { Engine, Recommendation } from "@/lib/engine/engine";
+import type { Coverage, Engine } from "@/lib/engine/engine";
+import type { NeedView } from "@/components/needs";
 import type { Viewer } from "@/lib/server";
 import type { UnitOption } from "@/components/filter-bar";
 import type { PeopleHeatmapData, UnitHeatmapData } from "@/components/heatmap";
@@ -76,16 +77,21 @@ export function peopleHeatmapData(engine: Engine, unitId: string, o: { categoryI
   };
 }
 
-export function describeRecommendation(engine: Engine, r: Recommendation) {
-  const name = (id: string) => engine.empById.get(id)?.name ?? "?";
+/** A short team need for NeedList: names of who holds it, links to drill in. */
+export function needView(engine: Engine, c: Coverage, levelName: (n: number) => string): NeedView {
   return {
-    unit: engine.unitById.get(r.unitId)?.name ?? "",
-    skill: engine.skillLabel(r.skillId),
-    steps: r.steps.map((s) => ({
-      action: s.action,
-      count: s.count,
-      who: s.people.map(name),
-      units: (s.units ?? []).map((u) => ({ name: engine.unitById.get(u.unitId)?.name ?? "", spare: u.spare })),
-    })),
+    key: `${c.unitId}|${c.skillId}`,
+    unit: engine.unitById.get(c.unitId)?.name ?? "",
+    unitHref: withParams("/", { unit: c.unitId, view: "people" }),
+    skill: engine.skillLabel(c.skillId),
+    skillHref: `/skills/${c.skillId}?unit=${c.unitId}`,
+    level: c.level,
+    levelName: levelName(c.level),
+    count: c.count,
+    headcount: c.headcount,
+    critical: c.critical,
+    spof: c.spof,
+    explicit: c.explicit,
+    holders: c.holders.map((id) => engine.empById.get(id)?.name ?? "?"),
   };
 }

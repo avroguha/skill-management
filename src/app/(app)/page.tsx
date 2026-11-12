@@ -1,6 +1,6 @@
 // Overview: the executive and manager landing page. KPI tiles, the heatmap for the
 // chosen unit (units x categories, or people x skills at team level), the top gaps
-// with their train / develop / move / hire plan, the trend, and rating calibration.
+// (capability only), the trend, and rating calibration.
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
@@ -9,9 +9,9 @@ import { FilterBar, UnitPicker, SelectFilter, SegmentFilter, SwitchFilter, Clear
 import { KpiTiles, Section } from "@/components/kpi";
 import { UnitHeatmap, PeopleHeatmap, HeatLegend, Empty } from "@/components/heatmap";
 import { TrendChart } from "@/components/charts";
-import { RecommendationList, type RecView } from "@/components/actions";
+import { NeedList } from "@/components/needs";
 import { requireOrgViewer, getEngine, scopeUnit, param, type SearchParams } from "@/lib/server";
-import { unitOptions, unitHeatmapData, peopleHeatmapData, describeRecommendation, withParams } from "@/lib/views";
+import { unitOptions, unitHeatmapData, peopleHeatmapData, needView, withParams } from "@/lib/views";
 import { fmtPct } from "@/lib/format";
 
 export const metadata = { title: "Overview" };
@@ -49,15 +49,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Sea
   const delta = prev != null && k.onTargetPct != null ? k.onTargetPct - prev : null;
 
   const inCategory = (sid: string) => !categoryId || engine.skillById.get(sid)?.categoryId === categoryId;
-  const recs = engine.recommendations(unitId).filter((r) => inCategory(r.skillId));
-  const recViews: RecView[] = recs.slice(0, 8).map((r) => {
-    const d = describeRecommendation(engine, r);
-    return {
-      key: `${r.unitId}|${r.skillId}`, unit: d.unit, unitHref: withParams("/", { unit: r.unitId, view: "people" }),
-      skill: d.skill, skillHref: `/skills/${r.skillId}`, level: r.level, levelName: levelNames[r.level],
-      count: r.count, headcount: r.headcount, critical: r.critical, backupOnly: r.backupOnly, explicit: r.explicit, steps: d.steps,
-    };
-  });
+  const needs = engine.shortNeeds(unitId).filter((c) => inCategory(c.skillId))
+    .slice(0, 8).map((c) => needView(engine, c, (n) => levelNames[n]));
   const calibration = engine.calibration(unitId).slice(0, 5);
 
   const thresholds = { greenAt: engine.settings.greenAt, amberAt: engine.settings.amberAt };
@@ -118,11 +111,11 @@ export default async function OverviewPage({ searchParams }: { searchParams: Sea
       <div className="grid gap-5 lg:grid-cols-3">
         <Section
           className="lg:col-span-2"
-          title="Top gaps and what to do"
-          description="Team needs that are short, worst first. Train before develop, move before hire."
+          title="Where teams are thin"
+          description="Team needs with fewer people at the level than needed, or only one. Worst first."
           actions={<Link href={withParams("/gaps", { unit: unitId, category: categoryId })} className="text-xs text-muted-foreground hover:text-foreground">All gaps →</Link>}
         >
-          <RecommendationList items={recViews} />
+          <NeedList items={needs} />
         </Section>
         <div className="grid content-start gap-5">
           <Section title="Trend" description="Share of required skill ratings on target, monthly">

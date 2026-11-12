@@ -43,7 +43,7 @@ test("seeding twice changes nothing", async () => {
   assert.equal(users.filter((u) => u.username === "admin").length, 1);
 });
 
-test("the demo tells a story: critical gaps, single points of failure, a hiring need", async () => {
+test("the demo tells a story: critical gaps, single points of failure, short needs", async () => {
   const db = await getDb();
   const ds = await loadDatasetFrom(db);
   const e = createEngine(ds);
@@ -53,9 +53,9 @@ test("the demo tells a story: critical gaps, single points of failure, a hiring 
   assert.ok(k.onTargetPct! > 30 && k.onTargetPct! < 90, `on target ${k.onTargetPct}`);
   assert.ok(k.spof > 0, "some single points of failure");
   assert.ok(k.pendingValidation > 0, "some ratings awaiting validation");
-  const recs = e.recommendations(root.id);
-  assert.ok(recs.some((r) => r.primary === "hire"), "at least one hire");
-  assert.ok(recs.some((r) => r.steps.some((st) => st.action === "train")), "at least one train");
+  const needs = e.shortNeeds(root.id);
+  assert.ok(needs.some((n) => n.critical), "a team need nobody covers");
+  assert.ok(needs.some((n) => n.shortfall > 0 && !n.critical), "a team need partly covered");
   const heat = e.unitHeatmap(root.id);
   assert.deepEqual(heat.rows.map((r) => r.name).sort(), ["Direct members", "Operations", "Technology"]);
 });

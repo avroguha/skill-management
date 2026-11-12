@@ -12,6 +12,8 @@ import { withParams } from "@/lib/views";
 import { fmtPct } from "@/lib/format";
 import { PersonSkills, type SkillRow } from "./person-skills";
 import { TrainingPlans } from "./training-plans";
+import { PersonAvatar } from "@/components/person-avatar";
+import { photoUrls } from "@/lib/photos";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -66,7 +68,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <PageHeader
-        title={e.name}
+        title={<span className="flex items-center gap-3"><PersonAvatar name={e.name} src={(await photoUrls()).get(id) ?? null} className="size-10" />{e.name}</span>}
         description={[e.title, unit?.name, e.location].filter(Boolean).join(" · ")}
         crumbs={v.canSeeOrg && unit ? [
           ...[...engine.ancestors(unit.id), unit].filter((u) => v.allUnits || v.unitIds.has(u.id))

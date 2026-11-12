@@ -30,7 +30,8 @@ test("the Dockerfile bakes in no site location and persists no proxy, registry o
     if (!l.trimEnd().endsWith("\\")) inEnv = false;
   }
   assert.ok(envLines.length > 0);
-  for (const line of envLines) assert.ok(!/(proxy|NPM_REGISTRY|NPM_TOKEN|APT_MIRROR)/i.test(line), `persisted: ${line}`);
+  // NODE_USE_ENV_PROXY only tells fetch to honour a runtime proxy; it holds no address
+  for (const line of envLines) assert.ok(!/(proxy|NPM_REGISTRY|NPM_TOKEN|APT_MIRROR)/i.test(line.replace("NODE_USE_ENV_PROXY=1", "")), `persisted: ${line}`);
 });
 
 test("every pulled image goes through IMAGE_REGISTRY, is pinned by digest, and the pin is at least 72 hours old", () => {
@@ -136,6 +137,10 @@ test("work.env and home.env define the same keys, everything compose requires, a
     assert.match(work[k], /avro\.com/, `work.env ${k} should be an avro.com placeholder`);
   }
   assert.match(work.DATA_DIR, /^\.\.\//, "work data lives outside the code folder");
+  // the ServiceNow sync goes out through the site's proxy at work, directly at home
+  assert.match(code(read("docker-compose.yml")), /HTTPS_PROXY: \$\{RUNTIME_HTTPS_PROXY\?/);
+  assert.equal(home.RUNTIME_HTTPS_PROXY, "");
+  assert.match(work.RUNTIME_HTTPS_PROXY, /avro\.com/);
   assert.match(work.APP_URL, /^https:\/\//, "at work the app is reached over https");
 });
 

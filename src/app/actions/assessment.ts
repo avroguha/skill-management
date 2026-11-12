@@ -4,7 +4,7 @@
 //  - Submitting sends a rating to the manager unless the manager has already
 //    validated it, the person's own level is unchanged since, and it is not stale.
 //  - Validating at 4 (Advanced) or 5 (Expert) needs a line of evidence: those
-//    are the levels hire / no-hire decisions rest on.
+//    are the levels the organisation relies on most.
 //  - Nobody validates their own ratings.
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
