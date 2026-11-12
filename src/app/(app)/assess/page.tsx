@@ -14,6 +14,9 @@ export default async function AssessPage() {
     return (<><PageHeader title="Self-assessment" /><Empty>Your account is not linked to an employee record, so there is nothing to assess. An administrator links accounts in Admin › Users.</Empty></>);
   }
   const engine = await getEngine();
+  if (engine.isTop(v.employee)) {
+    return (<><PageHeader title="Self-assessment" /><Empty>At the top of the organisation there are no skills to assess: nothing is required of you, and you are not counted in any team figure. My team shows how the people below you are doing.</Empty></>);
+  }
   const db = await getDb();
   const [levels, ratings, cycles] = await Promise.all([
     db.select().from(schema.proficiencyLevel).orderBy(asc(schema.proficiencyLevel.level)),

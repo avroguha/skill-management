@@ -76,11 +76,11 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             .map((u): { label: string; href?: string } => ({ label: u.name, href: withParams("/", { unit: u.id }) })),
           { label: e.name },
         ] : undefined}
-        actions={self ? <Button asChild><Link href="/assess"><PencilLine />Update my self-assessment</Link></Button>
+        actions={self ? (engine.isTop(e) ? undefined : <Button asChild><Link href="/assess"><PencilLine />Update my self-assessment</Link></Button>)
           : v.isAdmin && e.active ? <ViewAsButton employeeId={e.id} name={e.name} /> : undefined}
       />
       <KpiTiles items={[
-        { label: "Role fit", value: fmtPct(profile.roleFitPct), hint: `${profile.met} of ${profile.required} required skills on target`, tone: profile.roleFitPct == null ? "default" : profile.roleFitPct >= engine.settings.greenAt ? "good" : profile.roleFitPct >= engine.settings.amberAt ? "warn" : "bad" },
+        { label: "Role fit", value: fmtPct(profile.roleFitPct), hint: engine.isTop(e) ? "top of the organisation: no skills required" : `${profile.met} of ${profile.required} required skills on target`, tone: profile.roleFitPct == null ? "default" : profile.roleFitPct >= engine.settings.greenAt ? "good" : profile.roleFitPct >= engine.settings.amberAt ? "warn" : "bad" },
         { label: "Role", value: role?.name ?? "–", hint: grade ? `Grade ${grade.name}` : "No grade" },
         { label: "Manager", value: manager?.name ?? "–", hint: manager?.title ?? "" },
         { label: "Awaiting validation", value: String(profile.cells.filter((c) => c.status === "submitted").length), hint: canManage ? "validate on the Validate page" : "with the manager", href: canManage ? withParams("/validate", { person: id }) : undefined },

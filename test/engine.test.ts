@@ -34,7 +34,9 @@ function dataset(over: Partial<Dataset> = {}): Dataset {
       { id: "ops", name: "Ops", kind: "team", parentId: "acme", managerId: null },
     ],
     employees: [
-      { id: "ann", name: "Ann", email: "ann@x", title: "", unitId: "cloud", roleId: "eng", gradeId: "sr", managerId: null, active: true },
+      // the head of the organisation: not asked for skills (engine isTop)
+      { id: "tia", name: "Tia", email: "tia@x", title: "CEO", unitId: null, roleId: null, gradeId: null, managerId: null, active: true },
+      { id: "ann", name: "Ann", email: "ann@x", title: "", unitId: "cloud", roleId: "eng", gradeId: "sr", managerId: "tia", active: true },
       { id: "bob", name: "Bob", email: "bob@x", title: "", unitId: "cloud", roleId: "eng", gradeId: "jr", managerId: "ann", active: true },
       { id: "cat", name: "Cat", email: "cat@x", title: "", unitId: "cloud", roleId: "eng", gradeId: "jr", managerId: "ann", active: true },
       { id: "dan", name: "Dan", email: "dan@x", title: "", unitId: "data", roleId: "eng", gradeId: "jr", managerId: "ann", active: true },
@@ -256,4 +258,28 @@ test("a cycle in the unit tree does not hang", () => {
   const e = createEngine(ds);
   assert.ok(e.subtreeUnitIds("plat").length <= 5);
   assert.ok(e.ancestors("cloud").length <= 5);
+});
+
+test("the top of the organisation is not asked for skills; nobody else is exempt", () => {
+  const base = dataset();
+  // give the head a role and a personal target: still nothing is required of her
+  const ds = dataset({
+    employees: base.employees.map((e) => (e.id === "tia" ? { ...e, roleId: "eng", gradeId: "sr", unitId: "acme" } : e)),
+    employeeTargets: [{ employeeId: "tia", skillId: "sql", target: 4, reason: "test" }],
+  });
+  const eng = createEngine(ds);
+  const tia = eng.empById.get("tia")!;
+  assert.equal(eng.isTop(tia), true, "no manager, people below");
+  assert.deepEqual(eng.requiredSkillIds(tia), []);
+  assert.equal(eng.targetFor(tia, "ec2"), null);
+  assert.equal(eng.targetFor(tia, "sql"), null, "a personal target does not apply either");
+  assert.equal(eng.aggregate([tia]).required, 0, "counted in no roll-up");
+  assert.ok(!eng.individualGaps([tia]).length, "no gaps");
+  assert.equal(eng.isTop(eng.empById.get("ann")!), false, "Ann has a manager");
+  assert.equal(eng.isTop(eng.empById.get("fay")!), false, "no manager but nobody below: still assessed");
+  assert.ok(eng.requiredSkillIds(eng.empById.get("fay")!).length > 0);
+
+  // the manager left: the person below becomes the top
+  const left = createEngine(dataset({ employees: base.employees.map((e) => (e.id === "tia" ? { ...e, active: false } : e)) }));
+  assert.equal(left.isTop(left.empById.get("ann")!), true);
 });

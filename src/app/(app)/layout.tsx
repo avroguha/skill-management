@@ -26,9 +26,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const mine: NavItem[] = [];
   if (v.employee) {
     mine.push({ href: `/people/${v.employee.id}`, label: "My profile", icon: "profile" });
-    mine.push({ href: "/assess", label: "Self-assessment", icon: "assess" });
+    // the top of the organisation is not asked for skills
+    if (!engine.isTop(v.employee)) mine.push({ href: "/assess", label: "Self-assessment", icon: "assess" });
   }
-  if (v.role === "manager" && v.unitIds.size) mine.push({ href: "/team", label: "My team", icon: "team" });
+  // anyone with people reporting to them (or leading a unit) gets My team, whatever their role
+  if (v.employee && engine.reportsOf(v.employee.id).some((e) => e.active)) mine.push({ href: "/team", label: "My team", icon: "team" });
   if (v.reportIds.size) mine.push({ href: "/validate", label: "Validate", icon: "validate", badge: pending || undefined });
   if (!v.canSeeOrg) mine.push({ href: "/skills", label: "Skill catalogue", icon: "skills" });
   const admin: NavItem[] = v.isAdmin ? [{ href: "/admin", label: "Admin", icon: "admin" }] : [];

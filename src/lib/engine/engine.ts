@@ -277,7 +277,18 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
 
   // ---- targets and levels ------------------------------------------------------
 
+  // The top of the organisation is not asked for skills: nobody above them (no manager, or
+  // one who has left) and people below them (direct reports, or the top unit they lead).
+  // No targets, nothing required, so they count in no roll-up, gap or implied team need.
+  const leadsPeople = new Set(ds.employees.filter((e) => e.active && e.managerId).map((e) => e.managerId!));
+  const leadsTopUnit = new Set(ds.units.filter((u) => !u.parentId && u.managerId).map((u) => u.managerId!));
+  function isTop(emp: Employee): boolean {
+    const mgr = emp.managerId ? empById.get(emp.managerId) : undefined;
+    return (!mgr || !mgr.active) && (leadsPeople.has(emp.id) || leadsTopUnit.has(emp.id));
+  }
+
   function targetFor(emp: Employee, skillId: string): Target | null {
+    if (isTop(emp)) return null;
     const byGrade = emp.roleId ? roleIndex.get(emp.roleId) : undefined;
     const graded = emp.gradeId ? byGrade?.get(emp.gradeId)?.get(skillId) : undefined;
     const general = byGrade?.get("")?.get(skillId);
@@ -296,6 +307,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
   function requiredSkillIds(emp: Employee): string[] {
     const hit = requiredMemo.get(emp.id);
     if (hit) return hit;
+    if (isTop(emp)) { requiredMemo.set(emp.id, []); return []; }
     const ids = new Set<string>();
     const byGrade = emp.roleId ? roleIndex.get(emp.roleId) : undefined;
     for (const id of byGrade?.get("")?.keys() ?? []) ids.add(id);
@@ -668,6 +680,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     ancestors,
     reportsOf,
     managedUnitIds,
+    isTop,
     isRateable,
     targetFor,
     requiredSkillIds,

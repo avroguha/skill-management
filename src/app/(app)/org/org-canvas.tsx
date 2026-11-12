@@ -134,6 +134,24 @@ function Canvas({ nodes, rootIds, thresholds, href, focus }: {
   });
   const [selected, setSelected] = useState<string | null>(null);
   const after = useRef<{ center?: string; fit?: boolean; fitIds?: string[] } | null>(null);
+
+  // refit when the chart's width changes a lot (a phone turned, a window resized), unless
+  // the viewer has already moved or zoomed it themselves
+  const box = useRef<HTMLElement>(null);
+  const touched = useRef(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let width = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (Math.abs(w - width) < 80) return;
+      width = w;
+      if (!touched.current) rf.fitView({ padding: 0.15, maxZoom: 1 });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rf]);
   const openRef = useRef(expanded);
   openRef.current = expanded;
 
@@ -201,7 +219,7 @@ function Canvas({ nodes, rootIds, thresholds, href, focus }: {
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <section className="h-[min(78svh,860px)] min-h-[420px] min-w-0 overflow-hidden rounded-lg border bg-card" aria-label="Org chart">
+      <section ref={box} className="h-[min(78svh,860px)] min-h-[420px] min-w-0 overflow-hidden rounded-lg border bg-card" aria-label="Org chart">
         <ReactFlow
           nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
           colorMode={mounted && resolvedTheme === "dark" ? "dark" : "light"}
@@ -210,6 +228,7 @@ function Canvas({ nodes, rootIds, thresholds, href, focus }: {
           fitView fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
           onNodeClick={(_, node) => onSelect(node.id)}
           onPaneClick={() => setSelected(null)}
+          onMoveStart={(e) => { if (e) touched.current = true; /* a person moved it, not code */ }}
           attributionPosition="top-right"
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--border)" />

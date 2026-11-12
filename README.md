@@ -37,7 +37,13 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 
 - **People × skills heatmap** for their team: each cell is the person's validated level, coloured by the gap to *their own* target. A dot means awaiting validation, faded means stale, hatched means not assessed. The bottom row is **team coverage** (people at the level / people needed), flagging single points of failure.
 - **Validate**: a queue of submitted self-assessments. Accept the level or change it, add evidence (required for Advanced and Expert), or send it back with a note. Bulk-accept per person.
-- **My team**: say what the team needs, as in "2 people at Proficient in Kubernetes". The team need is on top of what the roles already expect. If the skill is not in the catalogue, add it there and then.
+- **My team** (in the menu for anyone with people reporting to them, whatever their role): one place for what a manager looks after. Tiles show people, on target, assessed (and how many have not started), ratings waiting for them, and team needs that are short; buttons open Validate, the team heatmap and the org chart from them. Tabs:
+  - **People**: direct reports, or everyone below, with role, how far each self-assessment has got, ratings waiting for validation, on-target share, skills below target, open training and the last rating; a link opens a report's own team.
+  - **Skills needed**: say what the team needs, as in "2 people at Proficient in Kubernetes", on top of what the roles already expect (also listed). A skill missing from the catalogue can be added there and then.
+  - **Gaps**: team needs that are short or rest on one person, and each person below their own target.
+  - **Training**: the training plans booked for the team.
+
+  Managers of managers, executives and administrators can switch to any team they can see.
 - **Per-person targets**: set a different required level for one person, with a reason, without touching the role standard.
 - **Training plans** against a gap, with a link, due date and status.
 
@@ -85,6 +91,7 @@ All of it is computed in one place (`src/lib/engine/engine.ts`), unit-tested, ne
 - **Levels 0–5**: No Exposure, Awareness, Working, Proficient, Advanced, Expert. "Not assessed" is blank, never 0.
 - **Self and validated are separate.** Management views use the manager-validated level by default; a toggle shows self-assessed levels instead.
 - **Required level precedence**: a manager's per-person target, then the role's target for the person's grade, then the role's target for all grades. The source is shown on hover.
+- **The top of the organisation is not asked for skills**: the person with nobody above them and people below them has nothing required, gets no self-assessment, and is counted in no roll-up, gap or implied team need. Someone with no manager and nobody below is still assessed (their record is usually just incomplete).
 - **Only leaf skills are rated.** A skill with active sub-skills is a heading.
 - **Gap = target − level.** 0 or less meets the target; 1 is minor; 2 is significant. 3 or more is critical, and so is a target of Proficient or higher held at Awareness or below.
 - **Roll-ups count pairs, never average levels.** "On target" is the share of (person, required skill) pairs at or above target, so a department's number is exactly the sum of its teams.
