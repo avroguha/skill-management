@@ -62,7 +62,13 @@ async function openLiteDir(PGlite: typeof import("@electric-sql/pglite").PGlite,
   return client;
 }
 
-async function open(): Promise<{ db: DB; migrate: () => Promise<void>; close: () => Promise<void> }> {
+type Opened = { db: DB; migrate: () => Promise<void>; close: () => Promise<void>; exclusive: <T>(fn: () => Promise<T>) => Promise<T> };
+
+/** Start-up work (backup before upgrade, migrations, first seed) runs in one worker at a
+ *  time: several app workers or containers on one database would otherwise race. */
+const START_LOCK = 727_274_001;
+
+async function open(): Promise<Opened> {
   const url = process.env.DATABASE_URL;
   if (url) {
     const pg = await import("pg");
@@ -77,6 +83,16 @@ async function open(): Promise<{ db: DB; migrate: () => Promise<void>; close: ()
       db,
       migrate: () => migratePg(db, { migrationsFolder: migrationsFolder() }),
       close: () => pool.end(),
+      exclusive: async (fn) => {
+        const client = await pool.connect();
+        try {
+          await client.query("select pg_advisory_lock($1)", [START_LOCK]);
+          return await fn();
+        } finally {
+          await client.query("select pg_advisory_unlock($1)", [START_LOCK]).catch(() => undefined);
+          client.release();
+        }
+      },
     };
   }
   const { PGlite } = await import("@electric-sql/pglite");
@@ -89,6 +105,7 @@ async function open(): Promise<{ db: DB; migrate: () => Promise<void>; close: ()
     db: lite as unknown as DB,
     migrate: () => migrateLite(lite, { migrationsFolder: migrationsFolder() }),
     close: () => client.close(),
+    exclusive: (fn) => fn(), // one process owns an embedded database
   };
 }
 
@@ -119,15 +136,15 @@ export async function getDb(): Promise<DB> {
     return holder.db;
   }
   opening ??= (async () => {
-    const { db, migrate, close } = await open();
+    const { db, migrate, close, exclusive } = await open();
     holder.db = db;
     holder.close = close;
-    holder.ready = (async () => {
+    holder.ready = exclusive(async () => {
       await backupBeforeUpgrade(db);
       await migrate();
       const { seed } = await import("./seed.ts");
       await seed(db);
-    })();
+    });
     await holder.ready;
     return db;
   })();
