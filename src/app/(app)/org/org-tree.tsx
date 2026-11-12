@@ -1,73 +1,18 @@
 "use client";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Info, Search, Loader2, ArrowUpRight, Network, List } from "lucide-react";
+import { ChevronRight, Search, Network, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PersonAvatar } from "@/components/person-avatar";
-import { orgInfo, type OrgInfo } from "@/app/actions/org";
 import { BAND_CLASS, pctBand } from "@/lib/status";
 import { cn } from "@/lib/utils";
-import { OrgChart } from "./org-chart";
+import { OrgCanvas } from "./org-canvas";
+import { InfoPopover } from "./org-info";
 
 export interface OrgNode {
   id: string; name: string; title: string; managerId: string | null; level: number;
   direct: number; total: number; onTargetPct: number | null; photo: string | null;
-}
-
-export function InfoPanel({ id, name, className }: { id: string; name: string; className?: string }) {
-  const [info, setInfo] = useState<OrgInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-  return (
-    <Popover onOpenChange={(o) => {
-      if (o && !info) start(async () => {
-        const r = await orgInfo(id);
-        if (r.ok) setInfo(r.info); else setError(r.error);
-      });
-    }}>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className={cn("size-7", className)} aria-label={`Details for ${name}`}><Info className="size-3.5" /></Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-80 text-sm" align="end" collisionPadding={16}>
-        {pending && <p className="flex items-center gap-2 text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading…</p>}
-        {error && <p className="text-destructive">{error}</p>}
-        {info && (
-          <div className="grid gap-3">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-              {([
-                ["Login", info.userName], ["E-mail", info.email], ["Manager", info.manager], ["Team", info.unit],
-                ["Role", info.role && `${info.role}${info.grade ? ` · ${info.grade}` : ""}`], ["Location", info.location],
-                ["Source", info.source === "directory" ? `ServiceNow${info.userType ? ` (${info.userType})` : ""}` : "added here"],
-                ["Synced", info.syncedAt && new Date(info.syncedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })],
-              ] as const).filter(([, val]) => val).map(([k, val]) => (
-                <div key={k} className="contents"><dt className="text-muted-foreground">{k}</dt><dd className="truncate">{val}</dd></div>
-              ))}
-            </dl>
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-md bg-muted p-1.5"><div className="text-sm font-semibold tabular">{info.total}</div><div className="text-[10px] text-muted-foreground">below</div></div>
-              <div className="rounded-md bg-muted p-1.5"><div className="text-sm font-semibold tabular">{info.onTargetPct ?? "–"}{info.onTargetPct != null && "%"}</div><div className="text-[10px] text-muted-foreground">on target</div></div>
-              <div className="rounded-md bg-muted p-1.5"><div className="text-sm font-semibold tabular">{info.assessedPct ?? "–"}{info.assessedPct != null && "%"}</div><div className="text-[10px] text-muted-foreground">assessed</div></div>
-            </div>
-            {info.weakest.length > 0 && (
-              <div>
-                <div className="mb-1 text-xs font-medium">Weakest skills{info.total ? " below" : ""}</div>
-                <ul className="grid gap-0.5 text-xs">{info.weakest.map((w) => <li key={w.skill} className="flex justify-between gap-2"><span className="truncate">{w.skill}</span><span className="tabular text-muted-foreground">{w.met}/{w.required} on target</span></li>)}</ul>
-              </div>
-            )}
-            {info.shortNeeds.length > 0 && (
-              <div>
-                <div className="mb-1 text-xs font-medium">Team needs short</div>
-                <ul className="grid gap-0.5 text-xs">{info.shortNeeds.map((n) => <li key={n.skill + n.unit} className="flex justify-between gap-2"><span className="truncate">{n.skill}</span><span className="tabular text-muted-foreground">{n.have} of {n.need}</span></li>)}</ul>
-              </div>
-            )}
-            <Link href={`/people/${id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">Open profile<ArrowUpRight className="size-3" /></Link>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 export type OrgView = "chart" | "list";
@@ -87,6 +32,7 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
   }, [nodes, byId]);
   const [open, setOpen] = useState<Set<string>>(() => new Set(rootIds));
   const [query, setQuery] = useState("");
+  const [focus, setFocus] = useState<{ id: string; at: number } | null>(null);
   const levels = useMemo(() => {
     const m = new Map<number, number>();
     for (const n of nodes) m.set(n.level, (m.get(n.level) ?? 0) + 1);
@@ -125,7 +71,7 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
             title={n.total ? "Required skill ratings on target, them and everyone below" : "Their required skill ratings on target"}>
             {n.onTargetPct == null ? "·" : `${n.onTargetPct}%`}
           </span>
-          <InfoPanel id={n.id} name={n.name} />
+          <InfoPopover id={n.id} name={n.name} />
         </div>
         {isOpen && children.length > 0 && (
           <ul>{children.map((c) => <Row key={c.id} n={c} depth={depth + 1} />)}</ul>
@@ -144,7 +90,7 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
             <ul className="absolute z-20 mt-1 w-80 rounded-md border bg-popover p-1 shadow-md">
               {matches.map((m) => (
                 <li key={m.id}>
-                  <Link href={href(m.id)} onClick={() => setQuery("")} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
+                  <Link href={href(m.id)} onClick={(e) => { setQuery(""); if (view === "chart") { e.preventDefault(); setFocus({ id: m.id, at: Date.now() }); } }} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-accent">
                     <PersonAvatar name={m.name} src={m.photo} className="size-6" />
                     <span className="min-w-0 flex-1 truncate">{m.name}<span className="ml-1 text-xs text-muted-foreground">{m.title}</span></span>
                     <span className="text-[10px] text-muted-foreground">L{m.level}</span>
@@ -173,14 +119,14 @@ export function OrgTree({ nodes, rootIds, thresholds, view, viewHref }: {
         </>}
       </div>
       {view === "chart" ? (
-        <OrgChart rootIds={rootIds} byId={byId} kids={kids} href={href} thresholds={thresholds} />
+        <OrgCanvas nodes={nodes} rootIds={rootIds} href={href} thresholds={thresholds} focus={focus} />
       ) : (
         <div className="rounded-lg border bg-card p-2">
           <ul>{rootIds.map((id) => byId.get(id)).filter((n): n is OrgNode => !!n).map((n) => <Row key={n.id} n={n} depth={0} />)}</ul>
         </div>
       )}
       <p className="text-xs text-muted-foreground">
-        {view === "chart" ? "Blue cards lead a team; olive cards are team members. The chart shows three levels: click a name to go further down. " : ""}Level L0 is the top of the organisation. The percentage is the share of required skill ratings at or above target, for the person and everyone below them.
+        {view === "chart" ? "Blue cards lead a team; olive cards are team members. Drag to move, scroll or pinch to zoom; the number under a card shows or hides their people. " : ""}Level L0 is the top of the organisation. The percentage is the share of required skill ratings at or above target, for the person and everyone below them.
       </p>
     </div>
   );

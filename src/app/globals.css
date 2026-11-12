@@ -184,3 +184,21 @@
   background-image: repeating-linear-gradient(135deg, var(--hatch) 0 1px, transparent 1px 5px);
 }
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* React Flow (the org chart canvas) in the app's own colours, both themes */
+.react-flow,
+.react-flow.dark {
+  --xy-background-color: transparent;
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--accent);
+  --xy-controls-button-color: var(--foreground);
+  --xy-controls-button-color-hover: var(--foreground);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  --xy-minimap-background-color: var(--card);
+  --xy-minimap-mask-background-color: color-mix(in oklch, var(--muted) 70%, transparent);
+  --xy-minimap-mask-stroke-color: var(--border);
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__minimap { border: 1px solid var(--border); border-radius: 0.5rem; overflow: hidden; }
+.react-flow__controls { border-radius: 0.5rem; overflow: hidden; border: 1px solid var(--border); }

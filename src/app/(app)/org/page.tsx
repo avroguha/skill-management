@@ -98,7 +98,7 @@ export default async function OrgPage({ searchParams }: { searchParams: SearchPa
   return (
     <>
       <PageHeader title="Org chart" crumbs={crumbs.length > 1 ? crumbs : undefined}
-        description="Who reports to whom, at what level, and how much of what they need everyone below them has. Click a name to go inside; “i” for details." />
+        description="Who reports to whom, at what level, and how much of what they need everyone below them has. Select a person for their details." />
       <OrgTree key={tops.join(",") + view} nodes={nodes} rootIds={tops} view={view} viewHref={viewHref}
         thresholds={{ greenAt: engine.settings.greenAt, amberAt: engine.settings.amberAt }} />
     </>

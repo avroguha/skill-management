@@ -25,7 +25,7 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 - **Overview** for any unit: five tiles (on target, assessed, critical gaps, single points of failure, stale), a **heatmap of units by skill category** coloured by the share of required skill ratings on target, **where teams are thin** (team needs with fewer people at the level than needed, worst first), a 12-month **trend**, and **rating calibration** by team.
 - Click a unit to go down a level; click a category to see its skills. Every filter (unit, category, role, validated or self-assessed levels) lives in the URL, so any view can be bookmarked or shared.
 - **Gaps**: team needs that are short, skills only one person holds, people below their targets, required skills nobody has rated, and training booked. It shows capability only, with no hiring or staffing advice. Every table exports to CSV.
-- **Org chart**: who reports to whom, drawn as cards with a photo, name, designation, level (L0 is the top), headcount and how much of what everyone below them needs is on target. The top person is centred with their direct reports as columns below, and each column's own reports hang down a bracket. Blue cards lead a team; olive cards are team members. It shows three levels at a time: click a name to go inside, or press **i** for the important details (login, e-mail, manager, team, source, weakest skills below them, team needs that are short). When the columns do not fit the screen, the same levels are drawn as a vertical tree. A **List** view opens the whole tree to any level instead.
+- **Org chart**: who reports to whom, on a canvas you drag to move and scroll or pinch to zoom, with zoom and fit buttons and a minimap. Each card shows the photo, name, designation, level (L0 is the top), headcount and how much of what everyone below them needs is on target; blue cards lead a team, olive cards are team members. Connectors turn at rounded right angles, and a team of three or more individual contributors stacks in two columns either side of a spine, so a wide team does not stretch the chart. It opens on three levels; the number under a card shows or hides that person's people, and **Expand all** opens everyone. Selecting a person highlights the line up to the top and shows their details (login, e-mail, manager, team, source, weakest skills below them, team needs that are short) in a panel beside the chart, or a sheet from the bottom on a phone, never on top of the cards. Searching for a person opens the way down to them. A **List** view keeps the expandable list. The layout follows the pattern of established org chart tools (d3-org-chart, BALKAN OrgChart JS, GoJS); the canvas is React Flow.
 
 | Team heatmap | Gaps |
 |---|---|
@@ -214,6 +214,7 @@ npm run typecheck
 | `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, tampered and wrongly signed assertions refused |
 | `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, teams from the chain, no empty second top, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs |
 | `test/servicenow.live.test.ts` | The same walk against a real instance; skipped unless `SN_LIVE_INSTANCE`, `SN_LIVE_USER`, `SN_LIVE_PASS` and `SN_LIVE_ROOT` are set |
+| `test/org-layout.test.ts` | The org chart geometry: nothing overlaps, parents centred over their people, two-column blocks for large teams, one connector per reporting line |
 | `test/deployment.test.ts` | The deployment rules: pins, the 72-hour gate, no site locations baked in, no secrets in env files, anchored ignores |
 
 Schema changes: edit `src/db/schema.ts`, then `npm run db:generate` and commit the new file in `drizzle/`.
@@ -229,6 +230,7 @@ Next.js 16 (App Router, standalone output) · TypeScript · Tailwind CSS 4 · sh
 
 ```
 src/lib/engine/engine.ts   every number: targets, gaps, roll-ups, coverage
+src/lib/org-layout.ts      the org chart geometry (cards, connectors, compact teams)
 src/lib/directory/         ServiceNow client, the sync, its settings and schedule
 src/lib/sso-gate.ts        who may sign in with SSO, test capture, linking
 src/db/                    schema, migrations, first-start seed, demo organisation
