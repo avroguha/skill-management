@@ -49,7 +49,7 @@ export function Integrations({ base, datasets, clients }: { base: string; datase
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => setOpen(true)}><Plus />New integration</Button>
+        <Button onClick={() => setOpen(true)} data-tour="integrations-new"><Plus />New integration</Button>
         <span className="text-xs text-muted-foreground">Read-only. Manager-validated levels. Every key is limited to the datasets chosen for it.</span>
       </div>
 

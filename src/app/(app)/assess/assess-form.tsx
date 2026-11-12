@@ -64,7 +64,7 @@ export function AssessForm({ rows: initial, catalogue, levels, categories, draft
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
-      <div className="rounded-lg border bg-card">
+      <div className="rounded-lg border bg-card" data-tour="assess-form">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
           <div className="text-sm">
             {todo ? <span><b className="tabular">{todo}</b> required skill{todo === 1 ? "" : "s"} not rated yet</span> : <span>Every required skill has a rating.</span>}
@@ -72,7 +72,7 @@ export function AssessForm({ rows: initial, catalogue, levels, categories, draft
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => send(false)} disabled={pending || !dirty.size}><Save />Save draft</Button>
-            <Button size="sm" onClick={() => send(true)} disabled={pending}>{pending ? <Loader2 className="animate-spin" /> : <Send />}Submit for validation</Button>
+            <Button size="sm" onClick={() => send(true)} disabled={pending} data-tour="assess-submit">{pending ? <Loader2 className="animate-spin" /> : <Send />}Submit for validation</Button>
           </div>
         </div>
         <div className="divide-y">

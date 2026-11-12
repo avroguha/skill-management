@@ -14,6 +14,7 @@ export const ADMIN_SECTIONS = [
   { href: "/admin/directory", label: "ServiceNow" },
   { href: "/admin/sso", label: "Single sign-on" },
   { href: "/admin/integrations", label: "Integrations" },
+  { href: "/admin/feedback", label: "Help & feedback" },
   { href: "/admin/data", label: "Import & export" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/audit", label: "Audit log" },
@@ -22,7 +23,7 @@ export const ADMIN_SECTIONS = [
 export function AdminNav() {
   const pathname = usePathname();
   return (
-    <nav aria-label="Admin sections" className="-mx-1 flex gap-1 overflow-x-auto border-b pb-px lg:flex-wrap lg:overflow-visible">
+    <nav aria-label="Admin sections" data-tour="admin-nav" className="-mx-1 flex gap-1 overflow-x-auto border-b pb-px lg:flex-wrap lg:overflow-visible">
       {ADMIN_SECTIONS.map((s) => {
         const active = s.href === "/admin" ? pathname === "/admin" : pathname.startsWith(s.href);
         return (

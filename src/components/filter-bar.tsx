@@ -120,7 +120,7 @@ export function ClearFilters({ keys }: { keys: string[] }) {
 }
 
 export function FilterBar({ children }: { children: React.ReactNode }) {
-  return <div className="mb-4 flex flex-wrap items-center gap-2">{children}</div>;
+  return <div className="mb-4 flex flex-wrap items-center gap-2" data-tour="filters">{children}</div>;
 }
 
 /** A search box kept in the URL (?q=): the server filters, so it finds people beyond what one page shows. */

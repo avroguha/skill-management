@@ -113,7 +113,7 @@ export function OrgTree({ nodes: initial, rootIds, thresholds, view, viewHref, t
   };
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4" data-tour="org-chart">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search className="pointer-events-none absolute top-2.5 left-2.5 size-3.5 text-muted-foreground" />

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  LayoutDashboard, Sparkles, Crosshair, Users, Shapes, ClipboardCheck, PencilLine, Settings, UserRound,
+  LayoutDashboard, Sparkles, CircleHelp, Crosshair, Users, Shapes, ClipboardCheck, PencilLine, Settings, UserRound,
   LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound,
 } from "lucide-react";
 import {
@@ -20,16 +20,17 @@ import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/format";
 
 const ICONS = {
-  overview: LayoutDashboard, talent: Sparkles, gaps: Crosshair, people: Users, skills: Shapes,
+  overview: LayoutDashboard, talent: Sparkles, help: CircleHelp, gaps: Crosshair, people: Users, skills: Shapes,
   validate: ClipboardCheck, assess: PencilLine, admin: Settings, profile: UserRound, team: UsersRound, org: Network,
 };
 
 export interface NavItem { href: string; label: string; icon: keyof typeof ICONS; badge?: number }
 
-export function AppSidebar({ main, mine, admin, user }: {
+export function AppSidebar({ main, mine, admin, support, user }: {
   main: NavItem[];
   mine: NavItem[];
   admin: NavItem[];
+  support: NavItem[];
   user: { name: string; role: string; detail: string };
 }) {
   const pathname = usePathname();
@@ -47,7 +48,7 @@ export function AppSidebar({ main, mine, admin, user }: {
             return (
               <SidebarMenuItem key={item.href}>
                 <SidebarMenuButton asChild isActive={active(item.href)} tooltip={item.label}>
-                  <Link href={item.href}>
+                  <Link href={item.href} data-tour={`nav-${item.icon}`}>
                     <Icon />
                     <span>{item.label}</span>
                   </Link>
@@ -84,6 +85,7 @@ export function AppSidebar({ main, mine, admin, user }: {
         {group(null, main)}
         {group("You", mine)}
         {group("Setup", admin)}
+        {group("Support", support)}
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>

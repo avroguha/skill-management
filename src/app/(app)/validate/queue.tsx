@@ -47,7 +47,7 @@ export function ValidateQueue({ people: initial, levels }: { people: QueuePerson
   });
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4" data-tour="validate-queue">
       <p className="text-sm text-muted-foreground">
         The level starts at what the person chose. Change it where you see it differently. Advanced (4) and Expert (5) need a line of evidence.
         To send one back, write what to look at again in the note, then “Send back”.

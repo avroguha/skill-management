@@ -179,7 +179,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         { label: "Team needs short", value: unitId ? String(short.length) : "–", hint: unitId ? `${single.length} rest on one person` : "no team unit", tone: short.length ? "bad" : "default", href: link({ tab: "gaps" }) },
       ]} />
       <Tabs defaultValue={tab}>
-        <TabsList className="mb-3 flex-wrap">
+        <TabsList className="mb-3 flex-wrap" data-tour="team-tabs">
           <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="skills">Skills needed</TabsTrigger>
           <TabsTrigger value="gaps">Gaps</TabsTrigger>

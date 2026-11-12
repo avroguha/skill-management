@@ -18,7 +18,7 @@ const TONE: Record<NonNullable<Kpi["tone"]>, string> = {
 
 export function KpiTiles({ items }: { items: Kpi[] }) {
   return (
-    <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+    <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-tour="kpis">
       {items.map((k) => {
         const body = (
           <>
