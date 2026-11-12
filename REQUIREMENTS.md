@@ -45,7 +45,8 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | A schedule keeps the data up to date | Sync every N hours, or **Sync now**; history of every run |
 | Fields user_name, display name, e-mail, manager | Mapped fields, plus designation (`title`) and any extra columns to keep |
 | SSO: a test pop-up showing the fields the provider returns, a mapping to identify the person, an Activate button | Admin › Single sign-on: Test sign-in (captured, nobody signed in), Identify the person with Check, Activate |
-| A tree view of who is at what level: high-level info, "i" for important info, click to go inside | Org chart: levels L0 and down, headcount and on-target share, the **i** panel, drill-in with breadcrumbs |
+| A tree view of who is at what level: high-level info, "i" for important info, click to go inside; drawn like an org-chart template (cards with photos, connectors) | Org chart: cards with photo, level, headcount and on-target share, connectors, three levels at a time, the **i** panel, drill-in with breadcrumbs; a List view |
+| Everything fluid and responsive on any screen; nothing breaking | No page scrolls sideways from 320 px to wide desktop (checked page by page); the org chart and validation queue change layout on narrow screens |
 | User images from a URL with a placeholder replaced by a field of the user | Admin › ServiceNow › Photos: `{user_name}`, `{email}`, `{sys_id}` or a kept column |
 | No reliable source of organisation data | Teams are built from the manager chain (switchable); other organisation sources are not built |
 | Only team and individual capability; no suggestions such as hiring | The train / develop / move / hire plan is removed; Overview and Gaps report capability only |

@@ -33,6 +33,35 @@ function readPasswordFile(): string | undefined {
   return fs.readFileSync(f, "utf8").trim();
 }
 
+/**
+ * The embedded development database. PGlite cannot recover a data folder left behind by a
+ * killed process ("PGlite failed to initialize properly"), and a stopped dev server is
+ * usually killed. So: close it cleanly on Ctrl+C / stop, and if it still cannot be opened,
+ * move the folder aside (never delete it), say so loudly, and start a fresh one, which the
+ * seed fills again. Development only: production uses PostgreSQL through DATABASE_URL.
+ */
+async function openLiteDir(PGlite: typeof import("@electric-sql/pglite").PGlite, dir: string) {
+  fs.mkdirSync(dir, { recursive: true });
+  let client = new PGlite(dir);
+  try {
+    await client.waitReady;
+  } catch (err) {
+    if (process.env.NODE_ENV === "production") throw err;
+    await client.close().catch(() => undefined);
+    const aside = `${dir}-broken-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    fs.renameSync(dir, aside);
+    console.error(`[db] The development database in ${dir} could not be opened (${(err as Error).message}); `
+      + `this happens after the dev server is killed. It was moved to ${aside} and a fresh one is being created.`);
+    fs.mkdirSync(dir, { recursive: true });
+    client = new PGlite(dir);
+    await client.waitReady;
+  }
+  const shut = () => { void client.close().catch(() => undefined).finally(() => process.exit(0)); };
+  process.once("SIGINT", shut);
+  process.once("SIGTERM", shut);
+  return client;
+}
+
 async function open(): Promise<{ db: DB; migrate: () => Promise<void>; close: () => Promise<void> }> {
   const url = process.env.DATABASE_URL;
   if (url) {
@@ -54,7 +83,7 @@ async function open(): Promise<{ db: DB; migrate: () => Promise<void>; close: ()
   const { drizzle: drizzleLite } = await import("drizzle-orm/pglite");
   const { migrate: migrateLite } = await import("drizzle-orm/pglite/migrator");
   const dir = process.env.PGLITE_DIR ?? path.join(process.env.DATA_DIR ?? path.join(process.cwd(), ".data"), "pglite");
-  const client = dir === "memory://" ? new PGlite() : (fs.mkdirSync(dir, { recursive: true }), new PGlite(dir));
+  const client = dir === "memory://" ? new PGlite() : await openLiteDir(PGlite, dir);
   const lite = drizzleLite(client, { schema });
   return {
     db: lite as unknown as DB,

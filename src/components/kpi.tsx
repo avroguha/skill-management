@@ -24,7 +24,7 @@ export function KpiTiles({ items }: { items: Kpi[] }) {
           <>
             <div className="text-xs text-muted-foreground">{k.label}</div>
             <div className={cn("mt-1 text-2xl font-semibold tracking-tight tabular", TONE[k.tone ?? "default"])}>{k.value}</div>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">{k.hint}</div>
+            <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:line-clamp-1">{k.hint}</div>
           </>
         );
         return k.href ? (

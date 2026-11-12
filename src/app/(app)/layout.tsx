@@ -43,11 +43,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <SidebarProvider defaultOpen={defaultOpen}>
       <AppSidebar main={main} mine={mine} admin={admin}
         user={{ name: v.name, role: roleLabel, detail: v.username ? `@${v.username} · ${v.email}` : v.email }} />
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur">
           <SidebarTrigger className="-ml-1" />
         </header>
-        <div className="mx-auto w-full max-w-[1600px] p-4 md:p-6">{children}</div>
+        <div className="mx-auto w-full min-w-0 max-w-[1600px] p-4 md:p-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

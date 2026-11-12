@@ -8,6 +8,9 @@
     --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
     --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
     --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+    --color-org-lead: var(--org-lead);
+    --color-org-member: var(--org-member);
+    --color-org-line: var(--org-line);
     --color-status-meets: var(--status-meets);
     --color-status-meets-fg: var(--status-meets-fg);
     --color-status-minor: var(--status-minor);
@@ -85,6 +88,10 @@
     --chart-4: oklch(0.6 0.1 320);
     --chart-5: oklch(0.65 0.02 265);
     /* gap status: lightness steps as well as hue, so it reads in greyscale */
+    /* org chart cards: managers deep blue, team members olive; white text passes 4.5:1 on both */
+    --org-lead: oklch(0.42 0.09 245);
+    --org-member: oklch(0.47 0.06 105);
+    --org-line: oklch(0.55 0.02 260);
     --status-meets: oklch(0.86 0.1 155);
     --status-meets-fg: oklch(0.3 0.08 155);
     --status-minor: oklch(0.9 0.11 92);
@@ -131,6 +138,9 @@
     --chart-3: oklch(0.8 0.11 80);
     --chart-4: oklch(0.68 0.1 320);
     --chart-5: oklch(0.6 0.02 265);
+    --org-lead: oklch(0.45 0.09 245);
+    --org-member: oklch(0.45 0.06 105);
+    --org-line: oklch(0.6 0.02 260);
     --status-meets: oklch(0.5 0.1 155);
     --status-meets-fg: oklch(0.96 0.03 155);
     --status-minor: oklch(0.72 0.12 88);
@@ -158,6 +168,11 @@
     }
   body {
     @apply bg-background text-foreground;
+    }
+  /* Fluid layout: a grid item may shrink below its content (a wide table then scrolls in
+     its own box instead of stretching the page). An explicit min-w-* utility still wins. */
+  .grid > * {
+    min-width: 0;
     }
   html {
     @apply font-sans;

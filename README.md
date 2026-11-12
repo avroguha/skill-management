@@ -25,7 +25,7 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 - **Overview** for any unit: five tiles (on target, assessed, critical gaps, single points of failure, stale), a **heatmap of units by skill category** coloured by the share of required skill ratings on target, **where teams are thin** (team needs with fewer people at the level than needed, worst first), a 12-month **trend**, and **rating calibration** by team.
 - Click a unit to go down a level; click a category to see its skills. Every filter (unit, category, role, validated or self-assessed levels) lives in the URL, so any view can be bookmarked or shared.
 - **Gaps**: team needs that are short, skills only one person holds, people below their targets, required skills nobody has rated, and training booked. It shows capability only, with no hiring or staffing advice. Every table exports to CSV.
-- **Org chart**: who reports to whom, with each person's level (L0 is the top) and how much of what everyone below them needs is on target. Open the tree to any level, search for a person, press **i** for the important details (login, e-mail, manager, team, source, weakest skills below them, team needs that are short), or click a name to go inside that part of the organisation.
+- **Org chart**: who reports to whom, drawn as cards with a photo, name, designation, level (L0 is the top), headcount and how much of what everyone below them needs is on target. The top person is centred with their direct reports as columns below, and each column's own reports hang down a bracket. Blue cards lead a team; olive cards are team members. It shows three levels at a time: click a name to go inside, or press **i** for the important details (login, e-mail, manager, team, source, weakest skills below them, team needs that are short). When the columns do not fit the screen, the same levels are drawn as a vertical tree. A **List** view opens the whole tree to any level instead.
 
 | Team heatmap | Gaps |
 |---|---|
@@ -71,6 +71,8 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 | Audit log | Every change: who, what, when |
 
 ![Roles and targets](docs/screenshots/09-admin-roles.png)
+
+Every page is fluid, from a 320-pixel phone to a wide desktop: nothing makes the page scroll sideways. Wide grids (heatmaps, long tables) scroll inside their own card, and the validation queue turns each rating into its own block on a phone.
 
 Dark mode follows the system and can be set per person:
 

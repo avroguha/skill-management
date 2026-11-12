@@ -6,7 +6,7 @@ import { Empty } from "@/components/heatmap";
 import { requireOrgViewer, getEngine, param, type SearchParams } from "@/lib/server";
 import { photoUrls } from "@/lib/photos";
 import { pct } from "@/lib/engine/engine";
-import { OrgTree, type OrgNode } from "./org-tree";
+import { OrgTree, type OrgNode, type OrgView } from "./org-tree";
 
 export const metadata = { title: "Org chart" };
 
@@ -54,6 +54,13 @@ export default async function OrgPage({ searchParams }: { searchParams: SearchPa
   };
 
   const requested = param(sp, "root");
+  const view: OrgView = param(sp, "view") === "list" ? "list" : "chart";
+  const keep = view === "list" ? "&view=list" : "";
+  const rootPart = requested ? `root=${requested}` : "";
+  const viewHref: Record<OrgView, string> = {
+    chart: `/org${rootPart ? `?${rootPart}` : ""}`,
+    list: `/org?${rootPart ? `${rootPart}&` : ""}view=list`,
+  };
   const tops = requested && visibleIds.has(requested)
     ? [requested]
     : visible.filter((e) => !e.managerId || !visibleIds.has(e.managerId)).map((e) => e.id);
@@ -78,13 +85,13 @@ export default async function OrgPage({ searchParams }: { searchParams: SearchPa
   nodes.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
 
   // the path from the visible top down to the requested person
-  const crumbs: { label: string; href?: string }[] = [{ label: "Org chart", href: "/org" }];
+  const crumbs: { label: string; href?: string }[] = [{ label: "Org chart", href: view === "list" ? "/org?view=list" : "/org" }];
   if (requested && visibleIds.has(requested)) {
     const path: string[] = [];
     let cur: string | null | undefined = engine.empById.get(requested)?.managerId;
     const guard = new Set<string>();
     while (cur && visibleIds.has(cur) && !guard.has(cur)) { guard.add(cur); path.unshift(cur); cur = engine.empById.get(cur)?.managerId; }
-    for (const p of path) crumbs.push({ label: engine.empById.get(p)!.name, href: `/org?root=${p}` });
+    for (const p of path) crumbs.push({ label: engine.empById.get(p)!.name, href: `/org?root=${p}${keep}` });
     crumbs.push({ label: engine.empById.get(requested)!.name });
   }
 
@@ -92,7 +99,8 @@ export default async function OrgPage({ searchParams }: { searchParams: SearchPa
     <>
       <PageHeader title="Org chart" crumbs={crumbs.length > 1 ? crumbs : undefined}
         description="Who reports to whom, at what level, and how much of what they need everyone below them has. Click a name to go inside; “i” for details." />
-      <OrgTree key={tops.join(",")} nodes={nodes} rootIds={tops} thresholds={{ greenAt: engine.settings.greenAt, amberAt: engine.settings.amberAt }} />
+      <OrgTree key={tops.join(",") + view} nodes={nodes} rootIds={tops} view={view} viewHref={viewHref}
+        thresholds={{ greenAt: engine.settings.greenAt, amberAt: engine.settings.amberAt }} />
     </>
   );
 }

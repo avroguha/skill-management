@@ -65,59 +65,59 @@ export function ValidateQueue({ people: initial, levels }: { people: QueuePerson
                 {pending ? <Loader2 className="animate-spin" /> : <CheckCheck />}Validate {easy.length === p.items.length ? "all" : `${easy.length}`} as shown
               </Button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] table-fixed text-sm">
-                <colgroup>
-                  <col className="w-[26%]" /><col className="w-16" /><col className="w-16" /><col className="w-16" />
-                  <col className="w-48" /><col /><col className="w-56" />
-                </colgroup>
-                <thead>
-                  <tr className="text-xs text-muted-foreground">
-                    <th className="px-4 py-2 text-left font-medium">Skill</th>
-                    <th className="px-2 text-center font-medium">Target</th>
-                    <th className="px-2 text-center font-medium">Before</th>
-                    <th className="px-2 text-center font-medium">Self</th>
-                    <th className="px-2 text-left font-medium">Validated level</th>
-                    <th className="px-2 text-left font-medium">Evidence and note</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {p.items.map((it) => {
-                    const d = get(p.id, it);
-                    const needsEvidence = d.level >= EVIDENCE_FROM && !d.evidence.trim();
-                    return (
-                      <tr key={it.skillId} className="border-t align-top">
-                        <td className="px-4 py-2">
-                          <div className="font-medium">{it.skill}</div>
-                          {it.comment && <div className="text-xs text-muted-foreground">“{it.comment}”</div>}
-                        </td>
-                        <td className="px-2 py-2 text-center"><Chip n={it.target} /></td>
-                        <td className="px-2 py-2 text-center"><Chip n={it.previous} /></td>
-                        <td className="px-2 py-2 text-center"><Chip n={it.self} /></td>
-                        <td className="px-2 py-2">
-                          <Select value={String(d.level)} onValueChange={(x) => set(p.id, it, { level: Number(x) })}>
-                            <SelectTrigger size="sm" className={cn("h-8 w-40", d.level !== it.self && "border-primary/60")}><SelectValue /></SelectTrigger>
-                            <SelectContent>{levels.map((l) => <SelectItem key={l.level} value={String(l.level)}>{l.level} {l.name}</SelectItem>)}</SelectContent>
-                          </Select>
-                        </td>
-                        <td className="grid gap-1 px-2 py-2">
-                          <Input value={d.evidence} onChange={(e) => set(p.id, it, { evidence: e.target.value })}
-                            placeholder={d.level >= EVIDENCE_FROM ? "Evidence (required)" : "Evidence (optional)"}
-                            aria-invalid={needsEvidence} className="h-8 text-sm" />
-                          <Input value={d.comment} onChange={(e) => set(p.id, it, { comment: e.target.value })} placeholder="Note to them (optional)" className="h-8 text-sm" />
-                        </td>
-                        <td className="px-4 py-2">
-                          <div className="flex gap-1">
-                            <Button size="sm" disabled={pending || needsEvidence} onClick={() => accept(p, [it])}><Check />Validate</Button>
-                            <Button size="sm" variant="ghost" disabled={pending || !d.comment.trim()} onClick={() => sendBack(p, it)} title="Write a note first"><Undo2 />Send back</Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            {/* A table on wide screens; below lg each rating is its own block, so nothing
+                has to scroll sideways on a phone. One markup, two layouts. */}
+            <div role="table" aria-label={`Ratings from ${p.name}`} className="text-sm">
+              <div role="row" className="hidden px-4 py-2 text-xs text-muted-foreground lg:grid lg:grid-cols-[minmax(0,1.3fr)_4rem_4rem_4rem_11rem_minmax(0,1.5fr)_13rem] lg:gap-x-2">
+                <span role="columnheader" className="font-medium">Skill</span>
+                <span role="columnheader" className="text-center font-medium">Target</span>
+                <span role="columnheader" className="text-center font-medium">Before</span>
+                <span role="columnheader" className="text-center font-medium">Self</span>
+                <span role="columnheader" className="font-medium">Validated level</span>
+                <span role="columnheader" className="font-medium">Evidence and note</span>
+                <span role="columnheader" />
+              </div>
+              <div role="rowgroup" className="divide-y lg:border-t">
+              {p.items.map((it) => {
+                const d = get(p.id, it);
+                const needsEvidence = d.level >= EVIDENCE_FROM && !d.evidence.trim();
+                return (
+                  <div role="row" key={it.skillId}
+                    className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1.3fr)_4rem_4rem_4rem_11rem_minmax(0,1.5fr)_13rem] lg:items-start lg:gap-x-2 lg:py-2">
+                    <div role="cell" className="min-w-0">
+                      <div className="font-medium">{it.skill}</div>
+                      {it.comment && <div className="text-xs text-muted-foreground">“{it.comment}”</div>}
+                    </div>
+                    {/* the three levels side by side on a phone, labelled there */}
+                    <div className="flex gap-4 lg:contents">
+                      {([["Target", it.target], ["Before", it.previous], ["Self", it.self]] as const).map(([label, n]) => (
+                        <div role="cell" key={label} className="flex items-center gap-1.5 lg:justify-center">
+                          <span className="text-xs text-muted-foreground lg:hidden">{label}</span><Chip n={n} />
+                        </div>
+                      ))}
+                    </div>
+                    <div role="cell">
+                      <Select value={String(d.level)} onValueChange={(x) => set(p.id, it, { level: Number(x) })}>
+                        <SelectTrigger size="sm" aria-label={`Validated level for ${it.skill}`}
+                          className={cn("h-8 w-full sm:w-44 lg:w-full", d.level !== it.self && "border-primary/60")}><SelectValue /></SelectTrigger>
+                        <SelectContent>{levels.map((l) => <SelectItem key={l.level} value={String(l.level)}>{l.level} {l.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div role="cell" className="grid gap-1">
+                      <Input value={d.evidence} onChange={(e) => set(p.id, it, { evidence: e.target.value })}
+                        placeholder={d.level >= EVIDENCE_FROM ? "Evidence (required)" : "Evidence (optional)"}
+                        aria-label={`Evidence for ${it.skill}`} aria-invalid={needsEvidence} className="h-8 text-sm" />
+                      <Input value={d.comment} onChange={(e) => set(p.id, it, { comment: e.target.value })}
+                        placeholder="Note to them (optional)" aria-label={`Note about ${it.skill}`} className="h-8 text-sm" />
+                    </div>
+                    <div role="cell" className="flex flex-wrap gap-1 lg:justify-end">
+                      <Button size="sm" disabled={pending || needsEvidence} onClick={() => accept(p, [it])}><Check />Validate</Button>
+                      <Button size="sm" variant="ghost" disabled={pending || !d.comment.trim()} onClick={() => sendBack(p, it)} title="Write a note first"><Undo2 />Send back</Button>
+                    </div>
+                  </div>
+                );
+              })}
+              </div>
             </div>
           </section>
         );
