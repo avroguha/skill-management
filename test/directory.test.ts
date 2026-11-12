@@ -128,6 +128,24 @@ test("a second run updates, deactivates people who left (never deletes), removes
   reset();
 });
 
+test("building teams removes an empty hand-made top unit, keeps one with people in it", async () => {
+  const db = await getDb();
+  const [placeholder] = await db.insert(s.orgUnit).values({ name: "Leftover placeholder", kind: "company" }).returning();
+  const [kept] = await db.insert(s.orgUnit).values({ name: "Hand-made team", kind: "team" }).returning();
+  await db.insert(s.employee).values({ name: "Pat Manual", email: "pat@acme.test", title: "", unitId: kept.id });
+  const run = await runSync(db, sn, config, "manual", "tester");
+  assert.equal(run.status, "ok", run.message);
+  const units = await db.select().from(s.orgUnit);
+  assert.ok(!units.some((u) => u.id === placeholder.id), "the empty top unit is gone: one tree, not two");
+  assert.ok(units.some((u) => u.id === kept.id), "a unit with a person in it is never touched");
+  assert.equal(units.filter((u) => !u.parentId && u.externalKey).length, 1, "the directory tree has one top");
+  const noSync = { ...config, orgFromHierarchy: false };
+  const [again] = await db.insert(s.orgUnit).values({ name: "Built by hand", kind: "company" }).returning();
+  await runSync(db, sn, noSync, "manual", "tester");
+  assert.ok((await db.select().from(s.orgUnit)).some((u) => u.id === again.id), "with teams not built from the chain, units are left alone");
+  reset();
+});
+
 test("a failed run is recorded with its reason, and changes nothing", async () => {
   const db = await getDb();
   const before = (await db.select().from(s.employee)).length;

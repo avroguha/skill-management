@@ -231,6 +231,21 @@ async function rebuildUnits(tx: DB, r: FetchResult, localId: Map<string, string>
     await tx.delete(s.orgUnit).where(inArray(s.orgUnit.id, stale));
   }
 
+  // A hand-made top-level unit that holds nothing (no people, no units below, no team
+  // needs) is a leftover - for example the placeholder "Remove the organisation" leaves -
+  // and would show as a second top next to the tree built here. Units with anything in
+  // them are never touched.
+  const empty = await tx.select({ id: s.orgUnit.id }).from(s.orgUnit).where(sql`${s.orgUnit.externalKey} is null
+    and ${s.orgUnit.parentId} is null
+    and not exists (select 1 from ${s.employee} e where e.unit_id = ${s.orgUnit.id})
+    and not exists (select 1 from ${s.orgUnit} c where c.parent_id = ${s.orgUnit.id})
+    and not exists (select 1 from ${s.unitRequirement} r where r.unit_id = ${s.orgUnit.id})`);
+  if (empty.length) {
+    const ids = empty.map((u) => u.id);
+    await tx.delete(s.snapshot).where(inArray(s.snapshot.unitId, ids));
+    await tx.delete(s.orgUnit).where(inArray(s.orgUnit.id, ids));
+  }
+
   return managers.length;
 }
 
