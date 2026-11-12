@@ -28,6 +28,7 @@ export const metadata = { title: "My team" };
 const TABS = ["people", "skills", "gaps", "training"] as const;
 // What one page sends at most; tiles always count everyone, and a lower manager narrows the list.
 const MAX_ROWS = 1000;
+const MAX_NEEDS = 200;
 
 export default async function TeamPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
@@ -109,9 +110,10 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
   const agg = engine.aggregate(everyone);
   const waitingForMe = engine.submittedCount(everyone.filter((e) => v.reportIds.has(e.id)).map((e) => e.id));
   const notStarted = everyone.filter((e) => !engine.isTop(e) && !engine.ratingsOf(e.id).some((r) => r.selfLevel != null)).length;
-  const needsAll = unitId ? engine.shortNeeds(unitId).map((c) => needView(engine, c, levelName)) : [];
-  const short = needsAll.filter((n) => n.count < n.headcount);
-  const single = needsAll.filter((n) => n.count >= n.headcount && n.spof);
+  const needsRaw = unitId ? engine.shortNeeds(unitId) : [];
+  const short = needsRaw.filter((n) => n.count < n.headcount);
+  const single = needsRaw.filter((n) => n.count >= n.headcount && n.spof);
+  const shown = (list: typeof needsRaw) => list.slice(0, MAX_NEEDS).map((c) => needView(engine, c, levelName));
 
   // ---- skills needed ----
   const covBySkill = new Map((unitId ? engine.demands(unitId) : []).map((d) => [d.skillId, engine.coverage(d)]));
@@ -242,10 +244,12 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
           {unitId && (
             <div className="grid gap-5 lg:grid-cols-2">
               <Section title="Team needs short" description="Fewer people at the level than the team needs. Worst first.">
-                <NeedList items={short} empty="No team need is short." />
+                <NeedList items={shown(short)} empty="No team need is short." />
+                {short.length > MAX_NEEDS && <p className="mt-2 text-xs text-muted-foreground">The worst {MAX_NEEDS} of {short.length.toLocaleString("en-GB")}. Open a manager lower down to see the rest.</p>}
               </Section>
               <Section title="Resting on one person" description="Enough people on paper, but only one holds it.">
-                <NeedList items={single} empty="No team need rests on one person." />
+                <NeedList items={shown(single)} empty="No team need rests on one person." />
+                {single.length > MAX_NEEDS && <p className="mt-2 text-xs text-muted-foreground">{MAX_NEEDS} of {single.length.toLocaleString("en-GB")}. Open a manager lower down to see the rest.</p>}
               </Section>
             </div>
           )}

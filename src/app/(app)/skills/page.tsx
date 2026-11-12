@@ -60,17 +60,24 @@ export default async function SkillsPage({ searchParams }: { searchParams: Searc
   }
 
   const unitId = scopeUnit(v, param(sp, "unit"));
-  const members = unitId ? engine.membersOf(unitId) : [];
-  const cov = unitId ? engine.coverageIn(unitId) : [];
+  const summary = unitId ? engine.skillSummaryIn(unitId) : new Map();
+  const covBySkill = new Map<string, { short: number; spof: number }>();
+  for (const x of unitId ? engine.coverageIn(unitId) : []) {
+    const c = covBySkill.get(x.skillId) ?? { short: 0, spof: 0 };
+    if (x.shortfall > 0) c.short += 1;
+    if (x.spof) c.spof += 1;
+    covBySkill.set(x.skillId, c);
+  }
   const rows = rateable.map((s) => {
-    const agg = engine.aggregate(members, (sid) => sid === s.id);
-    const proficient = members.filter((e) => (engine.levelOf(e.id, s.id).level ?? -1) >= 3).length;
-    const interested = members.filter((e) => engine.rating(e.id, s.id)?.interest).length;
-    const c = cov.filter((x) => x.skillId === s.id);
+    const sum = summary.get(s.id);
+    const agg = sum?.agg ?? { required: 0, pct: null };
+    const proficient = sum?.proficient ?? 0;
+    const interested = sum?.interested ?? 0;
+    const c = covBySkill.get(s.id);
     return {
       skill: engine.skillLabel(s.id), href: `/skills/${s.id}${unitId ? `?unit=${unitId}` : ""}`, category: catName(s.categoryId),
       required: agg.required || null, onTarget: agg.pct, proficient: proficient || null, interested: interested || null,
-      short: c.filter((x) => x.shortfall > 0).length || null, spof: c.filter((x) => x.spof).length || null,
+      short: c?.short || null, spof: c?.spof || null,
       status: s.status,
     };
   });

@@ -402,6 +402,39 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     return { people: emps.length, required, met, assessed, stale, critical, pct: pct(met, required) };
   }
 
+  /** Per skill across a unit, in one pass: the same roll-up as aggregate() for that skill
+   *  alone, plus how many hold it at level 3 or above and how many want it. */
+  const skillSummaryMemo = new Map<string, Map<string, { agg: Aggregate; proficient: number; interested: number }>>();
+  function skillSummaryIn(scopeUnitId: string) {
+    const hit = skillSummaryMemo.get(scopeUnitId);
+    if (hit) return hit;
+    const emps = membersOf(scopeUnitId);
+    const out = new Map<string, { agg: Aggregate; proficient: number; interested: number }>();
+    const at = (sid: string) => {
+      let x = out.get(sid);
+      if (!x) { x = { agg: { people: emps.length, required: 0, met: 0, assessed: 0, stale: 0, critical: 0, pct: null }, proficient: 0, interested: 0 }; out.set(sid, x); }
+      return x;
+    };
+    for (const e of emps) {
+      for (const sid of requiredSkillIds(e)) {
+        const c = cell(e, sid);
+        const a = at(sid).agg;
+        a.required += 1;
+        if (c.met) a.met += 1;
+        if (c.level != null) a.assessed += 1;
+        if (c.stale) a.stale += 1;
+        if (c.category === "critical" && c.mandatory) a.critical += 1;
+      }
+      for (const r of ratingsByEmp.get(e.id) ?? []) {
+        if ((levelOf(r).level ?? -1) >= 3) at(r.skillId).proficient += 1;
+        if (r.interest) at(r.skillId).interested += 1;
+      }
+    }
+    for (const x of out.values()) x.agg.pct = pct(x.agg.met, x.agg.required);
+    skillSummaryMemo.set(scopeUnitId, out);
+    return out;
+  }
+
   // ---- team demand and coverage ---------------------------------------------------
 
   const demandMemo = new Map<string, Demand[]>();
@@ -759,6 +792,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     peopleHeatmap,
     personProfile,
     skillStats,
+    skillSummaryIn,
     find,
     skillLabel,
     snapshotRows,

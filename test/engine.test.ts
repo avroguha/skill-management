@@ -283,3 +283,30 @@ test("the top of the organisation is not asked for skills; nobody else is exempt
   const left = createEngine(dataset({ employees: base.employees.map((e) => (e.id === "tia" ? { ...e, active: false } : e)) }));
   assert.equal(left.isTop(left.empById.get("ann")!), true);
 });
+
+test("precomputed views agree with the plain ones: per-skill summary, reporting lines", () => {
+  const ds = dataset();
+  const e = createEngine(ds);
+  e.warm();
+  for (const root of e.roots) {
+    const members = e.membersOf(root.id);
+    const sum = e.skillSummaryIn(root.id);
+    for (const s of ds.skills) {
+      const plain = e.aggregate(members, (sid) => sid === s.id);
+      const pre = sum.get(s.id)?.agg ?? { required: 0, met: 0, assessed: 0, pct: null };
+      assert.deepEqual([pre.required, pre.met, pre.assessed, pre.pct], [plain.required, plain.met, plain.assessed, plain.pct], s.name);
+      const proficient = members.filter((m) => (e.levelOf(m.id, s.id).level ?? -1) >= 3).length;
+      assert.equal(sum.get(s.id)?.proficient ?? 0, proficient, `${s.name} proficient`);
+    }
+  }
+  // reporting lines: the indexed walk finds what a scan of everyone finds
+  const active = ds.employees.filter((x) => x.active);
+  for (const m of active) {
+    const below = new Set<string>();
+    const stack = [m.id];
+    while (stack.length) { const id = stack.pop()!; for (const x of active) if (x.managerId === id && x.id !== m.id && !below.has(x.id)) { below.add(x.id); stack.push(x.id); } }
+    const got = new Set(e.reportsOf(m.id).map((x) => x.id));
+    for (const id of below) assert.ok(got.has(id), `${m.name}: ${id} below`);
+    assert.deepEqual(e.directReportsOf(m.id).map((x) => x.id).sort(), active.filter((x) => x.managerId === m.id).map((x) => x.id).sort());
+  }
+});
