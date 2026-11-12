@@ -50,6 +50,9 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | Administrators can impersonate a user to see exactly what they see and troubleshoot |  View as on a profile or in Users & access: their exact view, read-only, one hour, banner with Stop viewing, audited under the administrator |
 | People with reports get My team: their people, the skills their team needs, and what else a manager looks after |  My team: tiles; People (direct or everyone below, self-assessment progress, to validate, on target, gaps, training); Skills needed; Gaps; Training |
 | The top-level person does not add any skills |  Engine rule (isTop): nothing required, no self-assessment, not counted in any figure |
+| An admin can clear all data and start from scratch (for a limited test) |  Import & export › Start from scratch: organisation, optionally accounts and history; configuration kept; backup taken first |
+| Export and import of configuration and all data as a backup, and automatic export |  Import & export › Backups: one file with everything, download, restore (stored or uploaded), automatic schedule, safety backups |
+| A change to the website or a redeploy does not impact the database |  Data and backups outside the code folder and image; demo loads once; backup before every database change; deployment test asserts the folders |
 | Everything fluid and responsive on any screen; nothing breaking | No page scrolls sideways from 320 px to wide desktop (checked page by page); the org chart and validation queue change layout on narrow screens |
 | User images from a URL with a placeholder replaced by a field of the user | Admin › ServiceNow › Photos: `{user_name}`, `{email}`, `{sys_id}` or a kept column |
 | No reliable source of organisation data | Teams are built from the manager chain (switchable); other organisation sources are not built |

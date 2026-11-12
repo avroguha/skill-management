@@ -92,6 +92,24 @@ async function open(): Promise<{ db: DB; migrate: () => Promise<void>; close: ()
   };
 }
 
+/**
+ * Before an upgrade changes the database (migrations pending on a database that already has
+ * data), take a full backup. If it cannot be taken, the upgrade stops here: nothing is
+ * changed without a way back.
+ */
+async function backupBeforeUpgrade(db: DB): Promise<void> {
+  const journal = JSON.parse(fs.readFileSync(path.join(migrationsFolder(), "meta", "_journal.json"), "utf8")) as { entries: unknown[] };
+  const { migrationsApplied, saveBackup } = await import("../lib/backup.ts");
+  const applied = await migrationsApplied(db);
+  if (applied === 0 || applied >= journal.entries.length) return;
+  try {
+    const b = await saveBackup(db, "system", "before-upgrade");
+    console.log(`[db] ${journal.entries.length - applied} database change(s) to apply: backed up to ${b.name} first`);
+  } catch (e) {
+    throw new Error(`[db] the backup before upgrading could not be written (${(e as Error).message}); the database was not changed. Make BACKUP_DIR writable and start again.`);
+  }
+}
+
 let opening: Promise<DB> | undefined;
 
 /** The database, migrated and seeded. Safe to call from anywhere, any number of times. */
@@ -105,6 +123,7 @@ export async function getDb(): Promise<DB> {
     holder.db = db;
     holder.close = close;
     holder.ready = (async () => {
+      await backupBeforeUpgrade(db);
       await migrate();
       const { seed } = await import("./seed.ts");
       await seed(db);

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { importData } from "@/app/actions/data";
 import { clearOrganisation } from "@/app/actions/admin";
@@ -69,17 +70,25 @@ export function ImportForm({ kinds }: { kinds: { kind: string; columns: string[]
 
 export function ClearOrganisation() {
   const [confirm, setConfirm] = useState("");
+  const [accounts, setAccounts] = useState(false);
+  const [history, setHistory] = useState(false);
   const [pending, start] = useTransition();
   return (
-    <div className="flex flex-wrap items-end gap-3">
-      <div className="grid gap-1.5">
-        <Label htmlFor="confirm">Type DELETE to confirm</Label>
-        <Input id="confirm" className="w-48" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+    <div className="grid gap-3">
+      <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+        <label className="flex items-center gap-2"><Checkbox checked={accounts} onCheckedChange={(c) => setAccounts(!!c)} />Also remove user accounts (administrators stay)</label>
+        <label className="flex items-center gap-2"><Checkbox checked={history} onCheckedChange={(c) => setHistory(!!c)} />Also clear the audit log and sync history</label>
       </div>
-      <Button variant="destructive" disabled={confirm.trim().toUpperCase() !== "DELETE" || pending} onClick={() => start(async () => {
-        const r = await clearOrganisation(confirm);
-        if (r.ok) { toast.success(r.message ?? "Cleared"); setConfirm(""); } else toast.error(r.error);
-      })}>{pending ? <Loader2 className="animate-spin" /> : <AlertTriangle />}Remove the organisation</Button>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="grid gap-1.5">
+          <Label htmlFor="confirm">Type DELETE to confirm</Label>
+          <Input id="confirm" className="w-48" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        </div>
+        <Button variant="destructive" disabled={confirm.trim().toUpperCase() !== "DELETE" || pending} onClick={() => start(async () => {
+          const r = await clearOrganisation(confirm, { accounts, history });
+          if (r.ok) { toast.success(r.message ?? "Cleared", { duration: 10000 }); setConfirm(""); } else toast.error(r.error);
+        })}>{pending ? <Loader2 className="animate-spin" /> : <AlertTriangle />}Clear and start from scratch</Button>
+      </div>
     </div>
   );
 }

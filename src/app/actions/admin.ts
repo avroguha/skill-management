@@ -11,6 +11,7 @@ import { getDb, schema } from "@/db";
 import { actionViewer, audit, type Viewer } from "@/lib/server";
 import { getAuth, appUrl, MIN_PASSWORD_LENGTH } from "@/lib/auth";
 import { samlProviderBody, DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN } from "@/lib/saml";
+import { saveBackup } from "@/lib/backup";
 import { refreshGate } from "@/lib/sso-gate";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
@@ -485,12 +486,22 @@ export async function deleteSaml(providerId: string): Promise<Result> {
 
 /** Removes the whole organisation (people, units, ratings, roles, taxonomy) but keeps
  *  user accounts, levels and settings: the step from evaluating to going live. */
-export async function clearOrganisation(confirmText: string): Promise<Result> {
+export async function clearOrganisation(confirmText: string, opts: { accounts?: boolean; history?: boolean } = {}): Promise<Result> {
   try {
     const v = await admin();
     if (confirmText.trim().toUpperCase() !== "DELETE") return { ok: false, error: "Type DELETE to confirm." };
     const db = await getDb();
+    // a way back first: if the backup cannot be written, nothing is deleted
+    const safety = await saveBackup(db, v.name, "before-clear");
     await db.transaction(async (tx) => {
+      if (opts.accounts) {
+        // every account but the administrators (their sign-in methods and sessions go with them)
+        await tx.execute(sql`delete from ${schema.user} where coalesce(role, '') <> 'admin'`);
+      }
+      if (opts.history) {
+        await tx.execute(sql`delete from audit_log`);
+        await tx.execute(sql`delete from sync_run`);
+      }
       for (const t of ["training_plan", "rating_event", "rating", "employee_target", "unit_requirement", "role_skill", "snapshot", "assessment_cycle"]) {
         await tx.execute(sql.raw(`delete from ${t}`));
       }
@@ -507,7 +518,7 @@ export async function clearOrganisation(confirmText: string): Promise<Result> {
       if (demo.length) await tx.delete(schema.user).where(inArray(schema.user.id, demo.map((d) => d.id)));
     });
     await refreshGate(db);
-    await audit(v, "clear_organisation", "organisation", null);
-    return done(["/admin", "/admin/data"], "Organisation cleared. Import your own data or build it in Organisation and Taxonomy.");
+    await audit(v, "clear_organisation", "organisation", null, { accounts: !!opts.accounts, history: !!opts.history, safetyBackup: safety.name });
+    return done(["/", "/admin", "/admin/data"], `Cleared. What was there is saved as ${safety.name} (restore it below if needed). Sync from ServiceNow, import, or build the organisation in Admin.`);
   } catch (e) { return fail(e); }
 }

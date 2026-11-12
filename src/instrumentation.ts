@@ -8,6 +8,7 @@ export async function register() {
   const { takeSnapshot } = await import("./lib/snapshots.ts");
   const { syncIfDue } = await import("./lib/directory/schedule.ts");
   const { refreshGate } = await import("./lib/sso-gate.ts");
+  const { backupIfDue } = await import("./lib/backup.ts");
   const db = await getDb();
   const snapshot = async () => {
     try {
@@ -38,7 +39,10 @@ export async function register() {
     setInterval(snapshot, Number(process.env.SNAPSHOT_HOURS || 6) * 3600e3),
     setInterval(directory, 10 * 60e3),
     setInterval(gate, 60e3),
+    // automatic backups (Admin › Import & export): checked every 10 minutes, taken when due
+    setInterval(() => void backupIfDue(db), 10 * 60e3),
   ];
   for (const t of g.__skillsTimers) t.unref?.();
   void directory();
+  void backupIfDue(db);
 }

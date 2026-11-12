@@ -137,6 +137,10 @@ test("work.env and home.env define the same keys, everything compose requires, a
     assert.match(work[k], /avro\.com/, `work.env ${k} should be an avro.com placeholder`);
   }
   assert.match(work.DATA_DIR, /^\.\.\//, "work data lives outside the code folder");
+  assert.match(home.DATA_DIR, /^\.\.\//, "home data lives outside the code folder too: a redeploy replaces the code, never the data");
+  for (const [site, env] of [["work", work], ["home", home]] as const) {
+    assert.match(env.BACKUP_DIR ?? "", /^(\.\.\/|\/)/, `${site}: backups live outside the code folder`);
+  }
   // the ServiceNow sync goes out through the site's proxy at work, directly at home
   assert.match(code(read("docker-compose.yml")), /HTTPS_PROXY: \$\{RUNTIME_HTTPS_PROXY\?/);
   assert.equal(home.RUNTIME_HTTPS_PROXY, "");

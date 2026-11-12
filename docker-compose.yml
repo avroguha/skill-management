@@ -39,6 +39,8 @@ services:
       # ":z" relabels for SELinux hosts and is ignored everywhere else.
       - ${DATA_DIR?set it in the env file}/pgdata:/var/lib/postgresql/data:z
       - ${DATA_DIR?set it in the env file}/secrets:/secrets:z
+      # created here owned by the app user (deploy/db-entrypoint.sh), so the app can write backups
+      - ${BACKUP_DIR?set it in the env file (where backups go)}:/backups:z
       - ./deploy/db-entrypoint.sh:/deploy/db-entrypoint.sh:ro,z
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p $${PGPORT} -U skills -d skills"]
@@ -95,5 +97,9 @@ services:
       # honours it (NODE_USE_ENV_PROXY in the image); the database is on loopback (NO_PROXY).
       HTTPS_PROXY: ${RUNTIME_HTTPS_PROXY?set it in the env file (empty = no proxy)}
       NO_PROXY: ${NO_PROXY?set it in the env file}
+      # Backups (Admin › Import & export): a host folder, never inside the image, so a
+      # redeploy cannot touch them. Put it on another disk or a network share.
+      BACKUP_DIR: /backups
     volumes:
       - ${DATA_DIR?set it in the env file}/secrets:/secrets:ro,z
+      - ${BACKUP_DIR?set it in the env file (where backups go)}:/backups:z

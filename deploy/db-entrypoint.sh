@@ -22,6 +22,12 @@ make_secret /secrets/auth_secret
 chown "${APP_UID:-10001}:${APP_UID:-10001}" /secrets/db_password /secrets/auth_secret
 chmod 0400 /secrets/db_password /secrets/auth_secret
 
+# The backups folder (BACKUP_DIR on the host): writable by the app user only.
+if [ -d /backups ]; then
+    chown "${APP_UID:-10001}:${APP_UID:-10001}" /backups
+    chmod 0700 /backups
+fi
+
 # PostgreSQL reads the password as user postgres, which cannot read the app's copy.
 install -m 0400 -o postgres -g postgres /secrets/db_password /tmp/pg_password
 export POSTGRES_PASSWORD_FILE=/tmp/pg_password

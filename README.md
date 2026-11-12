@@ -13,6 +13,7 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 - [People from ServiceNow](#people-from-servicenow)
 - [Sign-in and access](#sign-in-and-access)
 - [Deploy with Docker](#deploy-with-docker)
+- [Backups and starting over](#backups-and-starting-over)
 - [Import and export](#import-and-export)
 - [Develop](#develop)
 - [Stack and supply chain](#stack-and-supply-chain)
@@ -172,10 +173,14 @@ docker compose --env-file work.env up --build -d
 - A token for a private npm registry is given for one command only: `NPM_TOKEN=... docker compose --env-file work.env up --build -d`.
 - Corporate CA certificates for a TLS-inspecting proxy go in `certs/*.crt` (gitignored) on the build machine.
 - Two containers, host networking. **PostgreSQL 17** listens on `127.0.0.1:${DB_PORT}` only; the **app** listens on `${APP_PORT}` (8080). Put TLS in front of the app (the company load balancer, or a reverse proxy) and set `APP_URL` to the https address people type: secure cookies and SAML depend on it.
-- **Data** lives in `${DATA_DIR}`. `pgdata/` holds the database (bind mount). `secrets/` holds the database password and the session-signing secret, generated on the first start and readable only by the app's user. At work `DATA_DIR` sits outside the code folder, so copying a new version over the code never touches the data.
-- **First start** migrates the database and creates `admin`. With `SEED_DEMO=true` it also loads the demo organisation (Avro Corp, made-up people), once. Sign in as `exec`, `manager` or `employee` with password `demo` to see each audience. Remove the demo in Admin › Import & export when going live.
-- **Upgrade**: copy the new code, run the same command again. Migrations apply on start.
-- **Backup**:
+- **Data** lives in `${DATA_DIR}`, outside the code folder at home and at work (`../skill-management-state`). `pgdata/` holds the database (bind mount). `secrets/` holds the database password and the session-signing secret, generated on the first start and readable only by the app's user. Backups go to `${BACKUP_DIR}`.
+- **First start** migrates the database and creates `admin`. With `SEED_DEMO=true` it also loads the demo organisation (Avro Corp, made-up people), once per database, never again (not after a clear, not after a redeploy). Sign in as `exec`, `manager` or `employee` with password `demo` to see each audience. Remove the demo in Admin › Import & export when going live.
+- **Upgrade**: replace the code, run the same command again. **A redeploy never touches the data**:
+  - the database and backups live outside the code folder and outside the image, so replacing or rebuilding the code cannot reach them;
+  - nothing in the app deletes data on start; the demo loads only into an empty database, once;
+  - database changes are migrations, applied on start, and **before any of them runs, a full backup is written** to `BACKUP_DIR`; if it cannot be written, the app stops without changing anything;
+  - `docker compose down` and `up --build` keep the data; only deleting `DATA_DIR` would not.
+- **Backups**: see [Backups and starting over](#backups-and-starting-over). A database-level dump also works:
 
   ```bash
   docker exec skill-management-db-1 pg_dump -U skills -d skills -Fc > skills-$(date +%F).dump
@@ -188,7 +193,20 @@ docker compose --env-file work.env up --build -d
 | `APP_PORT`, `APP_BIND`, `APP_URL`, `TRUSTED_ORIGINS` | How people reach it |
 | `DB_PORT` | PostgreSQL's loopback port |
 | `SEED_DEMO`, `FORCE_PASSWORD_CHANGE`, `ORG_NAME` | First start |
-| `DATA_DIR`, `TZ` | Where the data lives; time zone |
+| `DATA_DIR`, `TZ` | Where the data lives (outside the code folder); time zone |
+| `BACKUP_DIR` | Where backups go. Put it on another disk or a network share, so losing the server does not lose the backups. |
+
+## Backups and starting over
+
+Admin › Import & export.
+
+- **One backup holds everything**: people, units, ratings, the skill catalogue, roles, targets, training plans, user accounts, ServiceNow and single sign-on configuration, settings, and the audit log, read from one consistent snapshot into a single compressed file. Sessions are not kept.
+- **Back up now** writes one to `BACKUP_DIR`; **Download a fresh backup** takes one and downloads it; every stored backup can be downloaded, restored or deleted.
+- **Automatic backups**: on by default, daily, keeping the newest 14; how often and how many are set on the page. Backups made by hand are kept until deleted.
+- **Safety backups** are written automatically before every restore, every "start from scratch" and every upgrade that changes the database.
+- **Restore** a stored backup or upload a downloaded one (for example onto a new server after the old one was lost). Everything is replaced in one transaction: all of it or nothing. A backup from an older version restores into a newer one; one from a newer version is refused. Everyone signs in again afterwards. On a server with a different app secret, re-enter the ServiceNow password.
+- **Start from scratch** deletes the organisation (units, people, catalogue, roles, ratings, plans) and, if chosen, every user account but the administrators, and the audit log and sync history. ServiceNow and single sign-on configuration, levels and settings stay. A backup is taken first, so it can be undone from the list.
+- A backup file contains everything, including password hashes and configuration: keep it somewhere safe.
 
 ## Import and export
 
@@ -224,6 +242,7 @@ npm run typecheck
 | `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, a chosen Entity ID (requests carry it, other audiences refused), tampered and wrongly signed assertions refused |
 | `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, teams from the chain, no empty second top, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs |
 | `test/servicenow.live.test.ts` | The same walk against a real instance; skipped unless `SN_LIVE_INSTANCE`, `SN_LIVE_USER`, `SN_LIVE_PASS` and `SN_LIVE_ROOT` are set |
+| `test/backup.test.ts` | Backups: every table out and back exactly (dates, configuration), older backups restore with defaults, newer ones and foreign files refused, no path tricks, pruning, the automatic schedule |
 | `test/view-as.test.ts` | The view-as cookie: a genuine one reads back; an edited, re-signed, truncated or expired one counts for nothing |
 | `test/org-layout.test.ts` | The org chart geometry: nothing overlaps, parents centred over their people, two-column blocks for large teams, one connector per reporting line |
 | `test/deployment.test.ts` | The deployment rules: pins, the 72-hour gate, no site locations baked in, no secrets in env files, anchored ignores |
