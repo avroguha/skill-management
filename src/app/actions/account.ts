@@ -11,6 +11,7 @@ export type FormState = { error?: string; ok?: string } | null;
 export async function changePassword(_: FormState, form: FormData): Promise<FormState> {
   const v = await getViewer();
   if (!v) redirect("/login");
+  if (v.viewAs) return { error: `Read-only: you are viewing as ${v.name}. Stop viewing to change a password.` };
   const current = String(form.get("current") ?? "");
   const next = String(form.get("next") ?? "");
   const confirm = String(form.get("confirm") ?? "");

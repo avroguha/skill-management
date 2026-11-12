@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
-import { actionViewer, audit, canSeeUnit, getEngine, type Viewer } from "@/lib/server";
+import { guardAction, audit, canSeeUnit, getEngine, type Viewer } from "@/lib/server";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 
@@ -48,7 +48,9 @@ const need = z.object({
 });
 
 export async function saveTeamNeed(input: z.input<typeof need>): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   const p = need.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Check the fields." };
   if (!canManageUnit(v, p.data.unitId)) return { ok: false, error: "Only the manager of this team or an administrator can set what it needs." };
@@ -79,7 +81,9 @@ export async function saveTeamNeed(input: z.input<typeof need>): Promise<Result>
 }
 
 export async function removeTeamNeed(unitId: string, skillId: string): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   if (!canManageUnit(v, unitId)) return { ok: false, error: "Not allowed." };
   const db = await getDb();
   await db.delete(schema.unitRequirement).where(and(eq(schema.unitRequirement.unitId, unitId), eq(schema.unitRequirement.skillId, skillId)));
@@ -91,7 +95,9 @@ export async function removeTeamNeed(unitId: string, skillId: string): Promise<R
 
 /** Anyone may suggest a skill that is missing; it is a draft until an administrator approves it. */
 export async function suggestSkill(input: z.input<typeof newSkill>): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   const p = newSkill.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Check the fields." };
   const status = v.isAdmin || v.role === "manager" ? "active" : "draft";

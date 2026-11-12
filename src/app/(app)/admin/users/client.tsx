@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DataTable } from "@/components/data-table";
 import { RecordDialog } from "@/components/admin-crud";
+import { ViewAsButton } from "@/components/view-as";
 import { setUserAccess, resetPassword, setBanned, createLocalUser } from "@/app/actions/admin";
 
 type Row = Record<string, unknown>;
@@ -41,6 +42,8 @@ export function UsersAdmin({ rows, roles, employees }: { rows: Row[]; roles: Opt
         actions={(row) => (
           <>
             {icon("Change access", () => setAccess(row), ShieldCheck)}
+            {row.employeeId !== "none" && row.role !== "admin" && !row.banned
+              && <ViewAsButton employeeId={String(row.employeeId)} name={String(row.person || row.name)} variant="ghost" size="icon" iconOnly />}
             {icon("Reset password", () => setReset(row), KeyRound, !row.local)}
             {row.banned
               ? icon("Enable", () => start(async () => { const r = await setBanned(String(row.id), false); if (r.ok) toast.success(r.message ?? "Enabled"); else toast.error(r.error); }), CircleCheck)

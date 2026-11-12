@@ -1,12 +1,14 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
-import { actionViewer, audit } from "@/lib/server";
+import { guardAction, audit } from "@/lib/server";
 import { importCsv, KINDS, type Kind, type ImportReport } from "@/lib/transfer";
 import { refreshGate } from "@/lib/sso-gate";
 
 export async function importData(kind: string, text: string, dryRun: boolean): Promise<{ ok: true; report: ImportReport } | { ok: false; error: string }> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   if (!v.isAdmin) return { ok: false, error: "Administrators only." };
   if (!(KINDS as readonly string[]).includes(kind)) return { ok: false, error: "Unknown kind of data." };
   if (text.length > 20_000_000) return { ok: false, error: "That file is over 20 MB. Split it." };

@@ -5,14 +5,16 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
-import { actionViewer, audit, getEngine } from "@/lib/server";
+import { guardAction, audit, getEngine } from "@/lib/server";
 
 export type Result = { ok: true; message?: string } | { ok: false; error: string };
 
 const level = z.coerce.number().int().min(0).max(5);
 
 export async function setPersonTarget(input: { employeeId: string; skillId: string; target: number | null; reason: string }): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   if (!v.reportIds.has(input.employeeId)) return { ok: false, error: "Only this person's manager or an administrator can set their targets." };
   const engine = await getEngine();
   if (!engine.isRateable(input.skillId)) return { ok: false, error: "That skill cannot be rated (it is retired or has sub-skills)." };
@@ -44,7 +46,9 @@ const planSchema = z.object({
 });
 
 export async function addTrainingPlan(input: z.input<typeof planSchema>): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   const p = planSchema.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Check the fields." };
   const self = v.employee?.id === p.data.employeeId;
@@ -62,7 +66,9 @@ export async function addTrainingPlan(input: z.input<typeof planSchema>): Promis
 }
 
 export async function setPlanStatus(planId: string, status: string): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   if (!["planned", "in_progress", "done", "cancelled"].includes(status)) return { ok: false, error: "Unknown status." };
   const db = await getDb();
   const [plan] = await db.select().from(schema.trainingPlan).where(eq(schema.trainingPlan.id, planId));

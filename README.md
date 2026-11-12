@@ -124,6 +124,7 @@ The running app needs to reach the instance. Behind a proxy, set `RUNTIME_HTTPS_
 - **Once single sign-on works, disable `admin`.** Sign in with SSO, have `admin` give your SSO account **Administrator** in Admin › Users & access, then sign in as yourself and **Disable** `admin` there. Nobody can disable their own account, so the last signed-in administrator can never lock everyone out. Re-enable it the same way if SSO ever breaks.
 - **Access follows who people are.** Anyone who manages a unit or has direct reports is a **manager** automatically, and sees, validates and sets targets for their people. Everyone else is a **team member**: their own profile and self-assessment. **Executive** (read everything) and **Administrator** are assigned in Admin › Users & access.
 - **Local accounts** can be added for people without SSO; they set their own password at first sign-in.
+- **View as** (administrators, for troubleshooting): a person's profile, or their row in Admin › Users & access, has **View as**. The app then shows exactly what that person sees: their menu, pages, scope and role, including people synced from ServiceNow who have never signed in. It is **read-only**: every change is refused with a message, so nothing is validated or edited in their name. A banner shows who is being viewed, with **Stop viewing**; it ends by itself after an hour. Administrators cannot view as another administrator. The administrator stays signed in throughout, and the audit log records each start and stop, and anything else, under the administrator's name. The choice is held in a signed, http-only cookie that counts only while that administrator is signed in.
 - **SAML 2.0 single sign-on** (Admin › Single sign-on). No provider ID is needed. The page shows the exact values to set at the identity provider, with copy buttons, in the order Entra ID asks for them (Enterprise application › Single sign-on › SAML › Basic SAML Configuration):
 
   | Entra ID field | Value |
@@ -216,6 +217,7 @@ npm run typecheck
 | `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, a chosen Entity ID (requests carry it, other audiences refused), tampered and wrongly signed assertions refused |
 | `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, teams from the chain, no empty second top, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs |
 | `test/servicenow.live.test.ts` | The same walk against a real instance; skipped unless `SN_LIVE_INSTANCE`, `SN_LIVE_USER`, `SN_LIVE_PASS` and `SN_LIVE_ROOT` are set |
+| `test/view-as.test.ts` | The view-as cookie: a genuine one reads back; an edited, re-signed, truncated or expired one counts for nothing |
 | `test/org-layout.test.ts` | The org chart geometry: nothing overlaps, parents centred over their people, two-column blocks for large teams, one connector per reporting line |
 | `test/deployment.test.ts` | The deployment rules: pins, the 72-hour gate, no site locations baked in, no secrets in env files, anchored ignores |
 

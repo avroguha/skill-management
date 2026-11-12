@@ -4,6 +4,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { PencilLine } from "lucide-react";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
+import { ViewAsButton } from "@/components/view-as";
 import { KpiTiles, Section } from "@/components/kpi";
 import { SkillRadar } from "@/components/charts";
 import { Button } from "@/components/ui/button";
@@ -75,7 +76,8 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             .map((u): { label: string; href?: string } => ({ label: u.name, href: withParams("/", { unit: u.id }) })),
           { label: e.name },
         ] : undefined}
-        actions={self ? <Button asChild><Link href="/assess"><PencilLine />Update my self-assessment</Link></Button> : undefined}
+        actions={self ? <Button asChild><Link href="/assess"><PencilLine />Update my self-assessment</Link></Button>
+          : v.isAdmin && e.active ? <ViewAsButton employeeId={e.id} name={e.name} /> : undefined}
       />
       <KpiTiles items={[
         { label: "Role fit", value: fmtPct(profile.roleFitPct), hint: `${profile.met} of ${profile.required} required skills on target`, tone: profile.roleFitPct == null ? "default" : profile.roleFitPct >= engine.settings.greenAt ? "good" : profile.roleFitPct >= engine.settings.amberAt ? "warn" : "bad" },

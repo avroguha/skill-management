@@ -10,7 +10,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
-import { actionViewer, audit, getEngine } from "@/lib/server";
+import { guardAction, audit, getEngine } from "@/lib/server";
 
 export type Result = { ok: true; message?: string } | { ok: false; error: string };
 const EVIDENCE_FROM = 4;
@@ -23,7 +23,9 @@ const selfEntry = z.object({
 });
 
 export async function saveSelfAssessment(entries: z.input<typeof selfEntry>[], submit: boolean): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   if (!v.employee) return { ok: false, error: "Your account is not linked to an employee record. Ask an administrator." };
   const parsed = z.array(selfEntry).max(500).safeParse(entries);
   if (!parsed.success) return { ok: false, error: "Some entries are not valid." };
@@ -81,7 +83,9 @@ const validation = z.object({
 });
 
 export async function validateRatings(items: z.input<typeof validation>[]): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   const parsed = z.array(validation).max(500).safeParse(items);
   if (!parsed.success) return { ok: false, error: "Some entries are not valid." };
   for (const it of parsed.data) {
@@ -109,7 +113,9 @@ export async function validateRatings(items: z.input<typeof validation>[]): Prom
 }
 
 export async function returnRating(input: { employeeId: string; skillId: string; comment: string }): Promise<Result> {
-  const v = await actionViewer();
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
   if (!v.reportIds.has(input.employeeId)) return { ok: false, error: "You can only return the ratings of people you manage." };
   if (!input.comment.trim()) return { ok: false, error: "Say what to look at again." };
   const db = await getDb();

@@ -2,11 +2,12 @@
 // they may see), and the engine over the current data. Everything is memoised
 // per request with React's cache(), so a page and its components share one load.
 import { cache } from "react";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getAuth } from "@/lib/auth";
+import { readViewAsCookie, VIEW_AS_COOKIE as COOKIE } from "@/lib/view-as-cookie";
 import { loadDatasetFrom } from "@/lib/dataset";
 import { createEngine, type Basis, type Employee, type Engine } from "@/lib/engine/engine";
 import { linkSignedInUser } from "@/lib/sso-gate";
@@ -37,6 +38,8 @@ export interface Viewer {
   isAdmin: boolean;
   canSeeOrg: boolean;
   mustChangePassword: boolean;
+  /** set while an administrator is viewing the app as this person (read-only) */
+  viewAs: { byUserId: string; byName: string; employeeId: string; expiresAt: number } | null;
 }
 
 export const getSession = cache(async () => {
@@ -53,22 +56,11 @@ function asRole(r: string | null | undefined): AccessRole {
   return r === "admin" || r === "executive" || r === "manager" ? r : "employee";
 }
 
-export const getViewer = cache(async (): Promise<Viewer | null> => {
-  const session = await getSession();
-  if (!session) return null;
-  const u = session.user as typeof session.user & { role?: string | null; username?: string | null; mustChangePassword?: boolean };
-  const engine = await getEngine();
-  const db = await getDb();
-  // First request after an SSO sign-in: link the new account to the person the gate matched.
-  let [row] = await db.select({ id: schema.employee.id }).from(schema.employee).where(eq(schema.employee.userId, u.id));
-  if (!row) {
-    const linked = await linkSignedInUser(db, u);
-    if (linked) row = { id: linked };
-  }
-  const employee = row ? engine.empById.get(row.id) ?? null : null;
-  const assignedRole = asRole(u.role);
-  // Someone who left (deactivated by the directory sync) keeps no access, unless an administrator.
-  if (employee && !employee.active && assignedRole !== "admin") return null;
+/** Who a viewer is built for: a signed-in account, or (viewing as) a person's record. */
+interface Who { userId: string; name: string; email: string; username: string | null; role: AccessRole; mustChangePassword: boolean }
+
+function buildViewer(engine: Engine, who: Who, employee: Employee | null): Viewer {
+  const assignedRole = who.role;
   const reports = employee ? engine.reportsOf(employee.id) : [];
   const managed = employee ? engine.managedUnitIds(employee.id) : [];
   let role = assignedRole;
@@ -95,10 +87,10 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
   else homeUnitId = employee?.unitId ?? null;
 
   return {
-    userId: u.id,
-    name: u.name,
-    email: u.email,
-    username: u.username ?? null,
+    userId: who.userId,
+    name: who.name,
+    email: who.email,
+    username: who.username,
     assignedRole,
     role,
     employee,
@@ -109,8 +101,72 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
     homeUnitId,
     isAdmin: role === "admin",
     canSeeOrg: allUnits || role === "manager",
-    mustChangePassword: !!u.mustChangePassword,
+    mustChangePassword: who.mustChangePassword,
+    viewAs: null,
   };
+}
+
+/** The signed-in account's own viewer, whatever "view as" is set. */
+export const getRealViewer = cache(async (): Promise<Viewer | null> => {
+  const session = await getSession();
+  if (!session) return null;
+  const u = session.user as typeof session.user & { role?: string | null; username?: string | null; mustChangePassword?: boolean };
+  const engine = await getEngine();
+  const db = await getDb();
+  // First request after an SSO sign-in: link the new account to the person the gate matched.
+  let [row] = await db.select({ id: schema.employee.id }).from(schema.employee).where(eq(schema.employee.userId, u.id));
+  if (!row) {
+    const linked = await linkSignedInUser(db, u);
+    if (linked) row = { id: linked };
+  }
+  const employee = row ? engine.empById.get(row.id) ?? null : null;
+  const assignedRole = asRole(u.role);
+  // Someone who left (deactivated by the directory sync) keeps no access, unless an administrator.
+  if (employee && !employee.active && assignedRole !== "admin") return null;
+  return buildViewer(engine, {
+    userId: u.id, name: u.name, email: u.email, username: u.username ?? null, role: assignedRole, mustChangePassword: !!u.mustChangePassword,
+  }, employee);
+});
+
+// ---- "view as": an administrator sees the app exactly as one person does -----------------
+// A signed, http-only cookie names the administrator and the person and expires after an
+// hour. It only counts while that administrator is signed in and still an administrator.
+// Everything is read-only meanwhile (actionViewer refuses changes) and the audit log
+// records the administrator, never the person.
+
+export { VIEW_AS_COOKIE, VIEW_AS_MINUTES, viewAsCookie } from "@/lib/view-as-cookie";
+
+/** Whether an administrator may view as this person, and as whom (their account's role, or "employee"). */
+export async function viewAsTarget(employeeId: string, adminUserId: string): Promise<{ ok: true; employee: Employee; who: Who } | { ok: false; error: string }> {
+  const engine = await getEngine();
+  const employee = engine.empById.get(employeeId);
+  if (!employee) return { ok: false, error: "That person no longer exists." };
+  if (!employee.active) return { ok: false, error: `${employee.name} has left and cannot sign in, so there is nothing to see.` };
+  const db = await getDb();
+  const [row] = await db.select({ userId: schema.employee.userId, userName: schema.employee.userName }).from(schema.employee).where(eq(schema.employee.id, employeeId));
+  const [user] = row?.userId ? await db.select().from(schema.user).where(eq(schema.user.id, row.userId)) : [];
+  if (user?.id === adminUserId) return { ok: false, error: "That is you." };
+  if (user?.role === "admin") return { ok: false, error: `${employee.name} is an administrator and sees what you see.` };
+  return {
+    ok: true, employee,
+    who: {
+      userId: user?.id ?? `person:${employee.id}`, name: employee.name, email: employee.email,
+      username: (user as { username?: string | null } | undefined)?.username ?? row?.userName ?? null,
+      role: asRole(user?.role), mustChangePassword: false,
+    },
+  };
+}
+
+/** The viewer pages and actions see: the person an administrator is viewing as, or the account itself. */
+export const getViewer = cache(async (): Promise<Viewer | null> => {
+  const real = await getRealViewer();
+  if (!real || !real.isAdmin) return real;
+  const va = readViewAsCookie((await cookies()).get(COOKIE)?.value);
+  if (!va || va.a !== real.userId) return real;
+  const t = await viewAsTarget(va.e, real.userId);
+  if (!t.ok) return real;
+  const engine = await getEngine();
+  return { ...buildViewer(engine, t.who, t.employee), viewAs: { byUserId: real.userId, byName: real.name, employeeId: t.employee.id, expiresAt: va.x } };
 });
 
 /** For pages: the viewer, or a redirect to sign in / to change the default password. */
@@ -147,19 +203,34 @@ export function scopeUnit(v: Viewer, requested: string | undefined | null): stri
   return v.homeUnitId;
 }
 
-/** For server actions: the viewer or an error (never a redirect mid-mutation). */
-export async function actionViewer(): Promise<Viewer> {
+/**
+ * For server actions: the viewer or an error (never a redirect mid-mutation). While an
+ * administrator is viewing as someone, only reads ({ read: true }) are allowed.
+ */
+export async function actionViewer(opts: { read?: boolean } = {}): Promise<Viewer> {
   const v = await getViewer();
   if (!v) throw new Error("Not signed in");
   if (v.mustChangePassword) throw new Error("Change the default password first");
+  if (v.viewAs && !opts.read) throw new Error(`Read-only: you are viewing as ${v.name}. Stop viewing to make changes.`);
   return v;
+}
+
+/**
+ * actionViewer for actions that answer { ok: false, error } rather than throwing: a refusal
+ * (not signed in, read-only while viewing as someone) comes back as that answer, so the
+ * page shows the message instead of an error screen.
+ */
+export async function guardAction(opts: { read?: boolean } = {}): Promise<{ v: Viewer; fail?: undefined } | { v?: undefined; fail: { ok: false; error: string } }> {
+  try { return { v: await actionViewer(opts) }; }
+  catch (e) { return { fail: { ok: false, error: (e as Error).message } }; }
 }
 
 export async function audit(v: Viewer | null, action: string, entity: string, entityId: string | null, detail?: unknown) {
   const db = await getDb();
   await db.insert(schema.auditLog).values({
-    actorId: v?.userId ?? null,
-    actorName: v?.name ?? "system",
+    // viewing as someone: the administrator is the actor, never the person
+    actorId: v?.viewAs ? v.viewAs.byUserId : v?.userId ?? null,
+    actorName: v?.viewAs ? `${v.viewAs.byName} (viewing as ${v.name})` : v?.name ?? "system",
     action,
     entity,
     entityId,

@@ -15,7 +15,7 @@ export interface OrgInfo {
 
 export async function orgInfo(id: string): Promise<{ ok: true; info: OrgInfo } | { ok: false; error: string }> {
   try {
-    const v = await actionViewer();
+    const v = await actionViewer({ read: true });
     if (!canSeeEmployee(v, id)) return { ok: false, error: "Not allowed." };
     const engine = await getEngine();
     const db = await getDb();
