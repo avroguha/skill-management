@@ -28,7 +28,7 @@ function stepsFor(o: { persona: Persona; profileHref: string | null; rates: bool
   }
   if (o.hasTeam) {
     s.push({ path: "/team", target: "kpis", title: "My team", body: "Everyone who reports to you: how far their self-assessments have got, what waits for you, where the team is short." });
-    s.push({ path: "/team", target: "team-tabs", title: "People, skills needed, gaps, hiring, training", body: "Skills needed is where you say what your team must have, at what level and how many people. Gaps follow from it. Hiring takes your open positions and suggests the talent to look for; Training suggests the training that would help most, and books it." });
+    s.push({ path: "/team", target: "team-tabs", title: "People, skills needed, gaps, open positions, training", body: "Skills needed is where you say what your team must have, at what level and how many people. Gaps follow from it. If you have an open position, add it under Open positions to see the skills to look for. Training suggests the training that would help most, and books it." });
   }
   if (o.validates) s.push({ path: "/validate", target: "validate-queue", title: "Validate", body: "Ratings waiting for you. Agree, change the level (with a note), or send one back with a question. Validated levels are the official ones." });
   if (o.canSeeOrg) {

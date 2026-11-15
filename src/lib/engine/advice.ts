@@ -1,13 +1,13 @@
-// Hiring and training advice for one team, computed from the engine (no database, so it is
-// unit-tested directly in test/advice.test.ts).
+// The talent to look for in an open position, and the training that would help a team,
+// computed from the engine (no database, so it is unit-tested in test/advice.test.ts).
 //
-// The owner asked for it on 2026-11-15, reversing the earlier "capability only" rule for this
-// one place: "manager can add an open position and tool should suggest what type of talent
-// they need to hire, if no open position then it should tell what skills training will be
-// useful for the team based on skills requirements". Every other page still reports
-// capability only.
+// Owner, 2026-11-15: "manager can add an open position and tool should suggest what type of
+// talent they need to hire, if no open position then it should tell what skills training will
+// be useful for the team". And, the same day: "No hire suggestion is still a no ... Not use
+// suggesting that we need to hire". So positions exist only when a manager adds one; nothing
+// here, or anywhere in the app, ever suggests that a team should hire or open a position.
 //
-// Hiring (an open position: a role and grade, and/or skills the manager adds):
+// An open position (a role and grade, and/or skills the manager adds):
 //  * The skills come from the role's targets (the grade-specific row wins), plus the skills
 //    the manager adds. Each is put in one of three groups:
 //      bring  - a team need for it is short (in the unit or any team below it: a director's
@@ -21,17 +21,18 @@
 //  * No role chosen: the role whose targets cover most of what is asked (the added skills and
 //    the team's short needs) is suggested, with the grade that closes the most of them.
 //  * Internal candidates: people the viewer can see, outside the team, ranked by how many of
-//    the bring + coach skills they already hold at the level. Considered before hiring.
+//    the bring + coach skills they already hold at the level.
 //
-// Training (always on the Training tab; on the Hiring tab when no position is open):
+// Training (always on the Training tab; on Open positions when no position is open):
 //  * Per skill: the people below their own target (assessed only: an unassessed skill is
 //    asked for a self-assessment first, not training), plus, for a team need that is short
-//    (the unit's own or a team's below it), the people in that team one level below it. Those with an open training plan for it are "booked".
+//    (the unit's own or a team's below it), the people in that team one level below it.
+//    Those with an open training plan for it are "booked".
 //  * Ranked by weight: a mandatory gap counts twice its size, an optional one once, a short
 //    team need three per missing person (three more when nobody holds it).
 //  * How: three or more learners -> a course for the group; someone in the team at the level
 //    -> coaching by them; nobody -> external training. A short team need nobody is within
-//    one level of is flagged: training will be slow, hiring may be faster.
+//    one level of is flagged as one that will take longer (no other advice is attached).
 import type { Engine, Employee } from "./engine.ts";
 
 export interface PositionSpec {

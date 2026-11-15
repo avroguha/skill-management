@@ -8,6 +8,8 @@
 // Engineer: EC2 3 (Senior 4), Kubernetes 2 optional, Senior also SQL 3.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { createEngine, DEFAULT_SETTINGS, type Dataset, type Rating } from "../src/lib/engine/engine.ts";
 import { hiringAdvice, trainingAdvice, roleProfile } from "../src/lib/engine/advice.ts";
 
@@ -180,4 +182,20 @@ test("training: a short team need adds the people one level below it, and flags 
   const s3b = trainingAdvice(many, many.membersOf("cloud"), "cloud").find((i) => i.skillId === "s3")!;
   assert.equal(s3b.how, "course");
   assert.equal(s3b.learners.length, 3);
+});
+
+test("the app never suggests that a team should hire (owner, 2026-11-15): positions are only the ones a manager adds", () => {
+  const nudge = /(hire|hiring)[^.\n"`]{0,40}(faster|instead|better)|before hiring|consider hiring|should hire|need(s)? to hire|recommend(ed)? hiring|add an open position\)/i;
+  const files: string[] = [];
+  const walk = (d: string) => {
+    for (const f of readdirSync(d)) {
+      const p = join(d, f);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (/\.(ts|tsx)$/.test(f)) files.push(p);
+    }
+  };
+  walk("src");
+  const hits = files.flatMap((f) => readFileSync(f, "utf8").split("\n")
+    .filter((l) => !/^\s*\/\//.test(l) && nudge.test(l)).map((l) => `${f}: ${l.trim().slice(0, 120)}`));
+  assert.deepEqual(hits, []);
 });

@@ -3,8 +3,9 @@
 //                  validation, on-target share, gaps and open training
 //   Skills needed  what the team needs beyond its roles (editable), and what roles already expect
 //   Gaps           team needs that are short, and each person below their target
-//   Hiring         open positions, each with the talent to look for (advice.ts); with none
-//                  open, the training that would help the team
+//   Open positions positions the manager chose to open, each with the talent to look for
+//                  (advice.ts); with none open, the training that would help the team. The
+//                  app never suggests that a team should hire (owner, 2026-11-15).
 //   Training       training that would help (advice.ts) and the plans booked for the team
 // Administrators, executives and managers of managers can open any team they can see.
 import { redirect } from "next/navigation";
@@ -29,7 +30,7 @@ import { hiringAdvice, trainingAdvice } from "@/lib/engine/advice";
 
 export const metadata = { title: "My team" };
 
-const TABS = ["people", "skills", "gaps", "hiring", "training"] as const;
+const TABS = ["people", "skills", "gaps", "positions", "training"] as const;
 const MAX_IDEAS = 30;
 // What one page sends at most; tiles always count everyone, and a lower manager narrows the list.
 const MAX_ROWS = 1000;
@@ -158,7 +159,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     title: p.title, level: engine.levelOf(p.employeeId, p.skillId).level, target: p.targetLevel, due: p.dueOn, status: p.status.replace("_", " "),
   }));
 
-  // ---- hiring: open positions and the talent to look for ----
+  // ---- open positions (added by the manager) and the talent to look for in each ----
   const canManage = !!unitId && (v.isAdmin || (v.role === "manager" && canSeeUnit(v, unitId)));
   const catName = (id: string) => engine.categoryById.get(id)?.name ?? "";
   const gradeName = (id: string | null) => (id ? engine.gradeById.get(id)?.name ?? "" : "");
@@ -252,7 +253,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
           <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="skills">Skills needed</TabsTrigger>
           <TabsTrigger value="gaps">Gaps</TabsTrigger>
-          <TabsTrigger value="hiring">Hiring{openPositions.length ? ` (${openPositions.length})` : ""}</TabsTrigger>
+          <TabsTrigger value="positions">Open positions{openPositions.length ? ` (${openPositions.length})` : ""}</TabsTrigger>
           <TabsTrigger value="training">Training</TabsTrigger>
         </TabsList>
 
@@ -340,10 +341,10 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
           </Section>
         </TabsContent>
 
-        <TabsContent value="hiring" className="grid gap-5">
+        <TabsContent value="positions" className="grid gap-5">
           {unitId ? (
             <Section title="Open positions"
-              description="For each position: the talent to look for, from the role's targets, the skills you add and what the team is short of; and who in the organisation already has it.">
+              description="Positions you are filling in this team. For each: the talent to look for, from the role's targets, the skills you add and what the team is short of; and who in the organisation already has most of it.">
               <Positions unitId={unitId} positions={openPositions} closed={closedPositions} canManage={canManage}
                 roles={dataset.roles.map((r) => ({ id: r.id, name: r.name })).sort((a, b) => a.name.localeCompare(b.name))}
                 grades={[...dataset.grades].sort((a, b) => a.rank - b.rank).map((g) => ({ id: g.id, name: g.name }))}
@@ -353,7 +354,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
             <Empty>Open positions are kept per team, and {mine ? "you do" : `${manager.name} does`} not lead a team unit yet. Turn on “Build teams from the manager chain” in Admin › ServiceNow, or set the team&apos;s manager in Admin › Organisation.</Empty>
           )}
           {!openPositions.length && (
-            <Section title="No open positions: training that would help the team"
+            <Section title="Training that would help the team"
               description="From each person's target and the team's needs, the skills where training would close the most, worst first.">
               {training}
             </Section>

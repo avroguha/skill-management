@@ -166,7 +166,7 @@ export default async function TalentPage({ searchParams }: { searchParams: Searc
       </div>
 
       <div className="mb-5 grid gap-5 lg:grid-cols-2">
-        <Section title="Beyond the role" description="People at level 3 or above in skills their own role does not ask for: talent to draw on before hiring.">
+        <Section title="Beyond the role" description="People at level 3 or above in skills their own role does not ask for: talent to draw on.">
           {hidden.length ? <BarList compact rows={hidden.map((s) => ({ key: s.skillId, label: label(s.skillId), href: href(s.skillId), value: s.extra, of: Math.max(...hidden.map((h) => h.extra)), note: `${s.extra.toLocaleString("en-GB")} people` }))} />
             : <Empty>Nobody holds a skill beyond their role yet.</Empty>}
         </Section>

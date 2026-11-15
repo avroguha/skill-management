@@ -20,9 +20,9 @@
 //    have is that person's gap, not a team bus-factor risk. A stricter or
 //    different need is what an explicit requirement is for. Coverage = members at or above L.
 //  * Capability only: the engine reports what is short and where, never what to
-//    do about it (owner, 2026-11-12). The one exception, asked for by the owner on
-//    2026-11-15, is advice.ts: what to hire for an open position, and what training
-//    would help a team, shown on My team only.
+//    do about it, and never suggests hiring (owner, 2026-11-12, confirmed 2026-11-15).
+//    advice.ts adds two things on My team only: the talent to look for in a position a
+//    manager has chosen to open, and the training that would help a team.
 
 export type Basis = "validated" | "self";
 export type GapCategory = "meets" | "minor" | "significant" | "critical" | "unassessed" | "not_required";

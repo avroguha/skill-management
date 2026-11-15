@@ -1,6 +1,7 @@
 "use client";
-// My team › Hiring and Training: open positions with the talent to look for, and the
-// training that would help the team (computed on the server by src/lib/engine/advice.ts).
+// My team › Open positions and Training: positions the manager chose to open, with the talent
+// to look for in each, and the training that would help the team (computed on the server by
+// src/lib/engine/advice.ts). The app never suggests that a team should hire (owner, 2026-11-15).
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { Plus, Pencil, Trash2, Loader2, X, MoreHorizontal, CheckCircle2, Undo2, Ban, Star, AlertTriangle, GraduationCap, Users, UserRound } from "lucide-react";
@@ -67,7 +68,7 @@ export function Positions({ unitId, positions, closed, canManage, roles, grades,
         <Button size="sm" className="justify-self-start" onClick={() => setEditing("new")} data-tour="add-position"><Plus />Add an open position</Button>
       )}
       {positions.length === 0 && (
-        <p className="text-sm text-muted-foreground">No open positions. {canManage ? "Add one to see the talent to look for: what the team is short of, what can be coached, and who in the organisation already has it." : ""}</p>
+        <p className="text-sm text-muted-foreground">No open positions.{canManage ? " When you have one, add it here to see the skills to look for." : ""}</p>
       )}
       {positions.map((p) => <PositionCard key={p.id} p={p} canManage={canManage} levelName={levelName} onEdit={() => setEditing(p)} />)}
       {closed.length > 0 && (
@@ -173,7 +174,7 @@ function PositionCard({ p, canManage, levelName, onEdit }: { p: PositionView; ca
 
       {p.candidates.length > 0 && (
         <div className="grid gap-1.5">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Already in the organisation: worth a conversation before hiring</h4>
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Already in the organisation with most of these skills</h4>
           <ul className="grid gap-1 text-sm">
             {p.candidates.map((c) => (
               <li key={c.id} className="flex flex-wrap items-center justify-between gap-x-3">
@@ -356,7 +357,7 @@ export function TrainingIdeas({ ideas, total, levels }: { ideas: TrainingView[];
             )}
             {t.slow && (
               <p className="flex items-start gap-1.5 text-sm text-status-critical-fg">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" />Nobody in the team is within one level of what it needs: training will take a while. A hire may be faster (add an open position).
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />Nobody in the team is within one level of what it needs yet, so this will take longer.
               </p>
             )}
             {t.learners.length > 0 && (
