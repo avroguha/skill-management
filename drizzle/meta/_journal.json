@@ -43,6 +43,13 @@
       "when": 1794741192043,
       "tag": "0005_open_positions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794746377262,
+      "tag": "0006_operators_and_charts",
+      "breakpoints": true
     }
   ]
 }

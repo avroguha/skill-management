@@ -10,13 +10,13 @@ import { Compass, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";
 
-export type Persona = "employee" | "manager" | "executive" | "admin";
+export type Persona = "employee" | "manager" | "operator" | "executive" | "admin";
 interface Step { path?: string; target?: string; title: string; body: string }
 
 const EVENT = "skm:tour";
 export function startTour() { window.dispatchEvent(new Event(EVENT)); }
 
-function stepsFor(o: { persona: Persona; profileHref: string | null; rates: boolean; hasTeam: boolean; validates: boolean; canSeeOrg: boolean }): Step[] {
+function stepsFor(o: { persona: Persona; profileHref: string | null; rates: boolean; hasTeam: boolean; validates: boolean; canSeeOrg: boolean; charts: boolean }): Step[] {
   const s: Step[] = [{
     title: "A quick tour",
     body: "A minute or two, showing the buttons you will use. The page stays live: you can click what is highlighted. Next and Back (or the arrow keys) move along; Esc stops.",
@@ -36,6 +36,9 @@ function stepsFor(o: { persona: Persona; profileHref: string | null; rates: bool
     s.push({ path: "/talent", target: "kpis", title: "Talent", body: "What talent this level has and what it lacks: strengths, missing skills, depth by area, and people with skills beyond their role." });
     s.push({ path: "/org", target: "org-chart", title: "Org chart", body: "Expand a card to see the people below; select it for their details and where the skills under them are thin." });
   }
+  if (o.charts) {
+    s.push({ path: "/charts", target: "charts-new", title: "Charts", body: "Build your own charts over the hierarchies you may see: pick what to measure, how to group it and the chart type. Every chart is worked out from live data, and Download PNG saves a picture of it, so the data itself never has to leave the app." });
+  }
   if (o.persona === "admin") {
     s.push({ path: "/admin", target: "admin-nav", title: "Admin", body: "The organisation, skills catalogue, roles and targets, users and sign-in, the ServiceNow sync, backups, help content and feedback. Open a person and use View as to see exactly what they see." });
     s.push({ path: "/admin/integrations", target: "integrations-new", title: "Integrations", body: "Give Power BI, Tableau or Excel a key to read the data. Each key is limited to the datasets you choose and can be revoked at any time." });
@@ -48,9 +51,9 @@ type Rect = { top: number; left: number; width: number; height: number };
 const PAD = 6;
 const GAP = 12;
 
-export function Tour(props: { userKey: string; persona: Persona; profileHref: string | null; rates: boolean; hasTeam: boolean; validates: boolean; canSeeOrg: boolean }) {
-  const { userKey, persona, profileHref, rates, hasTeam, validates, canSeeOrg } = props;
-  const steps = useMemo(() => stepsFor({ persona, profileHref, rates, hasTeam, validates, canSeeOrg }), [persona, profileHref, rates, hasTeam, validates, canSeeOrg]);
+export function Tour(props: { userKey: string; persona: Persona; profileHref: string | null; rates: boolean; hasTeam: boolean; validates: boolean; canSeeOrg: boolean; charts: boolean }) {
+  const { userKey, persona, profileHref, rates, hasTeam, validates, canSeeOrg, charts } = props;
+  const steps = useMemo(() => stepsFor({ persona, profileHref, rates, hasTeam, validates, canSeeOrg, charts }), [persona, profileHref, rates, hasTeam, validates, canSeeOrg, charts]);
   const [index, setIndex] = useState<number | null>(null);
   const [offer, setOffer] = useState(false);
   const [rect, setRect] = useState<Rect | null>(null);

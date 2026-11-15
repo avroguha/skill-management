@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   LayoutDashboard, Sparkles, CircleHelp, Crosshair, Users, Shapes, ClipboardCheck, PencilLine, Settings, UserRound,
-  LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound,
+  LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound, ChartColumn,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -22,6 +22,7 @@ import { initials } from "@/lib/format";
 const ICONS = {
   overview: LayoutDashboard, talent: Sparkles, help: CircleHelp, gaps: Crosshair, people: Users, skills: Shapes,
   validate: ClipboardCheck, assess: PencilLine, admin: Settings, profile: UserRound, team: UsersRound, org: Network,
+  charts: ChartColumn,
 };
 
 export interface NavItem { href: string; label: string; icon: keyof typeof ICONS; badge?: number }

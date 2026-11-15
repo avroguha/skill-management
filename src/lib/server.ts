@@ -11,32 +11,20 @@ import { readViewAsCookie, VIEW_AS_COOKIE as COOKIE } from "@/lib/view-as-cookie
 import { loadDatasetFrom } from "@/lib/dataset";
 import { createEngine, type Basis, type Dataset, type Employee, type Engine } from "@/lib/engine/engine";
 import { linkSignedInUser } from "@/lib/sso-gate";
+import { asRole, buildAccess, type Access, type AccessRole, type Scope } from "@/lib/access";
 
-export type AccessRole = "admin" | "executive" | "manager" | "employee";
-export const ACCESS_ROLES: { value: AccessRole; label: string; description: string }[] = [
-  { value: "admin", label: "Administrator", description: "Everything, including setup and users." },
-  { value: "executive", label: "Executive", description: "Reads the whole organisation." },
-  { value: "manager", label: "Manager", description: "Their units and reports: view, validate, set targets." },
-  { value: "employee", label: "Employee", description: "Their own profile and self-assessment." },
-];
+export { ACCESS_ROLES, type AccessRole, type Scope } from "@/lib/access";
 
-export interface Viewer {
+export interface Viewer extends Access {
   userId: string;
   name: string;
   email: string;
   username: string | null;
   assignedRole: AccessRole;
-  /** assigned role, raised to manager when the person actually manages someone */
-  role: AccessRole;
   employee: Employee | null;
-  allUnits: boolean;
-  unitIds: Set<string>;
-  employeeIds: Set<string>;
-  /** people whose ratings this viewer may validate and whose targets they may set */
-  reportIds: Set<string>;
-  homeUnitId: string | null;
   isAdmin: boolean;
-  canSeeOrg: boolean;
+  /** hierarchies an administrator assigned to this operator (read-only for them) */
+  assignedScopes: Scope[];
   mustChangePassword: boolean;
   /** set while an administrator is viewing the app as this person (read-only) */
   viewAs: { byUserId: string; byName: string; employeeId: string; expiresAt: number } | null;
@@ -106,55 +94,30 @@ export async function warmEngine(): Promise<boolean> {
   return true;
 }
 
-function asRole(r: string | null | undefined): AccessRole {
-  return r === "admin" || r === "executive" || r === "manager" ? r : "employee";
-}
-
 /** Who a viewer is built for: a signed-in account, or (viewing as) a person's record. */
 interface Who { userId: string; name: string; email: string; username: string | null; role: AccessRole; mustChangePassword: boolean }
 
-function buildViewer(engine: Engine, who: Who, employee: Employee | null): Viewer {
-  const assignedRole = who.role;
-  const reports = employee ? engine.reportsOf(employee.id) : [];
-  const managed = employee ? engine.managedUnitIds(employee.id) : [];
-  let role = assignedRole;
-  if (role === "employee" && (reports.length || managed.length)) role = "manager";
+/** The hierarchies assigned to an operator account (Admin › Users & access). */
+async function scopesOf(userId: string, role: AccessRole): Promise<Scope[]> {
+  if (role !== "operator" || userId.startsWith("person:")) return [];
+  const db = await getDb();
+  const rows = await db.select({ kind: schema.operatorScope.kind, id: schema.operatorScope.targetId })
+    .from(schema.operatorScope).where(eq(schema.operatorScope.userId, userId));
+  return rows.filter((r): r is Scope => r.kind === "leader" || r.kind === "unit");
+}
 
-  const allUnits = role === "admin" || role === "executive";
-  const unitIds = new Set<string>();
-  if (!allUnits && role === "manager") for (const m of managed) for (const id of engine.subtreeUnitIds(m)) unitIds.add(id);
-  const employeeIds = new Set<string>(allUnits ? engine.empById.keys() : []);
-  if (!allUnits) {
-    for (const r of reports) employeeIds.add(r.id);
-    for (const uid of unitIds) for (const e of engine.directMembers(uid)) employeeIds.add(e.id);
-    if (employee) employeeIds.add(employee.id);
-  }
-  const reportIds = new Set<string>(
-    role === "admin" ? [...engine.empById.keys()] : reports.map((r) => r.id),
-  );
-  if (employee && role !== "admin") reportIds.delete(employee.id); // nobody validates themselves
-
-  // Home scope: the whole organisation, or the highest unit this person manages, or their own unit.
-  let homeUnitId: string | null = null;
-  if (allUnits) homeUnitId = [...engine.roots].sort((a, b) => engine.membersOf(b.id).length - engine.membersOf(a.id).length)[0]?.id ?? null;
-  else if (managed.length) homeUnitId = managed.find((m) => !engine.ancestors(m).some((a) => managed.includes(a.id))) ?? managed[0];
-  else homeUnitId = employee?.unitId ?? null;
-
+function buildViewer(engine: Engine, who: Who, employee: Employee | null, assignedScopes: Scope[]): Viewer {
+  const access = buildAccess(engine, who.role, employee, assignedScopes);
   return {
+    ...access,
     userId: who.userId,
     name: who.name,
     email: who.email,
     username: who.username,
-    assignedRole,
-    role,
+    assignedRole: who.role,
     employee,
-    allUnits,
-    unitIds,
-    employeeIds,
-    reportIds,
-    homeUnitId,
-    isAdmin: role === "admin",
-    canSeeOrg: allUnits || role === "manager",
+    isAdmin: access.role === "admin",
+    assignedScopes,
     mustChangePassword: who.mustChangePassword,
     viewAs: null,
   };
@@ -179,7 +142,7 @@ export const getRealViewer = cache(async (): Promise<Viewer | null> => {
   if (employee && !employee.active && assignedRole !== "admin") return null;
   return buildViewer(engine, {
     userId: u.id, name: u.name, email: u.email, username: u.username ?? null, role: assignedRole, mustChangePassword: !!u.mustChangePassword,
-  }, employee);
+  }, employee, await scopesOf(u.id, assignedRole));
 });
 
 // ---- "view as": an administrator sees the app exactly as one person does -----------------
@@ -220,7 +183,7 @@ export const getViewer = cache(async (): Promise<Viewer | null> => {
   const t = await viewAsTarget(va.e, real.userId);
   if (!t.ok) return real;
   const engine = await getEngine();
-  return { ...buildViewer(engine, t.who, t.employee), viewAs: { byUserId: real.userId, byName: real.name, employeeId: t.employee.id, expiresAt: va.x } };
+  return { ...buildViewer(engine, t.who, t.employee, await scopesOf(t.who.userId, t.who.role)), viewAs: { byUserId: real.userId, byName: real.name, employeeId: t.employee.id, expiresAt: va.x } };
 });
 
 /** For pages: the viewer, or a redirect to sign in / to change the default password. */

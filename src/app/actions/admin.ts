@@ -8,7 +8,7 @@ import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { hashPassword } from "better-auth/crypto";
 import { getDb, schema } from "@/db";
-import { actionViewer, audit, type Viewer } from "@/lib/server";
+import { actionViewer, audit, getEngine, type Viewer } from "@/lib/server";
 import { getAuth, appUrl, MIN_PASSWORD_LENGTH } from "@/lib/auth";
 import { samlProviderBody, DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN } from "@/lib/saml";
 import { saveBackup } from "@/lib/backup";
@@ -356,7 +356,7 @@ export async function saveSettings(data: Data): Promise<Result> {
 export async function setUserAccess(input: { userId: string; role: string; employeeId: string | null }): Promise<Result> {
   try {
     const v = await admin();
-    const role = z.enum(["admin", "executive", "manager", "employee"]).parse(input.role);
+    const role = z.enum(["admin", "executive", "operator", "manager", "employee"]).parse(input.role);
     const db = await getDb();
     if (input.userId === v.userId && role !== "admin") return { ok: false, error: "You cannot take away your own administrator access." };
     if (role !== "admin") {
@@ -370,7 +370,29 @@ export async function setUserAccess(input: { userId: string; role: string; emplo
     }
     await refreshGate(db);
     await audit(v, "set_access", "user", input.userId, { role, employeeId: input.employeeId });
-    return done(["/admin/users"], "Access saved.");
+    return done(["/admin/users"], role === "operator" ? "Access saved. Give them hierarchies to work on with the network button on their row." : "Access saved.");
+  } catch (e) { return fail(e); }
+}
+
+/** The leaders and units an operator works on (read-only for them), replacing what they had. */
+export async function setOperatorScopes(userId: string, scopes: { kind: "leader" | "unit"; id: string }[]): Promise<Result> {
+  try {
+    const v = await admin();
+    const list = z.array(z.object({ kind: z.enum(["leader", "unit"]), id: z.string().min(1).max(100) })).max(200).parse(scopes);
+    const db = await getDb();
+    const [u] = await db.select({ role: schema.user.role }).from(schema.user).where(eq(schema.user.id, userId));
+    if (!u) return { ok: false, error: "That account no longer exists." };
+    if (u.role !== "operator") return { ok: false, error: "Give the account Operator access first." };
+    const engine = await getEngine();
+    const bad = list.find((s) => (s.kind === "leader" ? !engine.empById.get(s.id)?.active : !engine.unitById.has(s.id)));
+    if (bad) return { ok: false, error: "One of those no longer exists or has left. Reload the page." };
+    const unique = [...new Map(list.map((s) => [`${s.kind}:${s.id}`, s])).values()];
+    await db.transaction(async (tx) => {
+      await tx.delete(schema.operatorScope).where(eq(schema.operatorScope.userId, userId));
+      if (unique.length) await tx.insert(schema.operatorScope).values(unique.map((s) => ({ userId, kind: s.kind, targetId: s.id, addedBy: v.name })));
+    });
+    await audit(v, "set_operator_scopes", "user", userId, { scopes: unique });
+    return done(["/admin/users"], `${unique.length} ${unique.length === 1 ? "hierarchy" : "hierarchies"} saved. They apply from the operator's next page load.`);
   } catch (e) { return fail(e); }
 }
 
@@ -379,7 +401,7 @@ const localUserIn = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(MIN_PASSWORD_LENGTH, `The first password needs at least ${MIN_PASSWORD_LENGTH} characters.`),
-  role: z.enum(["admin", "executive", "manager", "employee"]).default("employee"),
+  role: z.enum(["admin", "executive", "operator", "manager", "employee"]).default("employee"),
   employeeId: optId,
 });
 /** A local (non-SSO) account. It must change its password at first sign-in. */

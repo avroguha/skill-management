@@ -214,6 +214,32 @@ export const openPosition = pgTable("open_position", {
   closedAt: timestamp("closed_at", { withTimezone: true }),
 }, (t) => [index("open_position_unit_idx").on(t.unitId, t.status), index("open_position_role_idx").on(t.roleId), index("open_position_grade_idx").on(t.gradeId)]);
 
+// ---- operators and their charts ---------------------------------------------------------
+
+// The hierarchies an administrator gives an operator to work on, beyond their own reports:
+// a leader (that person and everyone below them) or a unit (and the units under it).
+export const operatorScope = pgTable("operator_scope", {
+  userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  // leader | unit
+  kind: text("kind").notNull(),
+  targetId: text("target_id").notNull(),
+  addedBy: text("added_by").notNull().default(""),
+  addedAt: timestamp("added_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.kind, t.targetId] })]);
+
+// A chart an operator (or an executive or administrator) built in the app: the definition
+// only. The numbers are worked out from live data every time it is shown.
+export const savedChart = pgTable("saved_chart", {
+  id: id(),
+  ownerId: text("owner_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  config: jsonb("config").notNull(),
+  sort: integer("sort").notNull().default(0),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index("saved_chart_owner_idx").on(t.ownerId)]);
+
 // Monthly roll-up per unit, so trends exist from day one and never need reconstructing.
 export const snapshot = pgTable("snapshot", {
   unitId: text("unit_id").notNull(),

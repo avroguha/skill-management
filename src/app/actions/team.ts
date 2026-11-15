@@ -7,12 +7,12 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
-import { guardAction, audit, canSeeUnit, getEngine, type Viewer } from "@/lib/server";
+import { guardAction, audit, getEngine, type Viewer } from "@/lib/server";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 
 function canManageUnit(v: Viewer, unitId: string): boolean {
-  return v.isAdmin || (v.role === "manager" && canSeeUnit(v, unitId));
+  return v.isAdmin || v.manageUnitIds.has(unitId);
 }
 
 const newSkill = z.object({
@@ -197,7 +197,7 @@ export async function suggestSkill(input: z.input<typeof newSkill>): Promise<Res
   const v = g.v;
   const p = newSkill.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Check the fields." };
-  const status = v.isAdmin || v.role === "manager" ? "active" : "draft";
+  const status = v.isAdmin || v.role === "manager" || v.manageUnitIds.size > 0 ? "active" : "draft";
   const s = await findOrCreateSkill(p.data, status, v.name);
   if (!s.created) {
     return s.status === "draft"

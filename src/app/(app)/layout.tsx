@@ -23,6 +23,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     { href: "/people", label: "People", icon: "people" },
     { href: "/skills", label: "Skills", icon: "skills" },
   ] : [];
+  // operators, executives and administrators build their own charts over what they may see
+  if (v.canBuildCharts) main.push({ href: "/charts", label: "Charts", icon: "charts" });
   const mine: NavItem[] = [];
   if (v.employee) {
     mine.push({ href: `/people/${v.employee.id}`, label: "My profile", icon: "profile" });
@@ -40,7 +42,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // Who they are decides what they get: a manager is anyone who runs a unit or has reports.
   const managed = v.employee ? engine.managedUnitIds(v.employee.id).map((id) => engine.unitById.get(id)?.name).filter(Boolean) : [];
-  const roleLabel = v.role === "manager" && managed.length
+  const roleLabel = v.role === "operator"
+    ? `Operator${v.chartScopes !== "all" && v.chartScopes.length ? ` · ${v.chartScopes.length} hierarch${v.chartScopes.length === 1 ? "y" : "ies"}` : ""}`
+    : v.role === "manager" && managed.length
     ? `Manager · ${managed[0]}${managed.length > 1 ? ` +${managed.length - 1}` : ""}`
     : v.role === "employee" && v.employee?.unitId ? `Team member · ${engine.unitById.get(v.employee.unitId)?.name ?? ""}`
       : ACCESS_ROLES.find((r) => r.value === v.role)?.label ?? v.role;
@@ -58,7 +62,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
         <div className="mx-auto w-full min-w-0 max-w-[1600px] p-4 md:p-6">{children}</div>
       </SidebarInset>
-      <Tour userKey={v.userId} persona={v.isAdmin ? "admin" : v.role === "executive" ? "executive" : v.role === "manager" ? "manager" : "employee"}
+      <Tour userKey={v.userId} persona={v.isAdmin ? "admin" : v.role === "executive" ? "executive" : v.role === "operator" ? "operator" : v.role === "manager" ? "manager" : "employee"}
+        charts={v.canBuildCharts}
         profileHref={v.employee ? `/people/${v.employee.id}` : null} rates={!!v.employee && !engine.isTop(v.employee)}
         hasTeam={mine.some((m) => m.href === "/team")} validates={v.reportIds.size > 0} canSeeOrg={v.canSeeOrg} />
     </SidebarProvider>

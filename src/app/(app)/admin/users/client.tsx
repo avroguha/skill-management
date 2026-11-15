@@ -1,8 +1,13 @@
 "use client";
 import { useState, useTransition } from "react";
-import { KeyRound, ShieldCheck, Ban, CircleCheck, Plus } from "lucide-react";
+import { KeyRound, ShieldCheck, Ban, CircleCheck, Plus, Network, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { substringFilter } from "@/lib/search";
+import { setOperatorScopes } from "@/app/actions/admin";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DataTable } from "@/components/data-table";
 import { RecordDialog } from "@/components/admin-crud";
@@ -12,7 +17,16 @@ import { setUserAccess, resetPassword, setBanned, createLocalUser } from "@/app/
 type Row = Record<string, unknown>;
 type Opt = { value: string; label: string };
 
-export function UsersAdmin({ rows, roles, employees }: { rows: Row[]; roles: Opt[]; employees: (Opt & { taken: boolean })[] }) {
+export interface ScopeOpt { kind: "leader" | "unit"; id: string; label: string; detail: string }
+
+export function UsersAdmin({ rows, roles, employees, scopeOptions, scopes }: {
+  rows: Row[]; roles: Opt[]; employees: (Opt & { taken: boolean })[];
+  /** leaders (people with someone below them) and units an operator can be given */
+  scopeOptions: ScopeOpt[];
+  /** each operator account's hierarchies */
+  scopes: Record<string, { kind: "leader" | "unit"; id: string }[]>;
+}) {
+  const [hier, setHier] = useState<Row | null>(null);
   const [access, setAccess] = useState<Row | null>(null);
   const [reset, setReset] = useState<Row | null>(null);
   const [adding, setAdding] = useState(false);
@@ -42,6 +56,7 @@ export function UsersAdmin({ rows, roles, employees }: { rows: Row[]; roles: Opt
         actions={(row) => (
           <>
             {icon("Change access", () => setAccess(row), ShieldCheck)}
+            {row.role === "operator" && icon("Hierarchies this operator works on", () => setHier(row), Network)}
             {row.employeeId !== "none" && row.role !== "admin" && !row.banned
               && <ViewAsButton employeeId={String(row.employeeId)} name={String(row.person || row.name)} variant="ghost" size="icon" iconOnly />}
             {icon("Reset password", () => setReset(row), KeyRound, !row.local)}
@@ -61,6 +76,10 @@ export function UsersAdmin({ rows, roles, employees }: { rows: Row[]; roles: Opt
           ]}
           save={(d) => setUserAccess({ userId: String(access.id), role: String(d.role), employeeId: d.employeeId ? String(d.employeeId) : null })}
           onClose={() => setAccess(null)} />
+      )}
+      {hier && (
+        <ScopeDialog userId={String(hier.id)} name={String(hier.name)} options={scopeOptions}
+          initial={scopes[String(hier.id)] ?? []} onClose={() => setHier(null)} />
       )}
       {reset && (
         <RecordDialog title={`New password for ${String(reset.name)}`}
@@ -87,5 +106,70 @@ export function UsersAdmin({ rows, roles, employees }: { rows: Row[]; roles: Opt
           onClose={() => setAdding(false)} />
       )}
     </>
+  );
+}
+
+/** The leaders and units an operator works on, besides their own reports. Read-only for them. */
+function ScopeDialog({ userId, name, options, initial, onClose }: {
+  userId: string; name: string; options: ScopeOpt[]; initial: { kind: "leader" | "unit"; id: string }[]; onClose: () => void;
+}) {
+  const key = (s: { kind: string; id: string }) => `${s.kind}:${s.id}`;
+  const [chosen, setChosen] = useState(initial.map(key));
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const byKey = new Map(options.map((o) => [key(o), o]));
+  const save = () => start(async () => {
+    const r = await setOperatorScopes(userId, chosen.map((k) => { const [kind, ...rest] = k.split(":"); return { kind: kind as "leader" | "unit", id: rest.join(":") }; }));
+    if (r.ok) { toast.success(r.message ?? "Saved"); onClose(); } else toast.error(r.error);
+  });
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Hierarchies for {name}</DialogTitle>
+          <DialogDescription>
+            Besides their own reports, the operator reads these and builds charts over them: a leader brings that person and everyone below them; a unit brings it and the units under it. They cannot validate, set targets or edit team needs there.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2">
+          {chosen.length ? (
+            <ul className="grid gap-1.5">
+              {chosen.map((k) => {
+                const o = byKey.get(k);
+                return (
+                  <li key={k} className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-sm">
+                    <span className="min-w-0 truncate">{o ? o.label : "(no longer exists)"}<span className="text-muted-foreground"> · {o?.detail ?? k.split(":")[0]}</span></span>
+                    <Button size="icon" variant="ghost" aria-label={`Remove ${o?.label ?? k}`} onClick={() => setChosen(chosen.filter((x) => x !== k))}><X /></Button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : <p className="text-sm text-muted-foreground">None yet: only their own reports, if they have any.</p>}
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild><Button variant="outline" size="sm" className="justify-self-start"><Plus />Add a leader or unit</Button></PopoverTrigger>
+            <PopoverContent className="w-96 p-0" align="start">
+              <Command filter={substringFilter}>
+                <CommandInput placeholder="Find a leader or unit…" />
+                <CommandList>
+                  <CommandEmpty>Nothing matches.</CommandEmpty>
+                  {(["leader", "unit"] as const).map((kind) => (
+                    <CommandGroup key={kind} heading={kind === "leader" ? "Leaders (and everyone below them)" : "Units (and the units under them)"}>
+                      {options.filter((o) => o.kind === kind && !chosen.includes(key(o))).map((o) => (
+                        <CommandItem key={key(o)} value={`${o.label} ${o.detail} ${kind}`} onSelect={() => { setChosen([...chosen, key(o)]); setOpen(false); }}>
+                          <span className="flex-1 truncate">{o.label}</span><span className="text-xs text-muted-foreground">{o.detail}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  ))}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        </div>
+        <DialogFooter>
+          <Button onClick={save} disabled={pending}>{pending && <Loader2 className="animate-spin" />}Save</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

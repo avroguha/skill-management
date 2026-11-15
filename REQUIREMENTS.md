@@ -71,6 +71,9 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | Import ServiceNow group data | The sync imports the synced people's groups and memberships (sys_user_group, sys_user_grmember); Admin › ServiceNow › Groups |
 | A manager adds an open position (if needed) and the tool suggests what type of talent to look for | My team › Open positions, added only by the manager: open positions (role, grade, skills, headcount, notes; filled / cancelled / reopen / delete); under each, the talent to look for: must bring, can be coached, nice to have, other short team needs, a suggested role and grade, experienced or not, and people in the organisation who already have most of it |
 | With no open position, the training that would be useful for the team from its skill requirements | My team › Open positions (when nothing is open) and › Training: per skill, who is below their target or one level below a short team need, who can coach, course / coaching / external, booked already; Book makes a training plan for each person chosen |
+| See the types of graph available | 11 fixed views before this (heatmaps by unit and by person, trend line, calibration and coverage lists, radar, level distribution, ranked, stacked and proportion bars, org chart); now also any chart an operator builds |
+| Graphs made in the app so data need not be moved out, with screenshots taken automatically | Charts: built from live data, nine chart types, saved as settings only; PNG per chart (title, subtitle, legend, date), Download all as PNG, Copy as image. Screenshots on demand only (the owner's choice, 2026-11-15) |
+| An operator role for a leader who builds charts, with visibility of data in that hierarchy | Operator (Admin › Users & access): own hierarchy plus leaders or units an administrator assigns, read-only there; builds charts over them (both kinds of scope, the owner's choice) |
 
 ## Open questions for the requirement owner
 

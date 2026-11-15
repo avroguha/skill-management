@@ -21,7 +21,7 @@ import { NeedList } from "@/components/needs";
 import { Empty } from "@/components/heatmap";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { requireViewer, getEngine, loadDataset, param, canSeeUnit, type SearchParams } from "@/lib/server";
+import { requireViewer, getEngine, loadDataset, param, type SearchParams } from "@/lib/server";
 import { needView, withParams } from "@/lib/views";
 import type { Employee } from "@/lib/engine/engine";
 import { TeamNeeds, type NeedRow } from "./team-needs";
@@ -160,7 +160,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
   }));
 
   // ---- open positions (added by the manager) and the talent to look for in each ----
-  const canManage = !!unitId && (v.isAdmin || (v.role === "manager" && canSeeUnit(v, unitId)));
+  const canManage = !!unitId && (v.isAdmin || v.manageUnitIds.has(unitId));
   const catName = (id: string) => engine.categoryById.get(id)?.name ?? "";
   const gradeName = (id: string | null) => (id ? engine.gradeById.get(id)?.name ?? "" : "");
   // people the viewer can see, for "already in the organisation"
