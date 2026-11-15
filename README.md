@@ -13,6 +13,7 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 - [People from ServiceNow](#people-from-servicenow)
 - [Sign-in and access](#sign-in-and-access)
 - [Deploy with Docker](#deploy-with-docker)
+- [HTTPS and the certificate](#https-and-the-certificate)
 - [Backups and starting over](#backups-and-starting-over)
 - [Import and export](#import-and-export)
 - [Integrations: Power BI, Tableau, Excel](#integrations-power-bi-tableau-excel)
@@ -197,7 +198,8 @@ docker compose --env-file work.env up --build -d
 - `work.env` holds **placeholders on avro.com** for the image registry prefix, apt mirror, npm registry and proxy. Replace them on the work machine with the real values, and never commit those. `home.env` uses the public registries with no proxy.
 - A token for a private npm registry is given for one command only: `NPM_TOKEN=... docker compose --env-file work.env up --build -d`.
 - Corporate CA certificates for a TLS-inspecting proxy go in `certs/*.crt` (gitignored) on the build machine.
-- Two containers, host networking. **PostgreSQL 17** listens on `127.0.0.1:${DB_PORT}` only; the **app** listens on `${APP_PORT}` (8080). Put TLS in front of the app (the company load balancer, or a reverse proxy) and set `APP_URL` to the https address people type: secure cookies and SAML depend on it.
+- **HTTPS on 443**, with port 80 redirecting to it. Set `APP_URL` to the https address people type: secure cookies and SAML depend on it. The **app** publishes `${APP_PORT}` (443) and `${APP_HTTP_PORT}` (80); **PostgreSQL 17** sits on an internal network with the app only and publishes no port. (Published ports rather than host networking: the app runs unprivileged and cannot bind a port below 1024 itself.) Behind a load balancer that terminates TLS, set `APP_TLS=off`: the app then serves plain HTTP on `APP_HTTP_PORT`.
+- **The certificate** lives in `${TLS_DIR}` (`tls.crt`, `tls.key`), outside the code folder. See [HTTPS and the certificate](#https-and-the-certificate).
 - **Data** lives in `${DATA_DIR}`, outside the code folder at home and at work (`../skill-management-state`). `pgdata/` holds the database (bind mount). `secrets/` holds the database password and the session-signing secret, generated on the first start and readable only by the app's user. Backups go to `${BACKUP_DIR}`.
 - **First start** migrates the database and creates `admin`. With `SEED_DEMO=true` it also loads the demo organisation (Avro Corp, made-up people), once per database, never again (not after a clear, not after a redeploy). Sign in as `exec`, `manager` or `employee` with password `demo` to see each audience. Remove the demo in Admin › Import & export when going live.
 - **Upgrade**: replace the code, run the same command again. **A redeploy never touches the data**:
@@ -215,12 +217,34 @@ docker compose --env-file work.env up --build -d
 |---|---|
 | `IMAGE_REGISTRY`, `APT_MIRROR`, `NPM_REGISTRY`, `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Where the build downloads from. Empty means off. |
 | `RUNTIME_HTTPS_PROXY` | The proxy the running app uses to reach ServiceNow. Empty means none. `NO_PROXY` applies too. |
-| `APP_PORT`, `APP_BIND`, `APP_URL`, `TRUSTED_ORIGINS` | How people reach it |
-| `DB_PORT` | PostgreSQL's loopback port |
+| `APP_PORT`, `APP_HTTP_PORT`, `APP_BIND`, `APP_URL`, `TRUSTED_ORIGINS` | How people reach it: HTTPS port (443), the port that redirects to it (80), the host address both are published on, the address people type |
+| `APP_TLS`, `TLS_DIR`, `TLS_HOSTNAMES` | HTTPS: `on` (or `off` behind a TLS-terminating load balancer), the certificate folder, extra names for the self-signed certificate |
+| `DB_PORT` | PostgreSQL's port on the internal network |
 | `SEED_DEMO`, `FORCE_PASSWORD_CHANGE`, `ORG_NAME` | First start |
 | `DATA_DIR`, `TZ` | Where the data lives (outside the code folder); time zone |
 | `APP_WORKERS` | App processes serving requests. Empty: one per CPU core, at most 8. See [Scale and sizing](#scale-and-sizing). |
 | `BACKUP_DIR` | Where backups go. Put it on another disk or a network share, so losing the server does not lose the backups. |
+
+## HTTPS and the certificate
+
+The app always serves HTTPS on 443; port 80 only redirects. The certificate is two files in `TLS_DIR` (`../skill-management-state/tls`, outside the code folder, so a redeploy never touches it):
+
+| File | What |
+|---|---|
+| `tls.crt` | the server certificate first, then its intermediates (PEM) |
+| `tls.key` | its private key, without a password (PEM), readable by the app's user only |
+
+- **First start**: with no certificate there, a **self-signed** one is made for `localhost`, `127.0.0.1`, the host in `APP_URL` and any `TLS_HOSTNAMES`, so the app always starts. Browsers warn about it until the real one is installed. A certificate already there is never touched.
+- **Installing the company certificate**: download it from the certificate service as a **PEM bundle (PKCS#8, chain plus private key with a password)** or a **PFX / PKCS#12** file, copy it to the server, and run one command from the project folder:
+
+  ```bash
+  bash scripts/install-cert.sh ~/skills.pem --host skills.avro.com
+  ```
+
+  It asks for the key's password (nothing is echoed or shown on a command line), finds the server certificate by its key, builds the chain (the root is left out), checks the key matches, that it has not expired (warning under 30 days) and that it covers `--host` (a name or an IP address), keeps the old pair in `TLS_DIR/backup-<time>/`, and replaces the files in one step. On any failure nothing changes. `TLS_DIR` is read from `work.env` (`--env-file home.env` at home, or `--dir <folder>`). For automation, `SKM_CERT_PASSWORD` replaces the prompt.
+- **No restart needed**: the app checks the files once a minute and switches to a new certificate that loads; its log says `tls: new certificate in use`. A certificate that does not load (a key of another certificate, half-copied files) is reported and the previous one keeps serving. A stop and start (`docker compose --env-file work.env up -d`) also works.
+- Afterwards the downloaded file is no longer needed by the app and still holds the key: keep it somewhere safe, or delete it from the server.
+- `bash scripts/test-install-cert.sh` checks the script against a made-up root, intermediate and server certificate: PEM with and without a password, PFX, a wrong password, a name or an IP address it does not cover, a key that matches no certificate, and that the password never appears in the output (Linux, or Git Bash).
 
 ## Backups and starting over
 

@@ -33,6 +33,18 @@ function readPasswordFile(): string | undefined {
   return fs.readFileSync(f, "utf8").trim();
 }
 
+/** The password goes INTO the connection string: pg lets the values parsed from a
+ *  connectionString override its other options, so a separate `password` was silently
+ *  dropped. That went unnoticed while the app reached PostgreSQL on 127.0.0.1, which the
+ *  image trusts without a password; over the compose network it is required. */
+export function withPassword(url: string, password: string | undefined): string {
+  if (!password) return url;
+  const u = new URL(url);
+  if (u.password) return url; // a password in DATABASE_URL itself wins
+  u.password = encodeURIComponent(password);
+  return u.toString();
+}
+
 /**
  * The embedded development database. PGlite cannot recover a data folder left behind by a
  * killed process ("PGlite failed to initialize properly"), and a stopped dev server is
@@ -72,10 +84,8 @@ async function open(): Promise<Opened> {
   const url = process.env.DATABASE_URL;
   if (url) {
     const pg = await import("pg");
-    const password = readPasswordFile();
     const pool = new pg.default.Pool({
-      connectionString: url,
-      ...(password ? { password } : {}),
+      connectionString: withPassword(url, readPasswordFile()),
       max: Number(process.env.DATABASE_POOL_MAX || 10),
     });
     const db = drizzlePg(pool, { schema });

@@ -8,27 +8,73 @@
 # against the wrong registry. An explicitly EMPTY value is allowed and means
 # "off" (no registry prefix, Ubuntu's own mirrors, no proxy).
 #
-# Host networking for both services. PostgreSQL listens on 127.0.0.1 only, so
-# nothing but the app on this host reaches it. Bind mounts for the data; no
-# secret in this file or the env files: the database password and the
-# session-signing secret are generated as files on the first start
-# (deploy/db-entrypoint.sh) in DATA_DIR/secrets.
+# HTTPS on APP_PORT (443), with APP_HTTP_PORT (80) redirecting to it. The certificate
+# is TLS_DIR/tls.crt + tls.key: tls-init makes a self-signed one on the first start;
+# install the real one with  bash scripts/install-cert.sh <downloaded file>  and the
+# app switches to it within a minute, no restart.
+#
+# Published ports, NOT host networking (the one exception to "host networking where
+# possible"): the app runs unprivileged and cannot bind a port below 1024 itself -
+# added capabilities do not reach a non-root process and no-new-privileges blocks
+# the file-capability route. Docker binds 443/80 and forwards them to 8443/8080.
+# PostgreSQL is on an internal network with the app only: no port on the host, no
+# way out. Bind mounts for the data; no secret in this file or the env files: the
+# database password and the session-signing secret are generated as files on the
+# first start (deploy/db-entrypoint.sh) in DATA_DIR/secrets.
 x-logging: &logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "5"
 
+networks:
+  # the app and the database only; "internal" = no route out of it
+  backend:
+    internal: true
+  # the app's way out (the ServiceNow sync) and the published ports
+  frontend: {}
+
 services:
+  # Runs to completion before the app: a self-signed certificate when none is
+  # installed, and the certificate folder handed to the app's user every time
+  # (deploy/tls-init.sh). Same image as the app, never pulled; no network at all.
+  tls-init:
+    image: skill-management:local
+    pull_policy: never
+    user: "0:0"
+    entrypoint: ["/usr/local/bin/tls-init"]
+    network_mode: none
+    restart: "no"
+    logging: *logging
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - DAC_OVERRIDE
+    environment:
+      TLS_DIR: /tls
+      APP_UID: "10001"
+      APP_URL: ${APP_URL?set it in the env file (the address people type)}
+      TLS_HOSTNAMES: ${TLS_HOSTNAMES?set it in the env file (may be empty)}
+    volumes:
+      - ${TLS_DIR?set it in the env file (the certificate folder)}:/tls:z
+
   db:
     # Pinned by digest; image-pins.json records when it was pushed (>= 72 hours before pinning).
     image: ${IMAGE_REGISTRY?set it in the env file - work.env or home.env}postgres:17@sha256:2d2b8998d31037bf721cfdf764d76ba74171b4fab3431b7f72c27c56ddbdf9e3
-    network_mode: host
+    networks: [backend]
     restart: unless-stopped
     logging: *logging
     entrypoint: ["/bin/bash", "/deploy/db-entrypoint.sh"]
-    # room for every app worker pool (APP_WORKERS x DATABASE_POOL_MAX) and maintenance
-    command: ["postgres", "-c", "listen_addresses=127.0.0.1", "-c", "port=${DB_PORT?set it in the env file}", "-c", "max_connections=200"]
+    # Listens on the backend network only, which has nothing on it but the app and is
+    # never published. Room for every app worker pool (APP_WORKERS x DATABASE_POOL_MAX).
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "port=${DB_PORT?set it in the env file}", "-c", "max_connections=200"]
     environment:
       POSTGRES_USER: skills
       POSTGRES_DB: skills
@@ -64,10 +110,16 @@ services:
     image: skill-management:local
     # Built here, never pulled: a pull of "skill-management:local" would go to Docker Hub.
     pull_policy: build
-    network_mode: host
+    networks: [backend, frontend]
+    ports:
+      # see the top of this file: why published ports and not host networking
+      - "${APP_BIND?set it in the env file (the host address to listen on)}:${APP_PORT?set it in the env file (443)}:8443"
+      - "${APP_BIND?set it in the env file (the host address to listen on)}:${APP_HTTP_PORT?set it in the env file (80)}:8080"
     restart: unless-stopped
     logging: *logging
     depends_on:
+      tls-init:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
     read_only: true
@@ -79,11 +131,11 @@ services:
     cap_drop:
       - ALL
     environment:
-      # The app listens on a high port on the host itself. TLS is terminated in front
-      # of it (the company load balancer, or a reverse proxy at home); APP_URL is the
-      # address people type, and must be https for secure cookies and SAML.
-      PORT: ${APP_PORT?set it in the env file}
-      HOSTNAME: ${APP_BIND?set it in the env file}
+      # HTTPS with the certificate in /tls. "off" only behind a load balancer or proxy
+      # that terminates TLS: then APP_HTTP_PORT serves the app over plain HTTP.
+      APP_TLS: ${APP_TLS?set it in the env file - on, or off behind a TLS-terminating proxy}
+      TLS_DIR: /tls
+      # the address people type; https, for secure cookies and SAML
       APP_URL: ${APP_URL?set it in the env file (the address people type)}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS?set it in the env file (may be empty)}
       # true = load the demo organisation once into an empty database; false = start empty.
@@ -91,7 +143,7 @@ services:
       FORCE_PASSWORD_CHANGE: ${FORCE_PASSWORD_CHANGE?set it in the env file - true or false}
       ORG_NAME: ${ORG_NAME?set it in the env file}
       TZ: ${TZ?set it in the env file, e.g. Asia/Kolkata}
-      DATABASE_URL: postgres://skills@127.0.0.1:${DB_PORT?set it in the env file}/skills
+      DATABASE_URL: postgres://skills@db:${DB_PORT?set it in the env file}/skills
       DATABASE_PASSWORD_FILE: /secrets/db_password
       # Worker processes sharing the port (empty = one per core, at most 8) and each one's
       # database connections: APP_WORKERS x DATABASE_POOL_MAX must stay under 200.
@@ -99,12 +151,13 @@ services:
       DATABASE_POOL_MAX: "10"
       BETTER_AUTH_SECRET_FILE: /secrets/auth_secret
       # Runtime proxy: the only outbound call is the ServiceNow user sync. Node's fetch
-      # honours it (NODE_USE_ENV_PROXY in the image); the database is on loopback (NO_PROXY).
+      # honours it (NODE_USE_ENV_PROXY in the image); the database is not HTTP, so no proxy touches it.
       HTTPS_PROXY: ${RUNTIME_HTTPS_PROXY?set it in the env file (empty = no proxy)}
       NO_PROXY: ${NO_PROXY?set it in the env file}
       # Backups (Admin › Import & export): a host folder, never inside the image, so a
       # redeploy cannot touch them. Put it on another disk or a network share.
       BACKUP_DIR: /backups
     volumes:
+      - ${TLS_DIR?set it in the env file (the certificate folder)}:/tls:ro,z
       - ${DATA_DIR?set it in the env file}/secrets:/secrets:ro,z
       - ${BACKUP_DIR?set it in the env file (where backups go)}:/backups:z

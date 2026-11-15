@@ -10,7 +10,8 @@ const cores = typeof os.availableParallelism === "function" ? os.availableParall
 const workers = Math.max(1, Math.min(32, Number(process.env.APP_WORKERS) || Math.min(cores, 8)));
 
 if (workers === 1 || !cluster.isPrimary) {
-  require("./server.js");
+  // HTTPS front around the standalone build (deploy/serve.cjs, copied next to server.js)
+  require("./serve.cjs");
 } else {
   let stopping = false;
   const startedAt = new Map();

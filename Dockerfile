@@ -52,7 +52,8 @@ RUN set -eux; \
     cp -r .next/static .next/standalone/.next/static; \
     if [ -d public ]; then cp -r public .next/standalone/public; fi; \
     cp -r drizzle .next/standalone/drizzle; \
-    test -f .next/standalone/server.js
+    test -f .next/standalone/server.js; \
+    grep -q '^const nextConfig = {' .next/standalone/server.js || { echo "server.js no longer embeds the Next.js config on one line, and deploy/serve.cjs reads it from there" >&2; exit 1; }
 
 # ---- stage 2: Ubuntu with the Node runtime and the standalone server copied in
 FROM ${IMAGE_REGISTRY}${IMAGE_UBUNTU}
@@ -68,7 +69,7 @@ RUN set -eux; \
         /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl; \
+    apt-get install -y --no-install-recommends ca-certificates curl openssl; \
     rm -rf /var/lib/apt/lists/*
 
 COPY certs/ /usr/local/share/ca-certificates/site/
@@ -79,8 +80,13 @@ COPY --from=build /usr/local/bin/node /usr/local/bin/node
 
 WORKDIR /app
 COPY --from=build /build/.next/standalone ./
-# several workers sharing the port (APP_WORKERS); see deploy/cluster.cjs
+# several workers sharing the ports (APP_WORKERS; deploy/cluster.cjs), each serving
+# HTTPS with the certificate in TLS_DIR (deploy/serve.cjs, deploy/tls.cjs); tls-init
+# makes a self-signed certificate on the first start (deploy/tls-init.sh)
 COPY --from=build /build/deploy/cluster.cjs ./cluster.cjs
+COPY --from=build /build/deploy/serve.cjs ./serve.cjs
+COPY --from=build /build/deploy/tls.cjs ./tls.cjs
+COPY --from=build /build/deploy/tls-init.sh /usr/local/bin/tls-init
 
 # Ubuntu 24.04 already has a user "ubuntu" (uid 1000); the app gets its own
 # system user. The app keeps no state on disk: everything is in PostgreSQL.
@@ -89,25 +95,28 @@ RUN set -eux; \
     useradd -r -u 10001 -d /app -s /usr/sbin/nologin skills; \
     mkdir -p /app/.next/cache; \
     chown -R skills:skills /app/.next/cache; \
+    chmod 0755 /usr/local/bin/tls-init; \
     node --version
 
 # Nothing from the build environment reaches the runtime layer: no registry,
 # no token, no proxy. The one outbound call (the ServiceNow user sync) uses the
 # runtime proxy from the compose file, which NODE_USE_ENV_PROXY makes fetch honour.
 ENV NODE_ENV=production \
-    PORT=8080 \
-    HOSTNAME=0.0.0.0 \
+    APP_TLS=on \
+    TLS_DIR=/tls \
     NEXT_TELEMETRY_DISABLED=1 \
     NODE_USE_ENV_PROXY=1 \
     MIGRATIONS_DIR=/app/drizzle \
     NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 USER skills
-EXPOSE 8080
+# 8443 HTTPS (the app), 8080 HTTP (redirects to HTTPS; with APP_TLS=off it serves the app)
+EXPOSE 8443 8080
 
 # curl, not a Node one-liner: a language runtime every 30 s costs about a
-# second of CPU. --noproxy: a proxy must never see a loopback probe.
+# second of CPU. --noproxy: a proxy must never see a loopback probe. Loopback
+# HTTP on 8080 is served, not redirected, whether TLS is on or off.
 HEALTHCHECK --interval=30s --timeout=6s --start-period=40s --retries=3 \
-    CMD curl -fsS --noproxy '*' -o /dev/null --max-time 4 "http://127.0.0.1:${PORT}/api/health" || exit 1
+    CMD curl -fsS --noproxy '*' -o /dev/null --max-time 4 "http://127.0.0.1:8080/api/health" || exit 1
 
 CMD ["node", "cluster.cjs"]

@@ -84,6 +84,8 @@ test("legacy-builder compatible, unprivileged, cheap health check, no outbound f
   const hc = d.slice(d.indexOf("HEALTHCHECK"), d.indexOf("CMD ["));
   assert.match(hc, /curl/);
   assert.ok(!/node -e|python/.test(hc), "no language runtime in the health check");
+  assert.match(hc, /http:\/\/127\.0\.0\.1:8080\/api\/health/, "loopback HTTP is served whether TLS is on or off");
+  assert.match(d, /apt-get install[^\n]*\bopenssl\b/, "tls-init makes the self-signed certificate with openssl");
   assert.match(d, /apt-get install[^\n]*\bcurl\b/);
   // next/font/google downloads at build time and breaks behind a proxy
   const layout = read("src/app/layout.tsx");
@@ -104,8 +106,21 @@ test("compose requires every location from the env file, pins nothing public and
   }
   assert.match(body, /NPM_TOKEN: \$\{NPM_TOKEN-\}/, "the token reaches the build, empty by default");
   assert.match(body, /pull_policy: build/);
-  assert.equal([...body.matchAll(/network_mode: host/g)].length, 2, "host networking for both services");
-  assert.match(body, /listen_addresses=127\.0\.0\.1/, "PostgreSQL listens on loopback only");
+  assert.ok(!/network_mode: host/.test(body), "published ports instead: a non-root app cannot bind 443 on the host");
+  assert.match(c, /cannot bind a port below 1024/, "the reason for not using host networking is written down");
+  assert.match(body, /"\$\{APP_BIND\?[^}]*\}:\$\{APP_PORT\?[^}]*\}:8443"/, "HTTPS published from APP_PORT");
+  assert.match(body, /"\$\{APP_BIND\?[^}]*\}:\$\{APP_HTTP_PORT\?[^}]*\}:8080"/, "HTTP published from APP_HTTP_PORT");
+  // the database: on an internal network with the app only, never published
+  const db = body.slice(body.indexOf("\n  db:"), body.indexOf("\n  app:"));
+  assert.match(db, /networks: \[backend\]/);
+  assert.ok(!/ports:/.test(db), "the database publishes no port");
+  assert.match(body, /backend:\s*\n\s*internal: true/, "the backend network has no way out");
+  // tls-init: no network, runs to completion before the app, never pulled
+  const init = body.slice(body.indexOf("\n  tls-init:"), body.indexOf("\n  db:"));
+  assert.match(init, /network_mode: none/);
+  assert.match(init, /pull_policy: never/);
+  assert.match(body, /tls-init:\s*\n\s*condition: service_completed_successfully/);
+  assert.match(body, /\$\{TLS_DIR\?[^}]*\}:\/tls:ro/, "the app reads the certificate folder, read-only");
   assert.ok(!/^volumes:\s*$/m.test(body), "bind mounts only, no named volumes");
   assert.ok(!/POSTGRES_PASSWORD:/.test(body), "no password in the compose file");
   for (const pub of ["docker.io", "ghcr.io", "quay.io", "registry.npmjs.org", "pypi.org", "archive.ubuntu.com"]) {
@@ -146,6 +161,13 @@ test("work.env and home.env define the same keys, everything compose requires, a
   assert.equal(home.RUNTIME_HTTPS_PROXY, "");
   assert.match(work.RUNTIME_HTTPS_PROXY, /avro\.com/);
   assert.match(work.APP_URL, /^https:\/\//, "at work the app is reached over https");
+  for (const [site, env] of [["work", work], ["home", home]] as const) {
+    assert.equal(env.APP_TLS, "on", `${site}: HTTPS unless a proxy in front terminates TLS`);
+    assert.equal(env.APP_PORT, "443", `${site}: HTTPS on 443`);
+    assert.equal(env.APP_HTTP_PORT, "80", `${site}: port 80 only redirects`);
+    assert.match(env.TLS_DIR, /^(\.\.\/|\/)/, `${site}: the certificate lives outside the code folder, which a redeploy replaces`);
+    assert.match(env.APP_URL, /^https:\/\//, `${site}: the address people type is https`);
+  }
 });
 
 test(".gitignore keeps state, keys and certificates out, but not the env files or any source", () => {
@@ -174,7 +196,7 @@ test(".gitignore keeps state, keys and certificates out, but not the env files o
 });
 
 test("scripts are LF and the npm test glob is quoted", () => {
-  for (const f of ["deploy/db-entrypoint.sh"]) {
+  for (const f of ["deploy/db-entrypoint.sh", "deploy/tls-init.sh", "scripts/install-cert.sh", "scripts/test-install-cert.sh", "deploy/serve.cjs", "deploy/tls.cjs"]) {
     assert.ok(!fs.readFileSync(path.join(ROOT, f)).includes(Buffer.from("\r\n")), `${f}: CRLF gives "bad interpreter" on Linux`);
   }
   assert.match(read(".gitattributes"), /\*\.sh text eol=lf/);
