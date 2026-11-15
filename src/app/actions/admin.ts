@@ -502,7 +502,7 @@ export async function clearOrganisation(confirmText: string, opts: { accounts?: 
         await tx.execute(sql`delete from audit_log`);
         await tx.execute(sql`delete from sync_run`);
       }
-      for (const t of ["training_plan", "rating_event", "rating", "employee_target", "unit_requirement", "role_skill", "snapshot", "assessment_cycle"]) {
+      for (const t of ["open_position", "training_plan", "rating_event", "rating", "employee_target", "unit_requirement", "role_skill", "snapshot", "assessment_cycle"]) {
         await tx.execute(sql.raw(`delete from ${t}`));
       }
       await tx.execute(sql`delete from group_member`);

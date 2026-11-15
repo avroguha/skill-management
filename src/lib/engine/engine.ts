@@ -20,7 +20,9 @@
 //    have is that person's gap, not a team bus-factor risk. A stricter or
 //    different need is what an explicit requirement is for. Coverage = members at or above L.
 //  * Capability only: the engine reports what is short and where, never what to
-//    do about it (no hire / train suggestions - owner, 2026-11-12).
+//    do about it (owner, 2026-11-12). The one exception, asked for by the owner on
+//    2026-11-15, is advice.ts: what to hire for an open position, and what training
+//    would help a team, shown on My team only.
 
 export type Basis = "validated" | "self";
 export type GapCategory = "meets" | "minor" | "significant" | "critical" | "unassessed" | "not_required";
@@ -838,6 +840,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     skillById,
     categoryById,
     gradeById,
+    roles: ds.roles,
     children: (id: string) => children.get(id) ?? [],
     directMembers: (id: string) => directMembers.get(id) ?? [],
     subtreeUnitIds,

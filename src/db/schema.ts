@@ -194,6 +194,26 @@ export const trainingPlan = pgTable("training_plan", {
   createdAt: created(),
 }, (t) => [index("training_plan_emp_idx").on(t.employeeId), index("training_plan_skill_idx").on(t.skillId)]);
 
+// A position a manager is hiring for in their team. The app suggests the talent to look for
+// from the role's targets, the skills added here and what the team is short of (advice.ts).
+export const openPosition = pgTable("open_position", {
+  id: id(),
+  unitId: text("unit_id").notNull().references(() => orgUnit.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  roleId: text("role_id").references(() => jobRole.id, { onDelete: "set null" }),
+  gradeId: text("grade_id").references(() => grade.id, { onDelete: "set null" }),
+  headcount: integer("headcount").notNull().default(1),
+  // skills asked for on top of the role (or instead of one): [{ skillId, level }]
+  skills: jsonb("skills").$type<{ skillId: string; level: number }[]>().notNull().default([]),
+  note: text("note").notNull().default(""),
+  // open | filled | cancelled
+  status: text("status").notNull().default("open"),
+  createdBy: text("created_by"),
+  createdByName: text("created_by_name").notNull().default(""),
+  createdAt: created(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+}, (t) => [index("open_position_unit_idx").on(t.unitId, t.status), index("open_position_role_idx").on(t.roleId), index("open_position_grade_idx").on(t.gradeId)]);
+
 // Monthly roll-up per unit, so trends exist from day one and never need reconstructing.
 export const snapshot = pgTable("snapshot", {
   unitId: text("unit_id").notNull(),

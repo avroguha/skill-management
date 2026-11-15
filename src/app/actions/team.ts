@@ -93,6 +93,103 @@ export async function removeTeamNeed(unitId: string, skillId: string): Promise<R
   return { ok: true, message: "Removed." };
 }
 
+// ---- open positions ---------------------------------------------------------------------
+// A manager (or an administrator) records a position they are hiring for in their team; the
+// team page suggests the talent to look for (src/lib/engine/advice.ts).
+
+const position = z.object({
+  id: z.string().optional(),
+  unitId: z.string().min(1),
+  title: z.string().trim().min(2, "Give the position a title.").max(120),
+  roleId: z.string().nullable().optional(),
+  gradeId: z.string().nullable().optional(),
+  headcount: z.coerce.number().int().min(1).max(100),
+  skills: z.array(z.object({ skillId: z.string().min(1), level: z.coerce.number().int().min(1).max(5) })).max(30).default([]),
+  note: z.string().trim().max(1000).optional().default(""),
+});
+
+export async function savePosition(input: z.input<typeof position>): Promise<Result> {
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
+  const p = position.safeParse(input);
+  if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Check the fields." };
+  const d = p.data;
+  if (!canManageUnit(v, d.unitId)) return { ok: false, error: "Only the manager of this team or an administrator can add its open positions." };
+  const engine = await getEngine();
+  const bad = d.skills.find((s) => !engine.isRateable(s.skillId));
+  if (bad) return { ok: false, error: `${engine.skillLabel(bad.skillId) || "A skill"} has sub-skills or is retired. Pick a sub-skill instead.` };
+  const skills = [...new Map(d.skills.map((s) => [s.skillId, s])).values()];
+  const values = {
+    unitId: d.unitId, title: d.title, roleId: d.roleId || null, gradeId: d.gradeId || null,
+    headcount: d.headcount, skills, note: d.note,
+  };
+  const db = await getDb();
+  let id = d.id;
+  if (id) {
+    const [row] = await db.select().from(schema.openPosition).where(eq(schema.openPosition.id, id));
+    if (!row) return { ok: false, error: "That position no longer exists." };
+    if (!canManageUnit(v, row.unitId)) return { ok: false, error: "Not allowed." };
+    await db.update(schema.openPosition).set(values).where(eq(schema.openPosition.id, id));
+  } else {
+    [{ id }] = await db.insert(schema.openPosition).values({ ...values, createdBy: v.userId, createdByName: v.name }).returning({ id: schema.openPosition.id });
+  }
+  await audit(v, d.id ? "update_position" : "add_position", "open_position", id!, values);
+  revalidatePath("/team");
+  return { ok: true, id, message: d.id ? "Position saved." : "Position added. The talent to look for is shown under it." };
+}
+
+export async function setPositionStatus(id: string, status: "open" | "filled" | "cancelled" | "delete"): Promise<Result> {
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
+  if (!["open", "filled", "cancelled", "delete"].includes(status)) return { ok: false, error: "Unknown status." };
+  const db = await getDb();
+  const [row] = await db.select().from(schema.openPosition).where(eq(schema.openPosition.id, id));
+  if (!row) return { ok: false, error: "That position no longer exists." };
+  if (!canManageUnit(v, row.unitId)) return { ok: false, error: "Not allowed." };
+  if (status === "delete") await db.delete(schema.openPosition).where(eq(schema.openPosition.id, id));
+  else await db.update(schema.openPosition).set({ status, closedAt: status === "open" ? null : new Date() }).where(eq(schema.openPosition.id, id));
+  await audit(v, status === "delete" ? "delete_position" : "position_status", "open_position", id, { status, title: row.title });
+  revalidatePath("/team");
+  return { ok: true, message: status === "delete" ? "Deleted." : status === "open" ? "Reopened." : status === "filled" ? "Marked as filled." : "Cancelled." };
+}
+
+// ---- training suggested for a team ------------------------------------------------------
+
+const booking = z.object({
+  skillId: z.string().min(1),
+  people: z.array(z.object({ employeeId: z.string().min(1), targetLevel: z.coerce.number().int().min(1).max(5) })).min(1).max(200),
+  title: z.string().trim().min(3, "Give the training a short title.").max(200),
+  link: z.string().trim().max(500).optional().default(""),
+  dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal("")),
+});
+
+/** Books one training for several people at once (a training plan each). */
+export async function bookTraining(input: z.input<typeof booking>): Promise<Result> {
+  const g = await guardAction();
+  if (g.fail) return g.fail;
+  const v = g.v;
+  const p = booking.safeParse(input);
+  if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Check the fields." };
+  const d = p.data;
+  if (d.link && !/^https?:\/\//i.test(d.link)) return { ok: false, error: "The link must start with http:// or https://" };
+  const outside = d.people.filter((x) => !v.reportIds.has(x.employeeId));
+  if (outside.length) return { ok: false, error: "Only a person's manager or an administrator can book their training." };
+  const engine = await getEngine();
+  if (!engine.isRateable(d.skillId)) return { ok: false, error: "That skill can no longer be rated." };
+  const db = await getDb();
+  await db.insert(schema.trainingPlan).values(d.people.map((x) => ({
+    employeeId: x.employeeId, skillId: d.skillId, targetLevel: x.targetLevel, title: d.title,
+    link: d.link ?? "", dueOn: d.dueOn || null, createdBy: v.userId,
+  })));
+  await audit(v, "book_training", "training_plan", d.skillId, { ...d, count: d.people.length });
+  revalidatePath("/team");
+  revalidatePath("/gaps");
+  for (const x of d.people) revalidatePath(`/people/${x.employeeId}`);
+  return { ok: true, message: `Booked for ${d.people.length} ${d.people.length === 1 ? "person" : "people"}.` };
+}
+
 /** Anyone may suggest a skill that is missing; it is a draft until an administrator approves it. */
 export async function suggestSkill(input: z.input<typeof newSkill>): Promise<Result> {
   const g = await guardAction();

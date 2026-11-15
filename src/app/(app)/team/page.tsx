@@ -3,11 +3,13 @@
 //                  validation, on-target share, gaps and open training
 //   Skills needed  what the team needs beyond its roles (editable), and what roles already expect
 //   Gaps           team needs that are short, and each person below their target
-//   Training       training plans booked for the team
+//   Hiring         open positions, each with the talent to look for (advice.ts); with none
+//                  open, the training that would help the team
+//   Training       training that would help (advice.ts) and the plans booked for the team
 // Administrators, executives and managers of managers can open any team they can see.
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { CheckCheck, LayoutGrid, Network, Sparkles } from "lucide-react";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
@@ -18,14 +20,17 @@ import { NeedList } from "@/components/needs";
 import { Empty } from "@/components/heatmap";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { requireViewer, getEngine, loadDataset, param, type SearchParams } from "@/lib/server";
+import { requireViewer, getEngine, loadDataset, param, canSeeUnit, type SearchParams } from "@/lib/server";
 import { needView, withParams } from "@/lib/views";
 import type { Employee } from "@/lib/engine/engine";
 import { TeamNeeds, type NeedRow } from "./team-needs";
+import { Positions, TrainingIdeas, type PositionView, type TrainingView } from "./hiring";
+import { hiringAdvice, trainingAdvice } from "@/lib/engine/advice";
 
 export const metadata = { title: "My team" };
 
-const TABS = ["people", "skills", "gaps", "training"] as const;
+const TABS = ["people", "skills", "gaps", "hiring", "training"] as const;
+const MAX_IDEAS = 30;
 // What one page sends at most; tiles always count everyone, and a lower manager narrows the list.
 const MAX_ROWS = 1000;
 const MAX_NEEDS = 200;
@@ -68,14 +73,16 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
 
   const db = await getDb();
   const ids = everyone.map((e) => e.id);
-  const [levels, categories, reqs, plans] = await Promise.all([
+  const [levels, categories, reqs, plans, positionRows] = await Promise.all([
     db.select().from(schema.proficiencyLevel).orderBy(asc(schema.proficiencyLevel.level)),
     db.select().from(schema.skillCategory).orderBy(asc(schema.skillCategory.sort)),
     unitId ? db.select().from(schema.unitRequirement).where(eq(schema.unitRequirement.unitId, unitId)) : Promise.resolve([]),
     ids.length ? db.select().from(schema.trainingPlan).where(inArray(schema.trainingPlan.employeeId, ids)) : Promise.resolve([]),
+    unitId ? db.select().from(schema.openPosition).where(eq(schema.openPosition.unitId, unitId)).orderBy(desc(schema.openPosition.createdAt)) : Promise.resolve([]),
   ]);
   const levelName = (n: number) => levels.find((l) => l.level === n)?.name ?? String(n);
-  const roleName = new Map((await loadDataset()).roles.map((r) => [r.id, r.name]));
+  const dataset = await loadDataset();
+  const roleName = new Map(dataset.roles.map((r) => [r.id, r.name]));
   const openPlans = plans.filter((p) => p.status === "planned" || p.status === "in_progress");
 
   // ---- people ----
@@ -151,6 +158,68 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     title: p.title, level: engine.levelOf(p.employeeId, p.skillId).level, target: p.targetLevel, due: p.dueOn, status: p.status.replace("_", " "),
   }));
 
+  // ---- hiring: open positions and the talent to look for ----
+  const canManage = !!unitId && (v.isAdmin || (v.role === "manager" && canSeeUnit(v, unitId)));
+  const catName = (id: string) => engine.categoryById.get(id)?.name ?? "";
+  const gradeName = (id: string | null) => (id ? engine.gradeById.get(id)?.name ?? "" : "");
+  // people the viewer can see, for "already in the organisation"
+  const seen = v.allUnits ? [...engine.empById.values()] : [...v.employeeIds].map((id) => engine.empById.get(id)).filter(active);
+  const positionView = (p: (typeof positionRows)[number]): PositionView => {
+    const a = hiringAdvice(engine, { unitId: p.unitId, roleId: p.roleId, gradeId: p.gradeId, skills: p.skills }, seen);
+    const bring = a.skills.filter((s) => s.group === "bring");
+    const coach = a.skills.filter((s) => s.group === "coach");
+    const lookFor = a.roleId ? [roleName.get(a.roleId), gradeName(a.gradeId)].filter(Boolean).join(" · ") : "";
+    const strong = a.focus.slice(0, 2).map((f) => catName(f.categoryId)).filter(Boolean);
+    const headline = !a.skills.length
+      ? "Nothing to go on yet: choose a role, or add the skills the position must have."
+      : `Look for ${lookFor ? `a ${lookFor}` : "someone with the skills below"}${a.experienced ? ", experienced" : ""}${strong.length ? `, strong in ${strong.join(" and ")}` : ""}.`;
+    const lines: string[] = [];
+    if (a.suggestedRole) lines.push(`No role was chosen: ${lookFor} covers ${a.suggestedRole.covers} of the ${a.suggestedRole.of} skills asked for or short in the team.`);
+    const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+    if (a.suggestedGrade) lines.push(`No grade was chosen: ${gradeName(a.suggestedGrade.gradeId)} would bring ${n(a.suggestedGrade.closes, "skill", "skills")} the team is short of.`);
+    if (bring.length) lines.push(`${bring.length} of the ${n(bring.length + coach.length, "required skill", "required skills")} ${bring.length === 1 ? "is" : "are"} short in the team: ${bring.length === 1 ? "it has" : "they have"} to come with the hire.`);
+    if (coach.length) lines.push(`${coach.length} can be learned on the job: people in the team have ${coach.length === 1 ? "it" : "them"}.`);
+    if (!bring.length && coach.length && !a.suggestedGrade) lines.push("Nothing has to come with the hire: the team can coach every required skill, so someone earlier in their career fits.");
+    if (a.experienced) lines.push(bring.some((s) => s.level >= 4) ? "Some are needed at level 4 or above, so this is an experienced hire." : "Nobody in the team has some of these at any level, so the hire would have nobody to learn them from.");
+    if (a.candidates.length) lines.push(`${a.candidates.length === 1 ? "One person" : `${a.candidates.length} people`} elsewhere already ${a.candidates.length === 1 ? "has" : "have"} most of it (below).`);
+    return {
+      id: p.id, title: p.title, status: p.status, headcount: p.headcount, note: p.note, createdBy: p.createdByName,
+      createdAt: p.createdAt.toISOString(), closedAt: p.closedAt?.toISOString() ?? null,
+      roleId: p.roleId, gradeId: p.gradeId, roleName: p.roleId ? roleName.get(p.roleId) ?? "" : "", gradeName: gradeName(p.gradeId),
+      input: p.skills, headline, lines,
+      skills: a.skills.map((s) => ({
+        skillId: s.skillId, skill: engine.skillLabel(s.skillId), category: catName(engine.skillById.get(s.skillId)?.categoryId ?? ""),
+        level: s.level, group: s.group, source: s.source, why: s.why,
+      })),
+      alsoCloses: a.alsoCloses.map((c) => ({ ...c, skill: engine.skillLabel(c.skillId), team: c.unitId === p.unitId ? "" : engine.unitById.get(c.unitId)?.name ?? "" })),
+      candidates: a.candidates.map((c) => {
+        const e = engine.empById.get(c.employeeId)!;
+        return { id: e.id, name: e.name, title: e.title, team: e.unitId ? engine.unitById.get(e.unitId)?.name ?? "" : "", matched: c.matched, of: c.of };
+      }),
+    };
+  };
+  const openPositions = positionRows.filter((p) => p.status === "open").map(positionView);
+  // closed ones are only listed: no advice is worked out for them
+  const closedPositions: PositionView[] = positionRows.filter((p) => p.status !== "open").map((p) => ({
+    id: p.id, title: p.title, status: p.status, headcount: p.headcount, note: p.note, createdBy: p.createdByName,
+    createdAt: p.createdAt.toISOString(), closedAt: p.closedAt?.toISOString() ?? null, roleId: p.roleId, gradeId: p.gradeId,
+    roleName: "", gradeName: "", input: p.skills, headline: "", lines: [], skills: [], alsoCloses: [], candidates: [],
+  }));
+
+  // ---- training that would help ----
+  const ideasAll = trainingAdvice(engine, everyone, unitId, openPlans);
+  const ideas: TrainingView[] = ideasAll.slice(0, MAX_IDEAS).map((t) => ({
+    skillId: t.skillId, skill: engine.skillLabel(t.skillId), category: catName(engine.skillById.get(t.skillId)?.categoryId ?? ""),
+    href: unitId ? `/skills/${t.skillId}?unit=${unitId}` : `/skills/${t.skillId}`, how: t.how, why: t.why, slow: t.slow,
+    learners: t.learners.map((l) => ({
+      id: l.employeeId, name: engine.empById.get(l.employeeId)?.name ?? "", level: l.level, target: l.target,
+      interest: l.interest, booked: l.booked, canBook: v.reportIds.has(l.employeeId), reason: l.reason,
+    })),
+    mentors: t.mentors.map((id) => ({ id, name: engine.empById.get(id)?.name ?? "", level: engine.levelOf(id, t.skillId).level ?? 0 })),
+  }));
+  const levelOpts = levels.map((l) => ({ level: l.level, name: l.name }));
+  const training = <TrainingIdeas ideas={ideas} total={ideasAll.length} levels={levelOpts} />;
+
   // teams this viewer may switch to
   const pick: UnitOption[] = leads.length > 1
     ? leads.sort((a, b) => engine.ancestors(a.unitId ?? "").length - engine.ancestors(b.unitId ?? "").length || a.name.localeCompare(b.name))
@@ -183,6 +252,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
           <TabsTrigger value="people">People</TabsTrigger>
           <TabsTrigger value="skills">Skills needed</TabsTrigger>
           <TabsTrigger value="gaps">Gaps</TabsTrigger>
+          <TabsTrigger value="hiring">Hiring{openPositions.length ? ` (${openPositions.length})` : ""}</TabsTrigger>
           <TabsTrigger value="training">Training</TabsTrigger>
         </TabsList>
 
@@ -270,7 +340,31 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
           </Section>
         </TabsContent>
 
-        <TabsContent value="training">
+        <TabsContent value="hiring" className="grid gap-5">
+          {unitId ? (
+            <Section title="Open positions"
+              description="For each position: the talent to look for, from the role's targets, the skills you add and what the team is short of; and who in the organisation already has it.">
+              <Positions unitId={unitId} positions={openPositions} closed={closedPositions} canManage={canManage}
+                roles={dataset.roles.map((r) => ({ id: r.id, name: r.name })).sort((a, b) => a.name.localeCompare(b.name))}
+                grades={[...dataset.grades].sort((a, b) => a.rank - b.rank).map((g) => ({ id: g.id, name: g.name }))}
+                skills={skills} levels={levelOpts} />
+            </Section>
+          ) : (
+            <Empty>Open positions are kept per team, and {mine ? "you do" : `${manager.name} does`} not lead a team unit yet. Turn on “Build teams from the manager chain” in Admin › ServiceNow, or set the team&apos;s manager in Admin › Organisation.</Empty>
+          )}
+          {!openPositions.length && (
+            <Section title="No open positions: training that would help the team"
+              description="From each person's target and the team's needs, the skills where training would close the most, worst first.">
+              {training}
+            </Section>
+          )}
+        </TabsContent>
+
+        <TabsContent value="training" className="grid gap-5">
+          <Section title="Training that would help"
+            description="From each person's target and the team's needs, worst first. Book it for several people at once; a skill not yet assessed needs a self-assessment first.">
+            {training}
+          </Section>
           <Section title="Training plans" description="Booked from a person's profile, against a gap. Open a person to add or update one.">
             {planAll.length > planRows.length && <p className="mb-2 text-xs text-muted-foreground">{planRows.length.toLocaleString("en-GB")} of {planAll.length.toLocaleString("en-GB")} plans.</p>}
             <DataTable csvName="team-training" rows={planRows} emptyText="No training booked for this team."

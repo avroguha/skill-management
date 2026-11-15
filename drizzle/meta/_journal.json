@@ -36,6 +36,13 @@
       "when": 1794714714281,
       "tag": "0004_sso_mapping_and_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794741192043,
+      "tag": "0005_open_positions",
+      "breakpoints": true
     }
   ]
 }
