@@ -55,12 +55,13 @@ export function UsersAdmin({ rows, roles, employees, scopeOptions, scopes }: {
         ]}
         actions={(row) => (
           <>
-            {icon("Change access", () => setAccess(row), ShieldCheck)}
+            {/* the local admin keeps its role and is never disabled (src/lib/local-admin.ts) */}
+            {!row.localAdmin && icon("Change access", () => setAccess(row), ShieldCheck)}
             {row.role === "operator" && icon("Hierarchies this operator works on", () => setHier(row), Network)}
             {row.employeeId !== "none" && row.role !== "admin" && !row.banned
               && <ViewAsButton employeeId={String(row.employeeId)} name={String(row.person || row.name)} variant="ghost" size="icon" iconOnly />}
             {icon("Reset password", () => setReset(row), KeyRound, !row.local)}
-            {row.banned
+            {row.localAdmin && !row.banned ? null : row.banned
               ? icon("Enable", () => start(async () => { const r = await setBanned(String(row.id), false); if (r.ok) toast.success(r.message ?? "Enabled"); else toast.error(r.error); }), CircleCheck)
               : icon("Disable", () => start(async () => { const r = await setBanned(String(row.id), true); if (r.ok) toast.success(r.message ?? "Disabled"); else toast.error(r.error); }), Ban)}
           </>

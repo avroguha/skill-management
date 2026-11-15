@@ -45,6 +45,7 @@ export const DEFAULT_HELP: Help = {
     { audience: "manager", q: "How do I make my own charts?", a: "Charts (for operators, executives and administrators) › New chart: start from a ready-made chart or pick what to show, how to group and split it, the hierarchy, filters and the chart type. The chart is worked out from live data every time; PNG saves a picture of it, so the data never has to leave the portal. Ask an administrator for the Operator role if you do not see Charts." },
     { audience: "manager", q: "What is the Talent page?", a: "A picture of your organisation at any level: its strengths, what is lacking, how deep each area is, and people who hold skills beyond their role. Pick a unit to look at another level." },
     { audience: "admin", q: "How do I connect Power BI or Tableau?", a: "Admin › Integrations › New integration: choose the tool and the datasets. The key is shown once, with the connection steps for that tool." },
+    { audience: "admin", q: "What if single sign-on stops working?", a: "Sign in with the local admin account: the sign-in page keeps its username and password form next to the single sign-on button. That account stays for this reason and cannot be disabled; change its password once single sign-on works and keep it somewhere safe." },
     { audience: "admin", q: "How do I see exactly what someone else sees?", a: "Open the person and choose View as. Everything is read-only while you do, and the audit log records it." },
   ],
 };

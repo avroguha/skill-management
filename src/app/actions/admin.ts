@@ -13,6 +13,7 @@ import { getAuth, appUrl, MIN_PASSWORD_LENGTH } from "@/lib/auth";
 import { samlProviderBody, DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN } from "@/lib/saml";
 import { saveBackup } from "@/lib/backup";
 import { refreshGate } from "@/lib/sso-gate";
+import { isLocalAdmin, localAdminRefusal } from "@/lib/local-admin";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 type Data = Record<string, unknown>;
@@ -359,6 +360,11 @@ export async function setUserAccess(input: { userId: string; role: string; emplo
     const role = z.enum(["admin", "executive", "operator", "manager", "employee"]).parse(input.role);
     const db = await getDb();
     if (input.userId === v.userId && role !== "admin") return { ok: false, error: "You cannot take away your own administrator access." };
+    const [target] = await db.select({ username: schema.user.username }).from(schema.user).where(eq(schema.user.id, input.userId));
+    if (isLocalAdmin(target)) {
+      const no = localAdminRefusal({ role, employeeId: input.employeeId });
+      if (no) return { ok: false, error: no };
+    }
     if (role !== "admin") {
       const [{ n }] = await db.select({ n: count() }).from(schema.user).where(and(eq(schema.user.role, "admin"), ne(schema.user.id, input.userId)));
       if (!n) return { ok: false, error: "This is the last administrator." };
@@ -440,6 +446,10 @@ export async function setBanned(userId: string, banned: boolean): Promise<Result
     const v = await admin();
     if (userId === v.userId) return { ok: false, error: "You cannot disable your own account." };
     const db = await getDb();
+    if (banned) {
+      const [target] = await db.select({ username: schema.user.username }).from(schema.user).where(eq(schema.user.id, userId));
+      if (isLocalAdmin(target)) return { ok: false, error: localAdminRefusal({ disable: true })! };
+    }
     await db.update(schema.user).set({ banned, banReason: banned ? "Disabled by an administrator" : null }).where(eq(schema.user.id, userId));
     if (banned) await db.delete(schema.session).where(eq(schema.session.userId, userId));
     await audit(v, banned ? "disable_user" : "enable_user", "user", userId);

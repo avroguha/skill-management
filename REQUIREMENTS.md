@@ -9,7 +9,7 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | Simple, informative, **uncluttered**: filters, a heatmap and a few well-chosen graphs | One filter toolbar per view (state in the URL); two heatmaps; three charts (trend, radar, distribution) |
 | Audience spans **high-level management -> team -> employee**; each level sees what it needs | Overview drills company -> division -> department -> team -> person; access follows who people are (below) |
 | Modern UI, light and dark theme | shadcn/ui, one accent colour; theme follows the system or is chosen per person |
-| Login: seed account `admin / admin` initially, then **SAML SSO** | `admin/admin` on first start, not forced to change (setup only, disabled once SSO works); Admin › Single sign-on (SAML 2.0): test pop-up, mapping, activate |
+| Login: seed account `admin / admin` initially, then **SAML SSO** | `admin/admin` on first start, not forced to change, and kept once SSO works (the way in when SSO is down); Admin › Single sign-on (SAML 2.0): test pop-up, mapping, activate |
 | Docker deployment with the company build rules but no company data; on git with a README, screenshots, functions and capabilities | `docker compose --env-file work.env up --build -d` (or `home.env`); avro.com placeholders in `work.env`; README.md |
 
 ## MVP (all P0), as received
@@ -32,7 +32,7 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | Managers / teams add the skills the team needs | My team (N people at level L per skill; a missing skill is added to the catalogue from there) |
 | Team members select those skills, or other skills they have learned that the team may not need | Self-assessment lists role skills, the team's needs, and anything else they add; a skill missing from the catalogue can be suggested for approval |
 | Roles based on who people are: manager, team member and so on | A person who manages a unit or has reports is a manager automatically; everyone else a team member; Executive and Administrator are assigned |
-| Don't force the admin password reset; the account is for setup and is disabled once SSO works | `FORCE_PASSWORD_CHANGE=false` in both env files; disable `admin` in Admin › Users & access |
+| Don't force the admin password reset | `FORCE_PASSWORD_CHANGE=false` in both env files |
 
 ## Added by the owner: ServiceNow, SSO and the org chart (2026-11-12)
 
@@ -73,6 +73,7 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | With no open position, the training that would be useful for the team from its skill requirements | My team › Open positions (when nothing is open) and › Training: per skill, who is below their target or one level below a short team need, who can coach, course / coaching / external, booked already; Book makes a training plan for each person chosen |
 | See the types of graph available | 11 fixed views before this (heatmaps by unit and by person, trend line, calibration and coverage lists, radar, level distribution, ranked, stacked and proportion bars, org chart); now also any chart an operator builds |
 | Graphs made in the app so data need not be moved out, with screenshots taken automatically | Charts: built from live data, nine chart types, saved as settings only; PNG per chart (title, subtitle, legend, date), Download all as PNG, Copy as image. Screenshots on demand only (the owner's choice, 2026-11-15) |
+| The admin account is still there after SSO is enabled | The local `admin` cannot be disabled, lose the Administrator role or be tied to a person, and single sign-on never signs anyone into it; local sign-in stays on the sign-in page next to SSO. Its password can be changed (`src/lib/local-admin.ts`) |
 | An operator role for a leader who builds charts, with visibility of data in that hierarchy | Operator (Admin › Users & access): own hierarchy plus leaders or units an administrator assigns, read-only there; builds charts over them (both kinds of scope, the owner's choice) |
 
 ## Open questions for the requirement owner

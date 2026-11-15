@@ -332,3 +332,46 @@ test("account fields come from the mapped attributes; only members of a ServiceN
 
   await writeSsoSettings(db, { ...DEFAULT_SSO, active: true, matchAttribute: "email", matchField: "email" });
 });
+
+test("the local admin stays once SSO is on: never disabled or tied to a person, and SSO never signs anyone into it", async () => {
+  const { isLocalAdmin, localAdminRefusal } = await import("../src/lib/local-admin.ts");
+  assert.equal(isLocalAdmin({ username: "admin" }), true);
+  assert.equal(isLocalAdmin({ username: "ann.login" }), false);
+  assert.match(localAdminRefusal({ disable: true })!, /Change its password/);
+  assert.match(localAdminRefusal({ role: "employee" })!, /keeps the Administrator role/);
+  assert.match(localAdminRefusal({ role: "admin", employeeId: "emp-1" })!, /not tied to a person/);
+  assert.equal(localAdminRefusal({ role: "admin", employeeId: "none" }), null);
+
+  const db = await getDb();
+  const [adminUser] = await db.select().from(schema.user).where(eq(schema.user.username, "admin"));
+  const [p, q] = await db.select().from(schema.employee).where(and(eq(schema.employee.active, true), isNull(schema.employee.userId))).limit(2);
+  await writeSsoSettings(db, { ...DEFAULT_SSO, active: true, matchAttribute: "email", matchField: "email", profile: { name: "displayName", email: "", userName: "login" } });
+
+  // an older version tied a person to the admin account: their SSO sign-in gets an account of their own
+  await db.update(schema.employee).set({ userId: adminUser.id }).where(eq(schema.employee.id, p.id));
+  await writeSsoSettings(db, await readSsoSettings(db));
+  const res = await signIn(p.email, "Pat From IdP", { login: ["admin"] });
+  assert.match(cookieOf(res), /session_token=[^;]+/, `signs in: ${res.headers.get("location")}`);
+  const me = (await (await call("/get-session", { cookie: cookieOf(res) })).json()) as { user: { id: string; email: string; role: string } };
+  assert.notEqual(me.user.id, adminUser.id, "not the admin account");
+  assert.equal(await linkSignedInUser(db, me.user), p.id, "released from admin to their own account");
+  assert.equal(await linkSignedInUser(db, adminUser), null, "the admin account is never linked to a person");
+
+  // the admin account carries a person's e-mail: that person is refused, not signed into admin
+  await db.update(schema.user).set({ email: q.email }).where(eq(schema.user.id, adminUser.id));
+  await writeSsoSettings(db, await readSsoSettings(db));
+  const clash = await signIn(q.email, q.name);
+  assert.match(clash.headers.get("location") ?? "", /error=NOT_ALLOWED/);
+  assert.match(recentAttempts()[0].reason, /local admin account has the e-mail/);
+  await db.update(schema.user).set({ email: adminUser.email }).where(eq(schema.user.id, adminUser.id));
+
+  // admin is untouched and its local sign-in still works next to SSO
+  const [after] = await db.select().from(schema.user).where(eq(schema.user.id, adminUser.id));
+  assert.equal(after.username, "admin");
+  assert.equal(after.name, adminUser.name);
+  assert.equal(after.role, "admin");
+  const local = await call("/sign-in/username", { json: { username: "admin", password: "admin" } });
+  assert.equal(local.status, 200, await local.clone().text());
+
+  await writeSsoSettings(db, { ...DEFAULT_SSO, active: true, matchAttribute: "email", matchField: "email" });
+});

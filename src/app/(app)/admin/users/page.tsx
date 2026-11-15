@@ -3,6 +3,7 @@ import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/kpi";
 import { ACCESS_ROLES, getEngine } from "@/lib/server";
+import { isLocalAdmin } from "@/lib/local-admin";
 import { UsersAdmin, type ScopeOpt } from "./client";
 
 export const metadata = { title: "Users & access · Admin" };
@@ -28,7 +29,9 @@ export default async function UsersPage() {
     const derivedManager = emp && (engine.managedUnitIds(emp.id).length > 0 || engine.reportsOf(emp.id).length > 0);
     const role = (u.role ?? "employee") as string;
     const n = scopes[u.id]?.length ?? 0;
-    const effective = role === "employee" && derivedManager ? "Manager (manages people)"
+    const localAdmin = isLocalAdmin(u);
+    const effective = localAdmin ? "Administrator · local, kept for when SSO is down"
+      : role === "employee" && derivedManager ? "Manager (manages people)"
       : role === "operator" ? `Operator${derivedManager ? " · own team" : ""}${n ? ` · ${n} more ${n === 1 ? "hierarchy" : "hierarchies"}` : ""}`
         : ACCESS_ROLES.find((r) => r.value === role)?.label ?? role;
     return {
@@ -37,6 +40,7 @@ export default async function UsersPage() {
       status: u.banned ? "Disabled" : u.mustChangePassword ? "Must change password" : "Active", banned: !!u.banned,
       lastSeen: sessions.find((s) => s.userId === u.id)?.last?.toISOString() ?? null,
       local: methods.includes("Local"),
+      localAdmin,
     };
   });
   // what an operator can be given: anyone with people below them, and every unit

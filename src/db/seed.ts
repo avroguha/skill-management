@@ -55,7 +55,7 @@ export async function createLocalAdmin(db: DB): Promise<void> {
     username: "admin",
     displayUsername: "admin",
     role: "admin",
-    // Off unless asked for: the owner disables this account once SSO setup is done.
+    // Off unless asked for. The account is kept for good, also once SSO is on (src/lib/local-admin.ts).
     mustChangePassword: process.env.FORCE_PASSWORD_CHANGE === "true",
     createdAt: now,
     updatedAt: now,

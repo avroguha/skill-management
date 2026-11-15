@@ -64,6 +64,13 @@ async function gate(input: Parameters<NonNullable<Parameters<typeof sso>[0]>["re
     recordAttempt({ ...base, outcome: "refused", reason: `Matched ${person.name}, but ${access.reason}.`, matchedPerson: person.name });
     return { action: "reject" as const, code: "NOT_ALLOWED", message: "Your account is not allowed to use this app. Ask the people who run it for access." };
   }
+  // e-mails are unique, so a person whose e-mail the local admin carries could only land in
+  // that account: refuse, and say how to fix it (src/lib/local-admin.ts)
+  const clash = [person.email, base.email].find((m) => m && snap.localAdminEmails.has(m.toLowerCase()));
+  if (clash) {
+    recordAttempt({ ...base, outcome: "refused", reason: `Matched ${person.name}, but the local admin account has the e-mail "${clash}"; give admin an e-mail no person has (in the database: update "user" set email = 'admin@skills.local' where username = 'admin').`, matchedPerson: person.name });
+    return { action: "reject" as const, code: "NOT_ALLOWED", message: "Your e-mail is in use by the local administrator account. Ask the people who run this app." };
+  }
   recordAttempt({ ...base, outcome: "allowed", reason: `Matched ${settings.matchField} "${value}"; ${access.reason}.`, matchedPerson: person.name });
   // the account fields the mapping takes from the sign-in (Admin › Single sign-on)
   const profile = profileFrom(settings.profile, base.nameId, attributes);

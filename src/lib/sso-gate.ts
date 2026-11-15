@@ -14,9 +14,10 @@
 //    embedded database). It works from an in-memory snapshot of the settings and the
 //    active people, refreshed at start, every minute, and after anything that changes
 //    who may sign in (refreshGate).
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DB } from "../db/index.ts";
 import * as s from "../db/schema.ts";
+import { isLocalAdmin, LOCAL_ADMIN_USERNAME } from "./local-admin.ts";
 
 /** Which value of the sign-in fills each account field ("" = leave it as it is; "nameID" = the NameID). */
 export interface ProfileMap { name: string; email: string; userName: string }
@@ -63,7 +64,7 @@ export async function writeSsoSettings(db: DB, v: SsoSettings): Promise<void> {
 }
 
 export interface GatePerson { id: string; name: string; email: string; title: string; userId: string | null; groups: string[]; isAdmin: boolean }
-interface GateSnapshot { settings: SsoSettings; byEmail: Map<string, GatePerson>; byUserName: Map<string, GatePerson>; groupNames: Map<string, string>; accountByEmail: Map<string, string>; at: number }
+interface GateSnapshot { settings: SsoSettings; byEmail: Map<string, GatePerson>; byUserName: Map<string, GatePerson>; groupNames: Map<string, string>; accountByEmail: Map<string, string>; localAdminEmails: Set<string>; at: number }
 const gs = globalThis as unknown as { __skillsGate?: GateSnapshot };
 
 /** Reloads the gate's snapshot. Call after anything that changes who may sign in. */
@@ -82,7 +83,11 @@ export async function refreshGate(db: DB): Promise<void> {
     groupsOf.set(m.employeeId, [...(groupsOf.get(m.employeeId) ?? []), m.ext]);
     groupNames.set(m.ext, m.name);
   }
-  const accounts = await db.select({ id: s.user.id, email: s.user.email, role: s.user.role }).from(s.user);
+  const all = await db.select({ id: s.user.id, email: s.user.email, role: s.user.role, username: s.user.username }).from(s.user);
+  // single sign-on never lands in the local admin account (src/lib/local-admin.ts), even
+  // when its e-mail is a person's or an old link ties it to one
+  const localAdmin = new Set(all.filter((u) => isLocalAdmin(u)).map((u) => u.id));
+  const accounts = all.filter((u) => !localAdmin.has(u.id));
   const admins = new Set(accounts.filter((u) => u.role === "admin").map((u) => u.id));
   // an account that already carries a person's e-mail (made by an administrator, or by an
   // earlier sign-in whose link step never ran) is that person's account
@@ -90,12 +95,14 @@ export async function refreshGate(db: DB): Promise<void> {
   const byEmail = new Map<string, GatePerson>();
   const byUserName = new Map<string, GatePerson>();
   for (const p of people) {
-    const own = p.userId ?? accountByEmail.get(p.email.toLowerCase()) ?? null;
-    const g: GatePerson = { id: p.id, name: p.name, email: p.email, title: p.title, userId: p.userId, groups: groupsOf.get(p.id) ?? [], isAdmin: !!own && admins.has(own) };
+    const userId = p.userId && !localAdmin.has(p.userId) ? p.userId : null;
+    const own = userId ?? accountByEmail.get(p.email.toLowerCase()) ?? null;
+    const g: GatePerson = { id: p.id, name: p.name, email: p.email, title: p.title, userId, groups: groupsOf.get(p.id) ?? [], isAdmin: !!own && admins.has(own) };
     byEmail.set(p.email.toLowerCase(), g);
     if (p.userName) byUserName.set(p.userName.toLowerCase(), g);
   }
-  gs.__skillsGate = { settings, byEmail, byUserName, groupNames, accountByEmail, at: Date.now() };
+  const localAdminEmails = new Set(all.filter((u) => localAdmin.has(u.id)).map((u) => u.email.toLowerCase()));
+  gs.__skillsGate = { settings, byEmail, byUserName, groupNames, accountByEmail, localAdminEmails, at: Date.now() };
 }
 
 export function gateSnapshot(): GateSnapshot | undefined {
@@ -198,6 +205,8 @@ export function checkAccess(rule: AccessRule, person: Pick<GatePerson, "groups" 
 
 /** Writes mapped account fields; a value another account already uses is skipped, not an error. */
 export async function applyProfile(db: DB, userId: string, p: { name?: string; email?: string; userName?: string }): Promise<void> {
+  const [target] = await db.select({ username: s.user.username }).from(s.user).where(eq(s.user.id, userId));
+  if (isLocalAdmin(target)) return; // its name, e-mail and login stay as they are
   const set: Partial<typeof s.user.$inferInsert> = {};
   if (p.name) set.name = p.name;
   if (p.email) {
@@ -245,6 +254,8 @@ async function pendingFor(db: DB, email: string): Promise<{ employeeId: string; 
 
 /** Links a signed-in account to its person: the one the gate matched, else the same e-mail. */
 export async function linkSignedInUser(db: DB, user: { id: string; email: string; role?: string | null }): Promise<string | null> {
+  const [me] = await db.select({ username: s.user.username }).from(s.user).where(eq(s.user.id, user.id));
+  if (isLocalAdmin(me)) return null; // the local admin is not a person (src/lib/local-admin.ts)
   const [already] = await db.select({ id: s.employee.id }).from(s.employee).where(eq(s.employee.userId, user.id));
   if (already) return already.id;
   const found = await pendingFor(db, user.email);
@@ -255,6 +266,9 @@ export async function linkSignedInUser(db: DB, user: { id: string; email: string
     target = byEmail?.id;
   }
   if (!target) return null;
+  // a person an older version tied to the local admin is released to their own account
+  await db.update(s.employee).set({ userId: null }).where(and(eq(s.employee.id, target),
+    inArray(s.employee.userId, db.select({ id: s.user.id }).from(s.user).where(eq(s.user.username, LOCAL_ADMIN_USERNAME)))));
   const done = await db.update(s.employee).set({ userId: user.id })
     .where(and(eq(s.employee.id, target), isNull(s.employee.userId))).returning({ id: s.employee.id });
   pending.delete(user.email.toLowerCase());
