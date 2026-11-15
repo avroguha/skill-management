@@ -21,7 +21,7 @@ interface Initial {
   typeField: string; typeValues: string[]; extraQuery: string;
   fields: { userName: string; name: string; email: string; manager: string; title: string };
   extraFields: string[]; orgFromHierarchy: boolean; syncEveryHours: number;
-  roleRules: RoleRule[]; roleRulesOverwrite: boolean;
+  roleRules: RoleRule[]; roleRulesOverwrite: boolean; importGroups: boolean; groupQuery: string;
 }
 
 function Field({ label, help, children, className }: { label: string; help?: string; children: React.ReactNode; className?: string }) {
@@ -49,6 +49,7 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
     rootUserName: f.rootUserName, typeField: f.typeField, typeValues: f.typeValues, extraQuery: f.extraQuery, fields: f.fields,
     extraFields: f.extraFieldsText.split(",").map((x) => x.trim()).filter(Boolean), orgFromHierarchy: f.orgFromHierarchy,
     syncEveryHours: f.syncEveryHours, roleRules: f.roleRules, roleRulesOverwrite: f.roleRulesOverwrite,
+    importGroups: f.importGroups, groupQuery: f.groupQuery,
   });
   const run = (name: string, fn: () => Promise<void>) => start(async () => { setBusy(name); try { await fn(); } finally { setBusy(null); } });
 
@@ -105,6 +106,12 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
 
       <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
         <label className="flex items-center gap-2 text-sm"><Switch checked={f.orgFromHierarchy} onCheckedChange={(c) => set("orgFromHierarchy", c)} />Build teams from the manager chain</label>
+        <label className="flex items-center gap-2 text-sm"><Switch checked={f.importGroups} onCheckedChange={(c) => set("importGroups", c)} />Import their groups</label>
+        {f.importGroups && (
+          <label className="flex items-center gap-2 text-sm">groups matching
+            <Input className="h-8 w-56 font-mono text-xs" value={f.groupQuery} onChange={(e) => set("groupQuery", e.target.value)} placeholder="active=true" aria-label="Encoded query for groups" />
+          </label>
+        )}
         <label className="flex items-center gap-2 text-sm"><Switch checked={f.enabled} onCheckedChange={(c) => set("enabled", c)} />Scheduled sync on</label>
         <label className="flex items-center gap-2 text-sm">every
           <Input type="number" min={0} max={168} className="h-8 w-20" value={f.syncEveryHours} onChange={(e) => set("syncEveryHours", Number(e.target.value))} />hours

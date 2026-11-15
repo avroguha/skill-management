@@ -44,6 +44,8 @@ const formSchema = z.object({
     gradeId: z.string().default(""),
   })).max(200).default([]),
   roleRulesOverwrite: z.boolean().default(false),
+  importGroups: z.boolean().default(true),
+  groupQuery: z.string().trim().max(500).default("active=true"),
 });
 export type DirectoryForm = z.input<typeof formSchema>;
 

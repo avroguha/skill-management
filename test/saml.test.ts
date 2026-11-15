@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import zlib from "node:zlib";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { SignedXml } from "xml-crypto";
 
 const APP = "https://skills.avro.test";
@@ -23,8 +23,9 @@ delete process.env.DATABASE_URL;
 
 const { getDb, closeDb, schema } = await import("../src/db/index.ts");
 const { getAuth } = await import("../src/lib/auth.ts");
-const { samlProviderBody, acsUrl, defaultSpEntityId } = await import("../src/lib/saml.ts");
-const { recentAttempts, writeSsoSettings, readSsoSettings, linkSignedInUser, matchValue, findPerson } = await import("../src/lib/sso-gate.ts");
+const { samlProviderBody, acsUrl, defaultSpEntityId, spMetadataXml } = await import("../src/lib/saml.ts");
+const { inspectIdpMetadata } = await import("../src/lib/saml-inspect.ts");
+const { recentAttempts, writeSsoSettings, readSsoSettings, linkSignedInUser, matchValue, findPerson, DEFAULT_SSO } = await import("../src/lib/sso-gate.ts");
 
 // ---- a minimal X.509 certificate, DER by hand ---------------------------------------
 const len = (n: number) => {
@@ -78,7 +79,7 @@ const metadata = (idp: Idp) => `<?xml version="1.0" encoding="utf-8"?>
   </IDPSSODescriptor>
 </EntityDescriptor>`;
 
-function samlResponse(idp: Idp, o: { requestId: string; acs: string; audience: string; email: string; name: string; tamper?: boolean }) {
+function samlResponse(idp: Idp, o: { requestId: string; acs: string; audience: string; email: string; name: string; tamper?: boolean; extra?: Record<string, string[]> }) {
   const now = Date.now();
   const iso = (ms: number) => new Date(now + ms).toISOString();
   const xml = `<samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="_r${crypto.randomUUID()}" Version="2.0" IssueInstant="${iso(0)}" Destination="${o.acs}" InResponseTo="${o.requestId}">
@@ -93,6 +94,7 @@ function samlResponse(idp: Idp, o: { requestId: string; acs: string; audience: s
 <saml:AttributeStatement>
 <saml:Attribute Name="email"><saml:AttributeValue>${o.email}</saml:AttributeValue></saml:Attribute>
 <saml:Attribute Name="displayName"><saml:AttributeValue>${o.name}</saml:AttributeValue></saml:Attribute>
+${Object.entries(o.extra ?? {}).map(([k, vs]) => `<saml:Attribute Name="${k}">${vs.map((v) => `<saml:AttributeValue>${v}</saml:AttributeValue>`).join("")}</saml:Attribute>`).join("\n")}
 </saml:AttributeStatement>
 </saml:Assertion>
 </samlp:Response>`;
@@ -164,9 +166,9 @@ async function startLogin(providerId = "corporate") {
   return { requestId, request, relayState: u.searchParams.get("RelayState") ?? "", cookie: cookieOf(res) };
 }
 
-async function signIn(email: string, name: string) {
+async function signIn(email: string, name: string, extra?: Record<string, string[]>) {
   const { requestId, relayState, cookie } = await startLogin();
-  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: defaultSpEntityId(APP), email, name });
+  const SAMLResponse = samlResponse(idp, { requestId, acs: acsUrl(APP, "corporate"), audience: defaultSpEntityId(APP), email, name, extra });
   return call(`/sso/saml2/sp/acs/corporate`, { form: { SAMLResponse, RelayState: relayState }, cookie, origin: "https://login.idp.avro.test" });
 }
 
@@ -188,7 +190,7 @@ test("before activation every SSO sign-in is a test: attributes captured, refuse
 
 test("once active, a synced person signs in and is linked to their record", async () => {
   const db = await getDb();
-  await writeSsoSettings(db, { active: true, matchAttribute: "email", matchField: "email" });
+  await writeSsoSettings(db, { ...DEFAULT_SSO, active: true, matchAttribute: "email", matchField: "email" });
   const [emp] = await db.select().from(schema.employee).where(eq(schema.employee.active, true)).limit(1);
   const res = await signIn(emp.email, emp.name);
   assert.ok([302, 303].includes(res.status), `redirect after ACS, got ${res.status}: ${await res.clone().text()}`);
@@ -223,10 +225,10 @@ test("someone the identity provider knows but who is not a synced person is refu
   // matching on the login name instead
   const [emp] = await db.select().from(schema.employee).where(eq(schema.employee.active, true)).limit(1);
   await db.update(schema.employee).set({ userName: "the.login" }).where(eq(schema.employee.id, emp.id));
-  await writeSsoSettings(db, { active: true, matchAttribute: "login", matchField: "user_name" });
+  await writeSsoSettings(db, { ...DEFAULT_SSO, active: true, matchAttribute: "login", matchField: "user_name" });
   assert.equal(matchValue(await readSsoSettings(db), "x", { login: ["THE.LOGIN"] }), "THE.LOGIN");
   assert.equal((await findPerson(db, "user_name", "THE.LOGIN"))?.id, emp.id, "case-insensitive");
-  await writeSsoSettings(db, { active: true, matchAttribute: "email", matchField: "email" });
+  await writeSsoSettings(db, { ...DEFAULT_SSO, active: true, matchAttribute: "email", matchField: "email" });
 });
 
 test("a tampered assertion is refused and creates no session", async () => {
@@ -268,4 +270,65 @@ test("the Entity ID can be chosen: sign-in requests carry it, and only answers a
   assert.doesNotMatch(cookieOf(wrong), /session_token=[^;]+/, "an answer for another Entity ID is refused");
   const right = await send(entity);
   assert.match(cookieOf(right), /session_token=[^;]+/, `an answer for the chosen Entity ID signs in: ${right.status} ${right.headers.get("location")}`);
+});
+
+test("this app's metadata names its Entity ID and Reply URL; an uploaded IdP metadata file is read back", () => {
+  const sp = spMetadataXml("urn:avro:skills", acsUrl(APP, "corporate"));
+  assert.match(sp, /entityID="urn:avro:skills"/);
+  assert.ok(sp.includes(`Location="${acsUrl(APP, "corporate")}"`));
+  assert.match(sp, /WantAssertionsSigned="true"/);
+  assert.match(spMetadataXml('a"b<c', "x"), /entityID="a&quot;b&lt;c"/, "values are escaped");
+
+  const info = inspectIdpMetadata(metadata(idp));
+  assert.equal(info.entityId, idp.entityId);
+  assert.equal(info.ssoUrl, idp.ssoUrl);
+  assert.equal(info.certs.length, 1);
+  assert.ok(info.certs[0].daysLeft > 360 && info.certs[0].daysLeft <= 365, `certificate expiry read: ${info.certs[0].daysLeft} days`);
+  assert.deepEqual(info.problems, []);
+  // this app's own metadata, uploaded by mistake, says so
+  assert.ok(inspectIdpMetadata(sp).problems.some((p) => /no identity provider/.test(p)));
+  assert.ok(inspectIdpMetadata("<html>login</html>").problems.some((p) => /not SAML metadata/.test(p)));
+});
+
+test("account fields come from the mapped attributes; only members of a ServiceNow or AD group get in", async () => {
+  const db = await getDb();
+  const [a, b] = await db.select().from(schema.employee).where(and(eq(schema.employee.active, true), isNull(schema.employee.userId))).limit(2);
+  const [g] = await db.insert(schema.snGroup).values({ externalId: "sn-grp-skills", name: "Skills portal users" }).returning();
+  await db.insert(schema.groupMember).values({ groupId: g.id, employeeId: a.id });
+  const settings = {
+    ...DEFAULT_SSO, active: true, matchAttribute: "email", matchField: "email" as const,
+    profile: { name: "displayName", email: "", userName: "login" },
+    access: { mode: "groups" as const, snGroups: ["sn-grp-skills"], claimAttribute: "groups", claimValues: ["AD-Skills-Users"] },
+  };
+  await writeSsoSettings(db, settings);
+
+  // in the ServiceNow group: in, and the account takes the mapped name and login
+  const ok = await signIn(a.email, "Ann From IdP", { login: ["Ann.Login"] });
+  assert.match(cookieOf(ok), /session_token=[^;]+/, `member signs in: ${ok.headers.get("location")}`);
+  assert.match(recentAttempts()[0].reason, /member of Skills portal users/);
+  const me = (await (await call("/get-session", { cookie: cookieOf(ok) })).json()) as { user: { id: string; email: string; role: string } };
+  await linkSignedInUser(db, me.user);
+  let [acct] = await db.select().from(schema.user).where(eq(schema.user.id, me.user.id));
+  assert.equal(acct.name, "Ann From IdP");
+  assert.equal(acct.username, "ann.login");
+  assert.equal(acct.displayUsername, "Ann.Login");
+  // the next sign-in refreshes them (written just after the sign-in step)
+  await signIn(a.email, "Ann Renamed", { login: ["Ann.Login"] });
+  await new Promise((r) => setTimeout(r, 300));
+  [acct] = await db.select().from(schema.user).where(eq(schema.user.id, me.user.id));
+  assert.equal(acct.name, "Ann Renamed");
+
+  // in neither group: refused, nobody created
+  const users = (await db.select().from(schema.user)).length;
+  const no = await signIn(b.email, b.name);
+  assert.match(no.headers.get("location") ?? "", /error=NOT_ALLOWED/);
+  assert.match(recentAttempts()[0].reason, /not in any group/);
+  assert.equal((await db.select().from(schema.user)).length, users);
+
+  // in the AD group (sent in the sign-in, compared without case): in
+  const ad = await signIn(b.email, b.name, { groups: ["some-other-group", "ad-skills-users"] });
+  assert.match(cookieOf(ad), /session_token=[^;]+/, `AD group member signs in: ${ad.headers.get("location")}`);
+  assert.match(recentAttempts()[0].reason, /carries groups "ad-skills-users"/);
+
+  await writeSsoSettings(db, { ...DEFAULT_SSO, active: true, matchAttribute: "email", matchField: "email" });
 });

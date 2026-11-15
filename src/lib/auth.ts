@@ -12,7 +12,7 @@ import { admin, username } from "better-auth/plugins";
 import { sso } from "@better-auth/sso";
 import { nextCookies } from "better-auth/next-js";
 import { getDb, schema, type DB } from "../db/index.ts";
-import { normaliseAttributes, recordAttempt, matchValue, rememberPending, gateSnapshot, lookupPerson, refreshGate } from "./sso-gate.ts";
+import { normaliseAttributes, recordAttempt, matchValue, rememberPending, gateSnapshot, lookupPerson, refreshGate, checkAccess, profileFrom, applyProfileLater } from "./sso-gate.ts";
 
 /** Every password set through the app must be at least this long. */
 export const MIN_PASSWORD_LENGTH = 10;
@@ -59,9 +59,25 @@ async function gate(input: Parameters<NonNullable<Parameters<typeof sso>[0]>["re
     recordAttempt({ ...base, outcome: "refused", reason: `No active person has ${settings.matchField} "${value || "(empty)"}".` });
     return { action: "reject" as const, code: "NOT_ALLOWED", message: "Your account is not one of the people this app is for." };
   }
-  recordAttempt({ ...base, outcome: "allowed", reason: `Matched ${settings.matchField} "${value}".`, matchedPerson: person.name });
-  if (person.userId) return { action: "link" as const, userId: person.userId, profile: "preserve" as const };
-  if (base.email) rememberPending(base.email, person.id);
+  const access = checkAccess(settings.access, person, attributes, snap.groupNames);
+  if (!access.ok) {
+    recordAttempt({ ...base, outcome: "refused", reason: `Matched ${person.name}, but ${access.reason}.`, matchedPerson: person.name });
+    return { action: "reject" as const, code: "NOT_ALLOWED", message: "Your account is not allowed to use this app. Ask the people who run it for access." };
+  }
+  recordAttempt({ ...base, outcome: "allowed", reason: `Matched ${settings.matchField} "${value}"; ${access.reason}.`, matchedPerson: person.name });
+  // the account fields the mapping takes from the sign-in (Admin › Single sign-on)
+  const profile = profileFrom(settings.profile, base.nameId, attributes);
+  if (person.userId) {
+    applyProfileLater(person.userId, profile);
+    return { action: "link" as const, userId: person.userId, profile: "preserve" as const };
+  }
+  // not linked yet, but an account with the person's own e-mail exists: sign in to that one
+  const existing = snap.accountByEmail.get(person.email.toLowerCase());
+  if (existing) {
+    rememberPending(person.email, person.id, profile);
+    return { action: "link" as const, userId: existing, profile: "preserve" as const };
+  }
+  if (base.email) rememberPending(base.email, person.id, profile);
   return { action: "continue" as const };
 }
 

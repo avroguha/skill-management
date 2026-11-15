@@ -31,7 +31,22 @@ function reset() {
     { sys_id: "7", user_name: "old", name: "Old Timer", email: "old@acme.test", title: "Retired", manager: "1", identity_type: "human", active: "false", employee_number: "E7" },
   ];
 }
+// groups: ana and bea in "Platform" (active), ben in "Old team" (inactive), svc.int in "Integrations"
+let GROUPS: Row[] = [];
+let MEMBERS: Row[] = [];
+function resetGroups() {
+  GROUPS = [
+    { sys_id: "g1", name: "Platform", description: "Platform engineering", email: "platform@acme.test", manager: "2", active: "true" },
+    { sys_id: "g2", name: "Old team", description: "", email: "", manager: "", active: "false" },
+    { sys_id: "g3", name: "Integrations", description: "", email: "", manager: "", active: "true" },
+  ];
+  MEMBERS = [
+    { sys_id: "m1", group: "g1", user: "2" }, { sys_id: "m2", group: "g1", user: "3" },
+    { sys_id: "m3", group: "g2", user: "4" }, { sys_id: "m4", group: "g3", user: "5" },
+  ];
+}
 reset();
+resetGroups();
 
 const calls: string[] = [];
 function matches(row: Row, q: string): boolean {
@@ -58,7 +73,9 @@ const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => 
   }
   const fields = (url.searchParams.get("sysparm_fields") ?? "").split(",");
   const limit = Number(url.searchParams.get("sysparm_limit")), offset = Number(url.searchParams.get("sysparm_offset"));
-  const rows = USERS.filter((r) => matches(r, q)).sort((a, b) => a.sys_id.localeCompare(b.sys_id));
+  const table = url.pathname.split("/").pop();
+  const source = table === "sys_user_group" ? GROUPS : table === "sys_user_grmember" ? MEMBERS : USERS;
+  const rows = source.filter((r) => matches(r, q)).sort((a, b) => a.sys_id.localeCompare(b.sys_id));
   const page = rows.slice(offset, offset + limit).map((r) => Object.fromEntries(fields.map((f) => [f, r[f] ?? ""])));
   return Response.json({ result: page }, { headers: { "x-total-count": String(rows.length) } });
 }) as typeof fetch;
@@ -210,4 +227,33 @@ test("the password is stored sealed and opens again; the photo URL fills placeho
   assert.equal(photoUrl("https://p.test/{employee_number}?e={email}", person), "https://p.test/E3?e=bea%40acme.test");
   assert.equal(photoUrl("https://p.test/{missing}", person), null);
   assert.equal(photoUrl("", person), null);
+});
+
+test("groups: the synced people's groups come in with their members; a group nobody is in any more goes", async () => {
+  const db = await getDb();
+  resetGroups();
+  const config = { ...DEFAULT_DIRECTORY, rootUserName: "boss", instanceUrl: "https://acme.service-now.test", username: "svc.reader" };
+  const run = await runSync(db, sn, config, "manual", "tester");
+  assert.equal(run.status, "ok", run.message);
+  assert.match(run.message, /1 group with 2 memberships/, "only active groups (the default query), only synced members");
+  const groups = await db.select().from(s.snGroup);
+  assert.deepEqual(groups.map((g) => g.name), ["Platform"], "the inactive group and the service account's group are not brought in");
+  const members = await db.select({ name: s.employee.name }).from(s.groupMember)
+    .innerJoin(s.employee, eq(s.employee.id, s.groupMember.employeeId));
+  assert.deepEqual(members.map((m) => m.name).sort(), ["Ana Lead", "Bea Dev"]);
+
+  // every group, whatever its state
+  const all = await runSync(db, sn, { ...config, groupQuery: "" }, "manual", "tester");
+  assert.match(all.message, /2 groups with 3 memberships/);
+  // bea leaves Platform, the Old team is emptied: it goes, Platform keeps ana
+  MEMBERS = MEMBERS.filter((m) => m.sys_id !== "m2" && m.group !== "g2");
+  const again = await runSync(db, sn, { ...config, groupQuery: "" }, "manual", "tester");
+  assert.match(again.message, /1 group with 1 membership, 1 removed/);
+  assert.deepEqual((await db.select().from(s.snGroup)).map((g) => g.name), ["Platform"]);
+
+  // turned off: groups are left as they are
+  const off = await runSync(db, sn, { ...config, importGroups: false }, "manual", "tester");
+  assert.doesNotMatch(off.message, /group/);
+  assert.equal((await db.select().from(s.snGroup)).length, 1);
+  resetGroups();
 });

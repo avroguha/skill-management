@@ -72,3 +72,21 @@ export function samlProviderBody(d: SamlInput, base: string) {
     },
   };
 }
+
+const xmlAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+
+/**
+ * This app's service-provider metadata, for an identity provider that imports a file (Entra ID:
+ * "Upload metadata file" fills in the Identifier and the Reply URL). Built from the values on
+ * the page, so it can be downloaded before the provider is saved.
+ */
+export function spMetadataXml(entityId: string, acs: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="${xmlAttr(entityId)}">
+  <md:SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>
+    <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="${xmlAttr(acs)}" index="0" isDefault="true"/>
+  </md:SPSSODescriptor>
+</md:EntityDescriptor>
+`;
+}

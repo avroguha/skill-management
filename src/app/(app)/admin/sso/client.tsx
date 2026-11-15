@@ -3,8 +3,8 @@
 // The values panel follows the form as it is typed, so what the identity team is given is
 // exactly what will be saved. The provider ID is internal ("corporate") and not asked for.
 import { CopyValue } from "@/components/copy-value";
-import { useState, useTransition } from "react";
-import { Trash2, Loader2, ExternalLink, Copy, Check, TriangleAlert } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { Trash2, Loader2, ExternalLink, TriangleAlert, Download, Upload, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,11 +13,32 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ConfirmDelete } from "@/components/admin-crud";
 import { Section } from "@/components/kpi";
+import { cn } from "@/lib/utils";
 import { registerSaml, deleteSaml } from "@/app/actions/admin";
-import { DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN, defaultSpEntityId, spMetadataUrl } from "@/lib/saml";
+import { inspectMetadata } from "@/app/actions/sso";
+import { DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN, defaultSpEntityId, spMetadataUrl, spMetadataXml } from "@/lib/saml";
+import type { IdpInfo } from "@/lib/saml-inspect";
 
 export interface SavedProvider {
   providerId: string; domain: string; idp: string; spEntityId: string; emailAttr: string; nameAttr: string;
+  /** the saved metadata's signing certificate that lasts longest */
+  cert: { notAfter: string; daysLeft: number } | null;
+}
+
+function download(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/samlmetadata+xml" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function CertLine({ notAfter, daysLeft }: { notAfter: string; daysLeft: number }) {
+  const when = new Date(notAfter).toLocaleDateString("en-GB", { dateStyle: "medium" });
+  return (
+    <span className={daysLeft < 0 ? "text-destructive" : daysLeft < 30 ? "font-medium text-status-minor-fg dark:text-foreground" : ""}>
+      {daysLeft < 0 ? `expired ${when}` : `expires ${when} (${daysLeft} days)`}
+    </span>
+  );
 }
 
 export function SsoSetup({ base, providers }: { base: string; providers: SavedProvider[] }) {
@@ -29,6 +50,22 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
   });
   const [pending, start] = useTransition();
   const [removing, setRemoving] = useState<string | null>(null);
+  const [info, setInfo] = useState<IdpInfo | null>(null);
+  const [fileName, setFileName] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const inspect = async (xml: string) => {
+    if (!xml.trim()) { setInfo(null); return; }
+    const r = await inspectMetadata(xml);
+    if (r.ok) setInfo(r); else { setInfo(null); toast.error(r.error); }
+  };
+  const readFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > 2_000_000) { toast.error("That file is too big to be SAML metadata."); return; }
+    const xml = await file.text();
+    setFileName(file.name);
+    setF((x) => ({ ...x, metadata: xml }));
+    await inspect(xml);
+  };
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
 
   const entity = f.spEntityId.trim() || defaultSpEntityId(base);
@@ -48,11 +85,10 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
                   <div className="min-w-0">
                     <div className="truncate font-medium">{p.idp}</div>
                     <div className="truncate text-xs text-muted-foreground">{p.domain} · Entity ID {p.spEntityId}</div>
+                    {p.cert && <div className="flex items-center gap-1 text-xs text-muted-foreground"><ShieldCheck className="size-3" />Signing certificate <CertLine {...p.cert} /></div>}
                   </div>
                   <div className="flex shrink-0 gap-1">
-                    <Button variant="ghost" size="sm" asChild>
-                      <a href={spMetadataUrl(base, p.providerId)} target="_blank" rel="noreferrer"><ExternalLink />Metadata</a>
-                    </Button>
+
                     <Button variant="ghost" size="icon" aria-label={`Remove ${p.idp}`} onClick={() => setRemoving(p.providerId)}><Trash2 className="size-3.5" /></Button>
                   </div>
                 </li>
@@ -63,7 +99,7 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
             e.preventDefault();
             start(async () => {
               const r = await registerSaml({ ...f, providerId, spEntityId: entity });
-              if (r.ok) { toast.success(r.message ?? "Saved"); setF((x) => ({ ...x, metadata: "", entityId: "", ssoUrl: "", cert: "" })); } else toast.error(r.error);
+              if (r.ok) { toast.success(r.message ?? "Saved"); setF((x) => ({ ...x, metadata: "", entityId: "", ssoUrl: "", cert: "" })); setInfo(null); setFileName(""); } else toast.error(r.error);
             });
           }}>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -79,12 +115,31 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
               </div>
             </div>
             <Tabs defaultValue="metadata">
-              <TabsList><TabsTrigger value="metadata">Metadata XML</TabsTrigger><TabsTrigger value="manual">Enter by hand</TabsTrigger></TabsList>
-              <TabsContent value="metadata" className="grid gap-1.5 pt-2">
-                <Label htmlFor="md">Identity provider metadata</Label>
-                <Textarea id="md" rows={6} className="max-h-64 font-mono text-xs" value={f.metadata} onChange={set("metadata")} placeholder="<EntityDescriptor …>" />
+              <TabsList><TabsTrigger value="metadata">Federation Metadata XML</TabsTrigger><TabsTrigger value="manual">Enter by hand</TabsTrigger></TabsList>
+              <TabsContent value="metadata" className="grid gap-2 pt-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <input ref={fileRef} type="file" accept=".xml,application/xml,text/xml,application/samlmetadata+xml" className="hidden"
+                    onChange={(e) => { void readFile(e.target.files?.[0]); e.target.value = ""; }} />
+                  <Button type="button" variant="outline" onClick={() => fileRef.current?.click()}><Upload />Upload the XML file</Button>
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">{fileName || "or paste it below"}</span>
+                </div>
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); void readFile(e.dataTransfer.files?.[0]); }}>
+                  <Label htmlFor="md" className="sr-only">Identity provider metadata</Label>
+                  <Textarea id="md" rows={5} className="max-h-64 font-mono text-xs" value={f.metadata} onChange={set("metadata")}
+                    onBlur={() => void inspect(f.metadata)} placeholder="<EntityDescriptor …> (or drop the file here)" />
+                </div>
+                {info && (
+                  <div className={cn("grid gap-1 rounded-md border p-2.5 text-xs", info.problems.length ? "border-destructive/50" : "")}>
+                    <div><span className="text-muted-foreground">Identity provider:</span> <span className="font-mono break-all">{info.entityId || "–"}</span></div>
+                    <div><span className="text-muted-foreground">Sign-in URL:</span> <span className="font-mono break-all">{info.ssoUrl || "–"}</span></div>
+                    {info.certs.map((c, i) => <div key={i}><span className="text-muted-foreground">Signing certificate:</span> <CertLine notAfter={c.notAfter} daysLeft={c.daysLeft} /></div>)}
+                    {info.problems.map((p, i) => <div key={i} className="text-destructive">{p}</div>)}
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">
-                  Entra ID: download <b>Federation Metadata XML</b> from the app&apos;s Single sign-on page and paste it here.
+                  Entra ID: download <b>Federation Metadata XML</b> from the app&apos;s Single sign-on page (SAML Certificates) and upload it here.
                   {saved && " Leave it empty to keep the metadata already saved."}
                 </p>
               </TabsContent>
@@ -103,8 +158,10 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
         </div>
       </Section>
 
-      <Section title="Set these at the identity provider" description="Entra ID: Enterprise application › Single sign-on › SAML › Basic SAML Configuration">
+      <Section title="Set these at the identity provider" description="Entra ID: Enterprise application › Single sign-on › SAML › Basic SAML Configuration"
+        actions={<Button size="sm" variant="outline" disabled={!entityOk} onClick={() => download(`skills-sp-metadata.xml`, spMetadataXml(entity, acs))}><Download />Download metadata</Button>}>
         <div className="grid gap-4 text-sm">
+          <p className="text-xs text-muted-foreground">In Entra, <b>Upload metadata file</b> with the downloaded file fills in the Identifier and the Reply URL. Or copy them:</p>
           <CopyValue label="Identifier (Entity ID)" value={entityOk ? entity : "–"}
             hint={changedEntity ? "Not saved yet. Save, then set the same value in Entra." : undefined} />
           <CopyValue label="Reply URL (Assertion Consumer Service URL)" value={acs} />
@@ -117,8 +174,9 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
           )}
           <div className="grid gap-1 text-xs text-muted-foreground">
             <div><b className="font-medium text-foreground">Attributes &amp; Claims:</b> Unique User Identifier (Name ID) = user.mail, format Email address. Other claims (e-mail, display name, user name) are listed by the test sign-in below.</div>
-            <div><b className="font-medium text-foreground">SAML Certificates:</b> sign the assertion (or response and assertion), SHA-256. Then download <b>Federation Metadata XML</b> and paste it on the left.</div>
-            {saved && <div>Service-provider metadata, for identity providers that import it: <a className="text-primary hover:underline" href={spMetadataUrl(base, providerId)} target="_blank" rel="noreferrer">open</a>.</div>}
+            <div><b className="font-medium text-foreground">SAML Certificates:</b> sign the assertion (or response and assertion), SHA-256. Then download <b>Federation Metadata XML</b> and upload it on the left.</div>
+            <div><b className="font-medium text-foreground">Groups claim</b> (only to let in members of AD groups): Attributes &amp; Claims › Add a group claim.</div>
+            {saved && <div>For identity providers that import metadata from a URL: <a className="inline-flex items-center gap-0.5 text-primary hover:underline" href={spMetadataUrl(base, providerId)} target="_blank" rel="noreferrer">metadata URL<ExternalLink className="size-3" /></a>.</div>}
             <div>APP_URL is <code className="font-mono">{base}</code>: it must be the address people use.</div>
           </div>
         </div>

@@ -76,8 +76,8 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 | Levels | The wording of the 0–5 scale |
 | Cycles | Assessment rounds with a due date; one open at a time |
 | Users & access | Accounts, access role, which person an account is, local passwords, disable |
-| ServiceNow | The `sys_user` connection, the top-level user, which user types come in, field mapping, the sync schedule, **Test**, **Sync now** and the sync history; the photo URL |
-| Single sign-on | SAML 2.0 identity provider from metadata or by hand; a **test sign-in pop-up** showing what the provider returns; which value identifies the person; **Activate** |
+| ServiceNow | The `sys_user` connection, the top-level user, which user types come in, field mapping, the sync schedule, **Test**, **Sync now** and the sync history; the people's **groups** and their members; the photo URL |
+| Single sign-on | Download this app's metadata; upload the identity provider's Federation Metadata XML (certificate expiry shown); a **Test SSO pop-up** showing what the provider returns, where it is mapped to the person and the account; **who may sign in** (everyone, or members of ServiceNow / AD groups); **Activate** |
 | Integrations | A key per report or tool (Power BI, Tableau, Excel/CSV, scripts), limited to chosen datasets, shown once with that tool's connection steps; last use, request count, expiry, **revoke**. See [Integrations](#integrations-power-bi-tableau-excel) |
 | Help & feedback | The feedback inbox (status, a reply the person sees on their Help page; new ones show as a badge on Admin), the FAQ and the contact details |
 | Import & export | CSV in and out for everything below; dry run first; backups, restore, automatic backups, start from scratch |
@@ -118,7 +118,8 @@ Admin › ServiceNow brings people in from the `sys_user` table, so names, e-mai
 4. **Fields**: login name (`user_name`), display name (`name`), e-mail, manager and designation (`title`), each mappable to another column. **Also keep** stores extra columns, for example `employee_number` for the photo URL.
 5. **Roles from designation**: an ordered list of rules, "designation is / starts with / contains *text*" gives a role and, optionally, a grade. The first matching rule wins, so specific rules go above broad ones; matching ignores case and extra spaces. By default rules only fill an empty role, so a role set by hand is kept; a switch lets them change existing roles too. **Create from current roles** writes one rule per designation from the roles synced people already have.
 6. **Test** runs the whole walk and shows who would come in, at what level, under which manager, which role the rules give them, and who the type filter leaves out. Nothing is saved.
-7. **Sync now**, or a **schedule** every N hours. Each run is listed in the sync history with what it created, updated and deactivated, or why it failed. A failed run changes nothing.
+7. **Groups**: **Import their groups** brings in the ServiceNow groups (`sys_user_group`) the synced people belong to, with their memberships (`sys_user_grmember`), filtered by an encoded query (`active=true` by default). They are listed under **Groups** with their members, and Admin › Single sign-on can let in only members of chosen groups. The integration user needs read access to both tables. Each sync replaces them; a group none of the synced people is in any more goes.
+8. **Sync now**, or a **schedule** every N hours. Each run is listed in the sync history with what it created, updated and deactivated, or why it failed. A failed run changes nothing.
 
 What a sync does:
 
@@ -150,17 +151,20 @@ The running app needs to reach the instance. Behind a proxy, set `RUNTIME_HTTPS_
   | Unique User Identifier (Name ID) | `user.mail`, format Email address |
   | Signing | assertions signed, SHA-256 |
 
-  Then download Entra's **Federation Metadata XML** and paste it on the page (or enter the identity provider's entity ID, sign-in URL and certificate by hand). Saving again replaces the setup; whatever is left blank keeps its current value, so changing the Entity ID is one field and Save. Entra accepts only `https://` Reply URLs (localhost excepted), so `APP_URL` must be the https address people use.
+  **Download metadata** gives the same values as a file: Entra's **Upload metadata file** fills in the Identifier and the Reply URL from it.
+
+  Then download Entra's **Federation Metadata XML** and **upload** it on the page (or paste it, or enter the identity provider's entity ID, sign-in URL and certificate by hand). The page shows what the file holds before it is saved: the identity provider, its sign-in URL and when its signing certificate expires, and it says so if the file is not an identity provider's metadata (for example this app's own). The saved provider keeps showing its certificate's expiry date. Saving again replaces the setup; whatever is left blank keeps its current value, so changing the Entity ID is one field and Save. Entra accepts only `https://` Reply URLs (localhost excepted), so `APP_URL` must be the https address people use.
 
   Then, on the same page:
 
-  1. **Test sign-in** opens a pop-up that signs in at the identity provider. While SSO is not active, nobody is signed in: the attempt is captured and the page lists every value the provider returned (name ID and attributes).
-  2. **Identify the person**: choose which returned value must equal which field of a person, e-mail or ServiceNow `user_name`. **Check** shows who it would match.
-  3. **Activate single sign-on**. It refuses until a test sign-in exists and its value matches an active person. Only then does the sign-in page show the SSO button.
+  1. **Test SSO** opens a pop-up that signs in at the identity provider. While SSO is not active, nobody is signed in: the attempt is captured and the **pop-up stays open** showing every value the provider returned (name ID and attributes), with the mapping right under it.
+  2. **Map the sign-in** (in the pop-up or on the page): which returned value identifies the person (it must equal their e-mail or ServiceNow `user_name`), and which values fill the account's **name**, **e-mail** and **login name**. Account fields are set at the first sign-in and refreshed on every sign-in; a value another account already uses is left alone. The person's own record always comes from ServiceNow. **Check with the last test** shows who it matches, whether they would be let in, and the account fields they would get.
+  3. **Who may sign in**: everyone in the organisation (every active person synced from ServiceNow or added by an administrator), or **only members of chosen groups**: **ServiceNow groups** (imported by the sync) and/or **AD groups**, the values of the groups attribute the identity provider sends (Entra: Attributes & Claims › Add a group claim; group object IDs, or names with sAMAccountName for groups synced from on-premises AD). The values the last test sent are offered with one click. Someone in any chosen group gets in; administrators are always let in, so a wrong rule cannot lock out the people who would fix it. People already signed in keep their session until it ends (12 hours at most).
+  4. **Activate single sign-on**. It refuses until a test sign-in exists and its value matches an active person. Only then does the sign-in page show the SSO button.
 
-  Once active, a person whose value matches an active person signs in and is linked to that record. Everyone else is refused with a clear message and the attempt is listed on the page. Then disable the local `admin` (above).
+  Once active, a person whose value matches an active person (and passes the group rule) signs in and is linked to that record; an account that already has their e-mail becomes theirs. Everyone else is refused with a clear message, and the attempt, with the reason, is listed on the page. Then disable the local `admin` (above).
 
-  `test/saml.test.ts` runs the whole flow against a made-up identity provider. Before activation every sign-in is a captured test. After it, a synced person signs in and a stranger is refused. A tampered assertion, or one signed by another key, is refused.
+  `test/saml.test.ts` runs the whole flow against a made-up identity provider. Before activation every sign-in is a captured test. After it, a synced person signs in and a stranger is refused; with a group rule, a member of the ServiceNow group or of the AD group gets in and anyone else is refused; the mapped name and login reach the account. A tampered assertion, or one signed by another key, is refused.
 
   ![Single sign-on](docs/screenshots/13-sso.png)
 

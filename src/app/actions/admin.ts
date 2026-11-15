@@ -505,6 +505,8 @@ export async function clearOrganisation(confirmText: string, opts: { accounts?: 
       for (const t of ["training_plan", "rating_event", "rating", "employee_target", "unit_requirement", "role_skill", "snapshot", "assessment_cycle"]) {
         await tx.execute(sql.raw(`delete from ${t}`));
       }
+      await tx.execute(sql`delete from group_member`);
+      await tx.execute(sql`delete from sn_group`);
       await tx.execute(sql`delete from employee`);
       await tx.execute(sql`delete from org_unit`);
       await tx.execute(sql`delete from skill where parent_id is not null`);

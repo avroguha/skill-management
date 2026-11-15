@@ -64,6 +64,11 @@ Status: built 2026-11-12. Each requirement below names where it lives in the app
 | Org chart cards collapsed to their numbers; one level down by default; more on Expand | The chart opens on the top and one level; a card loads its people when expanded |
 | FAQ, feedback and contact us | Help: FAQ by audience, contact details, feedback form and replies; Admin › Help & feedback: inbox, FAQ and contact editors |
 | A guided tour per persona that highlights the buttons with what they do | The tour: team member, manager, executive and administrator steps on the real pages, offered once, restarted from Help |
+| SSO setup: download this app's metadata; the Entity ID and ACS (Reply URL) values for Entra ID | Admin › Single sign-on: Download metadata (Entra: Upload metadata file), the values with copy buttons |
+| Upload the identity provider's Federation Metadata XML, with a Test SSO option | Upload (or drop, or paste) the file; what it holds and its certificate expiry are shown before saving; Test SSO pop-up |
+| In the test pop-up, map the SSO response to the user table | The pop-up stays open with the returned values: the value that identifies the person, and the account's name, e-mail and login name; Check and Save there |
+| Restrict who can sign in by group, or to users imported from ServiceNow; an AD group or a ServiceNow group | Who may sign in: everyone imported from ServiceNow, or members of chosen ServiceNow groups and/or AD groups (the groups claim); administrators always let in |
+| Import ServiceNow group data | The sync imports the synced people's groups and memberships (sys_user_group, sys_user_grmember); Admin › ServiceNow › Groups |
 
 ## Open questions for the requirement owner
 

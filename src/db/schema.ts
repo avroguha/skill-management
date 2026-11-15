@@ -266,8 +266,30 @@ export const ssoAttempt = pgTable("sso_attempt", {
 export const ssoPending = pgTable("sso_pending", {
   email: text("email").primaryKey(),
   employeeId: text("employee_id").notNull(),
+  // account fields mapped from the sign-in (Admin › Single sign-on), applied when the account is linked
+  profile: jsonb("profile").$type<{ name?: string; email?: string; userName?: string }>(),
   at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ---- groups from ServiceNow (sys_user_group / sys_user_grmember) ----------------------------
+// Imported by the directory sync for the people it brings in; used to decide who may sign in.
+
+export const snGroup = pgTable("sn_group", {
+  id: id(),
+  // the group's sys_id: stable across syncs, and what access rules refer to
+  externalId: text("external_id").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  email: text("email").notNull().default(""),
+  managerExternalId: text("manager_external_id"),
+  active: boolean("active").notNull().default(true),
+  syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [index("sn_group_name_idx").on(t.name)]);
+
+export const groupMember = pgTable("group_member", {
+  groupId: text("group_id").notNull().references(() => snGroup.id, { onDelete: "cascade" }),
+  employeeId: text("employee_id").notNull().references(() => employee.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.groupId, t.employeeId] }), index("group_member_employee_idx").on(t.employeeId)]);
 
 // ---- help and integrations --------------------------------------------------------------
 

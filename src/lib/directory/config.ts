@@ -51,6 +51,10 @@ export interface DirectoryConfig {
   roleRules: RoleRule[];
   /** false: rules only fill an empty role (hand-set roles are kept); true: they also change one */
   roleRulesOverwrite: boolean;
+  /** also bring in the groups (sys_user_group) the synced people belong to, with their members */
+  importGroups: boolean;
+  /** an extra encoded query every imported group must match, e.g. active=true */
+  groupQuery: string;
 }
 
 export const DEFAULT_DIRECTORY: DirectoryConfig = {
@@ -70,6 +74,8 @@ export const DEFAULT_DIRECTORY: DirectoryConfig = {
   maxPeople: 20000,
   roleRules: [],
   roleRulesOverwrite: false,
+  importGroups: true,
+  groupQuery: "active=true",
 };
 
 const norm = (v: string) => v.trim().replace(/\s+/g, " ").toLowerCase();

@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/kpi";
@@ -10,13 +10,18 @@ export const metadata = { title: "ServiceNow · Admin" };
 
 export default async function DirectoryAdmin() {
   const db = await getDb();
-  const [cfg, profile, runs, [sample], roles, grades] = await Promise.all([
+  const [cfg, profile, runs, [sample], roles, grades, groups] = await Promise.all([
     readDirectoryConfig(db),
     readProfileSettings(db),
     db.select().from(schema.syncRun).orderBy(desc(schema.syncRun.startedAt)).limit(25),
     db.select().from(schema.employee).where(eq(schema.employee.active, true)).orderBy(asc(schema.employee.name)).limit(1),
     db.select({ id: schema.jobRole.id, name: schema.jobRole.name }).from(schema.jobRole).orderBy(asc(schema.jobRole.name)),
     db.select({ id: schema.grade.id, name: schema.grade.name }).from(schema.grade).orderBy(asc(schema.grade.rank)),
+    db.select({
+      id: schema.snGroup.id, name: schema.snGroup.name, description: schema.snGroup.description, email: schema.snGroup.email,
+      active: schema.snGroup.active, syncedAt: schema.snGroup.syncedAt,
+      members: sql<number>`(select count(*)::int from group_member m where m.group_id = ${schema.snGroup.id})`,
+    }).from(schema.snGroup).orderBy(asc(schema.snGroup.name)),
   ]);
   const placeholders = ["user_name", "email", "sys_id", ...cfg.extraFields];
   return (
@@ -51,6 +56,21 @@ export default async function DirectoryAdmin() {
               preview={sample ? photoUrl(profile.photoUrlTemplate, sample) : null} sampleName={sample?.name ?? null} />
           </Section>
         </div>
+        <Section title={`Groups (${groups.length})`}
+          description={cfg.importGroups
+            ? "The ServiceNow groups the synced people belong to, refreshed by every sync. Admin › Single sign-on can let in only members of chosen groups."
+            : "Group import is off. Turn on Import their groups above and sync."}>
+          <DataTable csvName="servicenow-groups" searchPlaceholder="Find a group…" emptyText="No groups imported yet."
+            rows={groups.map((g) => ({ name: g.name, href: `/admin/directory/groups/${g.id}`, members: Number(g.members), active: g.active ? "Active" : "Inactive", email: g.email, description: g.description }))}
+            initialSort={{ key: "members", desc: true }}
+            columns={[
+              { key: "name", header: "Group", kind: "link", hrefKey: "href" },
+              { key: "members", header: "Members", kind: "number", align: "right" },
+              { key: "active", header: "", kind: "muted", facet: true },
+              { key: "email", header: "E-mail", kind: "muted" },
+              { key: "description", header: "Description", kind: "muted", sortable: false, className: "max-w-96 truncate" },
+            ]} />
+        </Section>
       </div>
     </>
   );

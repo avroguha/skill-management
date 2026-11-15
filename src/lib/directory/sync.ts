@@ -9,7 +9,7 @@
 //  applyDirectory  one transaction: match by directory id, then e-mail, then login
 //                  name; update; deactivate directory people who are gone (never
 //                  delete: their ratings are history); rebuild the sync-owned units.
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { DB } from "../../db/index.ts";
 import * as s from "../../db/schema.ts";
 import { matchRoleRule, type DirectoryConfig } from "./config.ts";
@@ -271,16 +271,97 @@ async function rebuildUnits(tx: DB, r: FetchResult, localId: Map<string, string>
   return managers.length;
 }
 
+// ---- groups (sys_user_group, sys_user_grmember) ---------------------------------------------
+
+export interface DirGroup {
+  externalId: string;
+  name: string;
+  description: string;
+  email: string;
+  managerExternalId: string | null;
+  active: boolean;
+  /** sys_ids of the synced people in it */
+  members: string[];
+}
+
+const CHUNK = 100;
+
+/** The groups the synced people belong to (memberships first, then the groups that match groupQuery). */
+export async function fetchGroups(sn: ServiceNow, c: DirectoryConfig, userIds: string[]): Promise<DirGroup[]> {
+  const memberOf = new Map<string, Set<string>>();
+  for (let i = 0; i < userIds.length; i += CHUNK) {
+    const ids = userIds.slice(i, i + CHUNK).map((id) => assertQueryValue(id, "A user sys_id"));
+    for (const r of await sn.all("sys_user_grmember", `userIN${ids.join(",")}`, ["sys_id", "group", "user"], 200000)) {
+      if (!r.group || !r.user) continue;
+      const set = memberOf.get(r.group) ?? new Set<string>();
+      set.add(r.user);
+      memberOf.set(r.group, set);
+    }
+  }
+  const groupIds = [...memberOf.keys()];
+  const extra = c.groupQuery.trim();
+  const out: DirGroup[] = [];
+  for (let i = 0; i < groupIds.length; i += CHUNK) {
+    const ids = groupIds.slice(i, i + CHUNK).map((id) => assertQueryValue(id, "A group sys_id"));
+    const q = `sys_idIN${ids.join(",")}${extra ? `^${extra}` : ""}`;
+    for (const g of await sn.all("sys_user_group", q, ["sys_id", "name", "description", "email", "manager", "active"])) {
+      out.push({
+        externalId: g.sys_id, name: g.name || g.sys_id, description: g.description ?? "", email: g.email ?? "",
+        managerExternalId: g.manager || null, active: g.active !== "false", members: [...(memberOf.get(g.sys_id) ?? [])],
+      });
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Replaces the imported groups and their memberships with what was fetched, in one transaction. */
+export async function applyGroups(db: DB, groups: DirGroup[]): Promise<{ groups: number; memberships: number; removed: number }> {
+  return db.transaction(async (tx) => {
+    const people = await tx.select({ id: s.employee.id, ext: s.employee.externalId }).from(s.employee).where(sql`${s.employee.externalId} is not null`);
+    const local = new Map(people.map((p) => [p.ext!, p.id]));
+    const now = new Date();
+    let memberships = 0;
+    for (const g of groups) {
+      const [row] = await tx.insert(s.snGroup).values({
+        externalId: g.externalId, name: g.name, description: g.description, email: g.email,
+        managerExternalId: g.managerExternalId, active: g.active, syncedAt: now,
+      }).onConflictDoUpdate({
+        target: s.snGroup.externalId,
+        set: { name: g.name, description: g.description, email: g.email, managerExternalId: g.managerExternalId, active: g.active, syncedAt: now },
+      }).returning({ id: s.snGroup.id });
+      await tx.delete(s.groupMember).where(eq(s.groupMember.groupId, row.id));
+      const members = [...new Set(g.members.map((m) => local.get(m)).filter((x): x is string => !!x))];
+      if (members.length) await tx.insert(s.groupMember).values(members.map((employeeId) => ({ groupId: row.id, employeeId })));
+      memberships += members.length;
+    }
+    // groups nobody synced belongs to any more (or that no longer match the query) go
+    const keep = groups.map((g) => g.externalId);
+    const gone = await tx.delete(s.snGroup).where(keep.length ? notInArray(s.snGroup.externalId, keep) : sql`true`).returning({ id: s.snGroup.id });
+    return { groups: groups.length, memberships, removed: gone.length };
+  });
+}
+
 /** The whole job: fetch, apply, record the run. Never throws; the run row says what happened. */
 export async function runSync(db: DB, sn: ServiceNow, c: DirectoryConfig, trigger: "manual" | "schedule", actorName = "") {
   const [run] = await db.insert(s.syncRun).values({ trigger, actorName }).returning();
   try {
     const fetched = await fetchDirectory(sn, c);
     const applied = await applyDirectory(db, fetched, c);
+    // groups: a failure here is reported, but does not undo the people
+    let groupNote = "";
+    if (c.importGroups) {
+      try {
+        const g = await applyGroups(db, await fetchGroups(sn, c, fetched.people.map((p) => p.externalId)));
+        groupNote = `${g.groups} group${g.groups === 1 ? "" : "s"} with ${g.memberships} membership${g.memberships === 1 ? "" : "s"}${g.removed ? `, ${g.removed} removed` : ""}`;
+      } catch (e) {
+        groupNote = `groups not imported: ${(e as Error).message}`;
+      }
+    }
     const message = [
       `${fetched.people.length} people under ${fetched.root.name} (${fetched.excluded.length} left out by the type filter)`,
       fetched.truncated ? `stopped at the limit of ${c.maxPeople}` : "",
       applied.rolesSet ? `${applied.rolesSet} role${applied.rolesSet === 1 ? "" : "s"} set from designations` : "",
+      groupNote,
       ...applied.messages.slice(0, 20),
     ].filter(Boolean).join("; ");
     const [done] = await db.update(s.syncRun).set({
