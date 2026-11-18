@@ -11,9 +11,12 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { guardAction, audit, getEngine } from "@/lib/server";
+import { notifyReturned, notifySubmitted, notifyValidated } from "@/lib/mail/notify";
 
 export type Result = { ok: true; message?: string } | { ok: false; error: string };
 const EVIDENCE_FROM = 4;
+/** E-mail goes out in the background: a slow or unreachable relay never holds up or fails the action. */
+const inBackground = (p: Promise<unknown>) => void p.catch((e) => console.error("email: could not queue -", (e as Error).message));
 
 const selfEntry = z.object({
   skillId: z.string().min(1),
@@ -35,6 +38,7 @@ export async function saveSelfAssessment(entries: z.input<typeof selfEntry>[], s
   const staleBefore = Date.now() - engine.settings.staleMonths * 30.4375 * 86400e3;
   const now = new Date();
   let sent = 0, saved = 0;
+  const sentIds: string[] = [];
   for (const e of parsed.data) {
     if (!engine.isRateable(e.skillId)) continue;
     const [cur] = await db.select().from(schema.rating)
@@ -64,10 +68,11 @@ export async function saveSelfAssessment(entries: z.input<typeof selfEntry>[], s
         level: e.level, note: e.comment, actorId: v.userId, cycleId: cycle?.id ?? null,
       });
     }
-    if (status === "submitted" && cur?.status !== "submitted") sent += 1;
+    if (status === "submitted" && cur?.status !== "submitted") { sent += 1; sentIds.push(e.skillId); }
     saved += 1;
   }
   await audit(v, submit ? "submit_self_assessment" : "save_self_assessment", "rating", v.employee.id, { saved, sent });
+  if (sentIds.length) inBackground(notifySubmitted(db, engine, v.employee.id, sentIds));
   revalidatePath("/assess");
   revalidatePath(`/people/${v.employee.id}`);
   if (submit) return { ok: true, message: sent ? `Sent ${sent} rating${sent === 1 ? "" : "s"} to your manager.` : "Nothing new to send: everything is already validated." };
@@ -107,6 +112,7 @@ export async function validateRatings(items: z.input<typeof validation>[]): Prom
     });
   }
   await audit(v, "validate", "rating", null, { count: parsed.data.length });
+  inBackground(getEngine().then((engine) => notifyValidated(db, engine, parsed.data.map((i) => ({ ...i, comment: i.comment.trim() })), v.name)));
   revalidatePath("/validate");
   for (const id of new Set(parsed.data.map((x) => x.employeeId))) revalidatePath(`/people/${id}`);
   return { ok: true, message: `Validated ${parsed.data.length} rating${parsed.data.length === 1 ? "" : "s"}.` };
@@ -123,6 +129,7 @@ export async function returnRating(input: { employeeId: string; skillId: string;
     .where(and(eq(schema.rating.employeeId, input.employeeId), eq(schema.rating.skillId, input.skillId)));
   await db.insert(schema.ratingEvent).values({ employeeId: input.employeeId, skillId: input.skillId, kind: "return", note: input.comment, actorId: v.userId });
   await audit(v, "return_rating", "rating", input.employeeId, { skillId: input.skillId });
+  inBackground(getEngine().then((engine) => notifyReturned(db, engine, input.employeeId, input.skillId, input.comment.trim(), v.name)));
   revalidatePath("/validate");
   return { ok: true, message: "Sent back with your note." };
 }

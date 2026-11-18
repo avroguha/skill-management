@@ -85,8 +85,10 @@ test("legacy-builder compatible, unprivileged, cheap health check, no outbound f
   assert.match(hc, /curl/);
   assert.ok(!/node -e|python/.test(hc), "no language runtime in the health check");
   assert.match(hc, /http:\/\/127\.0\.0\.1:8080\/api\/health/, "loopback HTTP is served whether TLS is on or off");
-  assert.match(d, /apt-get install[^\n]*\bopenssl\b/, "tls-init makes the self-signed certificate with openssl");
-  assert.match(d, /apt-get install[^\n]*\bcurl\b/);
+  assert.match(d, /apt-get [^\n]*install[^\n]*\bopenssl\b/, "tls-init makes the self-signed certificate with openssl");
+  assert.match(d, /apt-get [^\n]*install[^\n]*\bcurl\b/);
+  // the base image has no CA bundle: an https mirror needs one handed to apt before the first download
+  for (const m of d.matchAll(/^\s*apt-get [^\n]*\b(update|install)\b/gm)) assert.match(m[0], /Acquire::https::CAInfo=/, m[0].trim());
   // next/font/google downloads at build time and breaks behind a proxy
   const layout = read("src/app/layout.tsx");
   assert.ok(!/next\/font\/google/.test(layout), "use the self-hosted geist package, not next/font/google");
@@ -149,7 +151,7 @@ test("work.env and home.env define the same keys, everything compose requires, a
   assert.equal(home.HTTPS_PROXY, "");
   assert.match(work.IMAGE_REGISTRY, /\S+\/$/);
   for (const k of ["IMAGE_REGISTRY", "APT_MIRROR", "NPM_REGISTRY", "HTTP_PROXY", "HTTPS_PROXY"]) {
-    assert.match(work[k], /avro\.com/, `work.env ${k} should be an avro.com placeholder`);
+    assert.notEqual(work[k], "", `work.env ${k} must name the site's location`);
   }
   assert.match(work.DATA_DIR, /^\.\.\//, "work data lives outside the code folder");
   assert.match(home.DATA_DIR, /^\.\.\//, "home data lives outside the code folder too: a redeploy replaces the code, never the data");
@@ -159,7 +161,7 @@ test("work.env and home.env define the same keys, everything compose requires, a
   // the ServiceNow sync goes out through the site's proxy at work, directly at home
   assert.match(code(read("docker-compose.yml")), /HTTPS_PROXY: \$\{RUNTIME_HTTPS_PROXY\?/);
   assert.equal(home.RUNTIME_HTTPS_PROXY, "");
-  assert.match(work.RUNTIME_HTTPS_PROXY, /avro\.com/);
+  assert.notEqual(work.RUNTIME_HTTPS_PROXY, "");
   assert.match(work.APP_URL, /^https:\/\//, "at work the app is reached over https");
   for (const [site, env] of [["work", work], ["home", home]] as const) {
     assert.equal(env.APP_TLS, "on", `${site}: HTTPS unless a proxy in front terminates TLS`);

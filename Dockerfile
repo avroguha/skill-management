@@ -42,7 +42,8 @@ RUN set -eux; \
     if [ -n "${NPM_TOKEN}" ]; then npm config set "${AUTH_KEY}" "${NPM_TOKEN}"; fi; \
     npm ci --no-audit --no-fund; \
     rm -f /root/.npmrc; \
-    node scripts/check-release-age.cjs --hours 72 --offline
+    node scripts/check-release-age.cjs --hours 72 --offline; \
+    node -p "require('node:tls').rootCertificates.join('\n')" > /tmp/public-roots.pem
 
 COPY . .
 # Telemetry off and no font downloads (the font is the self-hosted geist package):
@@ -62,18 +63,22 @@ ARG HTTP_PROXY=
 ARG HTTPS_PROXY=
 ARG NO_PROXY=localhost,127.0.0.1
 ENV DEBIAN_FRONTEND=noninteractive
+# The base image has no CA bundle yet, so an https APT_MIRROR is verified against
+# Node's built-in public roots plus the site CAs until ca-certificates is installed.
+COPY certs/ /usr/local/share/ca-certificates/site/
+COPY --from=build /tmp/public-roots.pem /tmp/apt-ca/public-roots.pem
 RUN set -eux; \
     if [ -n "${HTTP_PROXY}" ]; then export http_proxy="${HTTP_PROXY}" https_proxy="${HTTPS_PROXY}" no_proxy="${NO_PROXY}"; fi; \
     if [ -n "${APT_MIRROR}" ]; then \
-      sed -i "s#http://archive.ubuntu.com/ubuntu/#${APT_MIRROR}/#; s#http://security.ubuntu.com/ubuntu/#${APT_MIRROR}/#" \
+      mirror="${APT_MIRROR%/}"; \
+      sed -i "s#http://archive.ubuntu.com/ubuntu/#${mirror}/#; s#http://security.ubuntu.com/ubuntu/#${mirror}/#" \
         /etc/apt/sources.list.d/ubuntu.sources; \
     fi; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl openssl; \
-    rm -rf /var/lib/apt/lists/*
-
-COPY certs/ /usr/local/share/ca-certificates/site/
-RUN set -eux; update-ca-certificates
+    for f in /tmp/apt-ca/public-roots.pem /usr/local/share/ca-certificates/site/*.crt; do if [ -f "$f" ]; then cat "$f"; echo; fi; done > /tmp/apt-ca/bundle.pem; \
+    apt-get -o Acquire::https::CAInfo=/tmp/apt-ca/bundle.pem update; \
+    apt-get -o Acquire::https::CAInfo=/tmp/apt-ca/bundle.pem install -y --no-install-recommends ca-certificates curl openssl; \
+    update-ca-certificates; \
+    rm -rf /var/lib/apt/lists/* /tmp/apt-ca
 
 # The official Node binary needs only glibc and libstdc++, both in Ubuntu 24.04.
 COPY --from=build /usr/local/bin/node /usr/local/bin/node

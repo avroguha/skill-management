@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { setRoleSkill } from "@/app/actions/admin";
 import { substringFilter } from "@/lib/search";
+import { SkillOption, SKILL_PICKER_CLASS, SKILL_LIST_CLASS } from "@/components/skill-option";
 import { cn } from "@/lib/utils";
 
 type RS = { roleId: string; gradeId: string | null; skillId: string; target: number; mandatory: boolean };
@@ -78,15 +79,15 @@ export function RoleMatrix({ roles, grades, skills, roleSkills, levels }: {
         </Select>
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild><Button variant="outline" size="sm" className="h-8"><Plus />Add a skill to this role</Button></PopoverTrigger>
-          <PopoverContent className="w-80 p-0" align="start">
+          <PopoverContent className={SKILL_PICKER_CLASS} align="start">
             <Command filter={substringFilter}>
               <CommandInput placeholder="Find a skill…" />
-              <CommandList>
+              <CommandList className={SKILL_LIST_CLASS}>
                 <CommandEmpty>No such skill. Add it in Taxonomy.</CommandEmpty>
                 <CommandGroup>
                   {skills.filter((s) => !skillIds.includes(s.id)).map((s) => (
                     <CommandItem key={s.id} value={`${s.label} ${s.category}`} onSelect={() => { setAdded((a) => [...a, s.id]); setOpen(false); save(s.id, null, 3, true); }}>
-                      <span className="flex-1 truncate">{s.label}</span><span className="text-xs text-muted-foreground">{s.category}</span>
+                      <SkillOption name={s.label} category={s.category} />
                     </CommandItem>
                   ))}
                 </CommandGroup>

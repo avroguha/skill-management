@@ -1,6 +1,6 @@
 // Runs once when the server starts: open and migrate the database (so the first
-// request is not the one that waits), keep this month's snapshot current, and run
-// the directory sync when it is due.
+// request is not the one that waits), keep this month's snapshot current, run
+// the directory sync when it is due, and send e-mail (reminders, the outbox).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
@@ -9,7 +9,8 @@ export async function register() {
   const { syncIfDue } = await import("./lib/directory/schedule.ts");
   const { refreshGate } = await import("./lib/sso-gate.ts");
   const { backupIfDue } = await import("./lib/backup.ts");
-  const { warmEngine } = await import("./lib/server.ts");
+  const { warmEngine, getEngine } = await import("./lib/server.ts");
+  const { processOutbox, remindersIfDue } = await import("./lib/mail/notify.ts");
   const warm = async () => {
     try { await warmEngine(); } catch (err) { console.error("engine warm-up: failed -", (err as Error).message); }
   };
@@ -38,6 +39,15 @@ export async function register() {
     }
   };
   await gate();
+  // e-mail (Admin › Email): reminders when due, then whatever is waiting in the outbox
+  const email = async () => {
+    try {
+      await remindersIfDue(db, await getEngine());
+      await processOutbox(db);
+    } catch (err) {
+      console.error("email: check failed -", (err as Error).message);
+    }
+  };
   const g = globalThis as unknown as { __skillsTimers?: NodeJS.Timeout[] };
   for (const t of g.__skillsTimers ?? []) clearInterval(t);
   g.__skillsTimers = [
@@ -48,6 +58,7 @@ export async function register() {
     setInterval(() => void warm(), Number(process.env.WARM_SECONDS || 3) * 1000),
     // automatic backups (Admin › Import & export): checked every 10 minutes, taken when due
     setInterval(() => void backupIfDue(db), 10 * 60e3),
+    setInterval(() => void email(), 60e3),
   ];
   for (const t of g.__skillsTimers) t.unref?.();
   void directory();

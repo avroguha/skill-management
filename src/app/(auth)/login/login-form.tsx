@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/lib/auth-client";
 
-export function LoginForm({ providers, demo, error }: {
+export function LoginForm({ providers, demo, error, next = "/" }: {
   providers: { providerId: string; domain: string }[];
   demo: boolean;
   error: string | null;
+  /** where to go once signed in (already checked by safeNext) */
+  next?: string;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"local" | "sso" | null>(null);
@@ -37,7 +39,7 @@ export function LoginForm({ providers, demo, error }: {
       );
       return;
     }
-    router.replace("/");
+    router.replace(next);
     router.refresh();
   }
 
@@ -46,8 +48,8 @@ export function LoginForm({ providers, demo, error }: {
     setMessage(null);
     const { error } = await authClient.signIn.sso({
       ...(providerId ? { providerId } : { email: ssoEmail.trim() }),
-      callbackURL: "/",
-      errorCallbackURL: "/login?error=sso",
+      callbackURL: next,
+      errorCallbackURL: `/login?error=sso${next !== "/" ? `&next=${encodeURIComponent(next)}` : ""}`,
     });
     if (error) {
       setBusy(null);

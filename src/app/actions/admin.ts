@@ -67,7 +67,7 @@ export async function deleteCategory(id: string): Promise<Result> {
 
 const skillIn = z.object({
   id: z.string().optional(),
-  name: z.string().trim().min(1, "Name the skill.").max(80),
+  name: z.string().trim().min(1, "Name the skill.").max(120),
   categoryId: z.string().min(1, "Choose a category."),
   parentId: optId,
   description: text(1000),

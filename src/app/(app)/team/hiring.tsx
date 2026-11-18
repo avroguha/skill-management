@@ -19,6 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { savePosition, setPositionStatus, bookTraining } from "@/app/actions/team";
 import { LEVEL_CLASS } from "@/lib/status";
 import { substringFilter } from "@/lib/search";
+import { SkillOption, SKILL_PICKER_CLASS, SKILL_LIST_CLASS } from "@/components/skill-option";
 import { cn } from "@/lib/utils";
 
 type Opt = { id: string; name: string };
@@ -226,15 +227,15 @@ function SkillPicker({ skills, exclude, onPick }: { skills: (Opt & { category: s
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild><Button variant="outline" size="sm" className="justify-self-start"><Plus />Add a skill</Button></PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start">
+      <PopoverContent className={SKILL_PICKER_CLASS} align="start">
         <Command filter={substringFilter}>
           <CommandInput placeholder="Find a skill…" />
-          <CommandList>
+          <CommandList className={SKILL_LIST_CLASS}>
             <CommandEmpty>Not in the catalogue.</CommandEmpty>
             <CommandGroup>
               {skills.filter((s) => !exclude.has(s.id)).map((s) => (
                 <CommandItem key={s.id} value={`${s.name} ${s.category}`} onSelect={() => { onPick(s.id); setOpen(false); }}>
-                  <span className="flex-1 truncate">{s.name}</span><span className="text-xs text-muted-foreground">{s.category}</span>
+                  <SkillOption name={s.name} category={s.category} />
                 </CommandItem>
               ))}
             </CommandGroup>

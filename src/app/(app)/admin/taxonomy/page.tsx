@@ -4,6 +4,8 @@ import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/kpi";
 import { AdminCrud } from "@/components/admin-crud";
 import { saveCategory, deleteCategory } from "@/app/actions/admin";
+import { COLUMNS, DESCRIPTIONS } from "@/lib/transfer";
+import { ImportForm } from "../data/client";
 import { SkillsAdmin } from "./client";
 
 export const metadata = { title: "Taxonomy · Admin" };
@@ -77,6 +79,13 @@ export default async function TaxonomyAdmin() {
               { name: "description", label: "Description", type: "textarea" },
             ]}
             save={saveCategory} remove={deleteCategory} />
+        </Section>
+        <Section title="Upload skills from a CSV file"
+          description="Adds and updates categories, skills and sub-skills in bulk. A new skill that looks like one already here (similar wording, or one of its aliases) is listed first: keep both, merge it into the existing one, skip it, or replace the existing one with it.">
+          <ImportForm kinds={[{ kind: "skills", columns: COLUMNS.skills, description: DESCRIPTIONS.skills }]} />
+          <p className="mt-3 text-xs text-muted-foreground">
+            The easiest template is the current catalogue: <a href="/api/export/skills" className="underline underline-offset-2">download skills.csv</a>, edit it, and upload it again.
+          </p>
         </Section>
       </div>
     </>

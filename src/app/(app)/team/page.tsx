@@ -26,7 +26,9 @@ import { needView, withParams } from "@/lib/views";
 import type { Employee } from "@/lib/engine/engine";
 import { TeamNeeds, type NeedRow } from "./team-needs";
 import { Positions, TrainingIdeas, type PositionView, type TrainingView } from "./hiring";
+import { RemindTeam, type RemindCandidate } from "./remind";
 import { hiringAdvice, trainingAdvice } from "@/lib/engine/advice";
+import { assessmentState, readEmailSettings } from "@/lib/mail/notify";
 
 export const metadata = { title: "My team" };
 
@@ -74,12 +76,13 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
 
   const db = await getDb();
   const ids = everyone.map((e) => e.id);
-  const [levels, categories, reqs, plans, positionRows] = await Promise.all([
+  const [levels, categories, reqs, plans, positionRows, emailSettings] = await Promise.all([
     db.select().from(schema.proficiencyLevel).orderBy(asc(schema.proficiencyLevel.level)),
     db.select().from(schema.skillCategory).orderBy(asc(schema.skillCategory.sort)),
     unitId ? db.select().from(schema.unitRequirement).where(eq(schema.unitRequirement.unitId, unitId)) : Promise.resolve([]),
     ids.length ? db.select().from(schema.trainingPlan).where(inArray(schema.trainingPlan.employeeId, ids)) : Promise.resolve([]),
     unitId ? db.select().from(schema.openPosition).where(eq(schema.openPosition.unitId, unitId)).orderBy(desc(schema.openPosition.createdAt)) : Promise.resolve([]),
+    readEmailSettings(db),
   ]);
   const levelName = (n: number) => levels.find((l) => l.level === n)?.name ?? String(n);
   const dataset = await loadDataset();
@@ -116,6 +119,16 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
 
   // ---- tiles: always over everyone below ----
   const agg = engine.aggregate(everyone);
+  // Remind (e-mail): the people listed who still have to send their self-assessment, and whom the viewer manages
+  const remindable: RemindCandidate[] = emailSettings.enabled && emailSettings.send.nudge && !v.viewAs
+    ? people.filter((e) => v.reportIds.has(e.id)).flatMap((e) => {
+      const st = assessmentState(engine, e);
+      if (!st.needsUpdate) return [];
+      const rs = engine.ratingsOf(e.id);
+      const state = rs.some((r) => r.status === "returned") ? "Sent back" : rs.some((r) => r.selfLevel != null) ? "In progress" : "Not started";
+      return [{ id: e.id, name: e.name, state, progress: st.required ? `${st.rated} of ${st.required} required skills rated` : "" }];
+    }).sort((a, b) => a.name.localeCompare(b.name))
+    : [];
   const waitingForMe = engine.submittedCount(everyone.filter((e) => v.reportIds.has(e.id)).map((e) => e.id));
   const notStarted = everyone.filter((e) => !engine.isTop(e) && !engine.ratingsOf(e.id).some((r) => r.selfLevel != null)).length;
   const needsRaw = unitId ? engine.shortNeeds(unitId) : [];
@@ -260,14 +273,19 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         <TabsContent value="people">
           <Section title={scopeAll ? `Everyone below (${people.length})` : `Direct reports (${people.length})`}
             description="Who reports here, how far each self-assessment has got, what waits for your validation and where each person stands."
-            actions={direct.length > 0 && direct.length !== everyone.length ? (
-              <div className="inline-flex rounded-md border p-0.5 text-xs" role="group" aria-label="Who to list">
-                <Link href={link({ scope: null, tab: "people" })} aria-current={!scopeAll ? "page" : undefined}
-                  className={!scopeAll ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Direct ({direct.length})</Link>
-                <Link href={link({ scope: "all", tab: "people" })} aria-current={scopeAll ? "page" : undefined}
-                  className={scopeAll ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Everyone ({everyone.length})</Link>
+            actions={(
+              <div className="flex flex-wrap items-center gap-2">
+                <RemindTeam people={remindable} />
+                {direct.length > 0 && direct.length !== everyone.length && (
+                  <div className="inline-flex rounded-md border p-0.5 text-xs" role="group" aria-label="Who to list">
+                    <Link href={link({ scope: null, tab: "people" })} aria-current={!scopeAll ? "page" : undefined}
+                      className={!scopeAll ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Direct ({direct.length})</Link>
+                    <Link href={link({ scope: "all", tab: "people" })} aria-current={scopeAll ? "page" : undefined}
+                      className={scopeAll ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Everyone ({everyone.length})</Link>
+                  </div>
+                )}
               </div>
-            ) : undefined}>
+            )}>
             {people.length > rows.length && <p className="mb-2 text-xs text-muted-foreground">The first {rows.length.toLocaleString("en-GB")} of {people.length.toLocaleString("en-GB")} by name. Open a manager lower down (the Team column) to see their part in full.</p>}
             <DataTable csvName="my-team" rows={rows} pageSize={20} initialSort={{ key: "name" }} searchPlaceholder="Find a person…"
               columns={[

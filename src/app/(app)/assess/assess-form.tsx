@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { LEVEL_CLASS } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import { substringFilter } from "@/lib/search";
+import { SkillOption, SKILL_PICKER_CLASS, SKILL_LIST_CLASS } from "@/components/skill-option";
 
 export interface AssessRow {
   skillId: string; skill: string; category: string; categorySort: number; required: boolean; target: number | null;
@@ -138,10 +139,10 @@ export function AssessForm({ rows: initial, catalogue, levels, categories, draft
         <div className="border-t px-4 py-3">
           <Popover open={adding} onOpenChange={setAdding}>
             <PopoverTrigger asChild><Button variant="outline" size="sm"><Plus />Add a skill you have</Button></PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="start">
+            <PopoverContent className={SKILL_PICKER_CLASS} align="start">
               <Command filter={substringFilter}>
                 <CommandInput placeholder="Find a skill…" value={query} onValueChange={setQuery} />
-                <CommandList>
+                <CommandList className={SKILL_LIST_CLASS}>
                   <CommandEmpty>Not in the catalogue.</CommandEmpty>
                   {query.trim().length >= 2 && !extra.some((s) => s.name.toLowerCase() === query.trim().toLowerCase()) && (
                     <CommandGroup forceMount>
@@ -162,7 +163,7 @@ export function AssessForm({ rows: initial, catalogue, levels, categories, draft
                         setExtra((x) => x.filter((y) => y.id !== s.id));
                         setAdding(false);
                       }}>
-                        <span className="flex-1 truncate">{s.name}</span><span className="text-xs text-muted-foreground">{s.category}</span>
+                        <SkillOption name={s.name} category={s.category} />
                       </CommandItem>
                     ))}
                   </CommandGroup>

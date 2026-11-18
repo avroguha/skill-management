@@ -12,6 +12,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { saveTeamNeed, removeTeamNeed } from "@/app/actions/team";
 import { cn } from "@/lib/utils";
 import { substringFilter } from "@/lib/search";
+import { SkillOption, SKILL_PICKER_CLASS, SKILL_LIST_CLASS } from "@/components/skill-option";
 
 export interface NeedRow { skillId: string; skill: string; minLevel: number; levelName: string; headcount: number; note: string; have: number; state: string }
 type Opt = { id: string; name: string };
@@ -110,12 +111,12 @@ function NeedDialog({ unitId, row, skills, categories, parents, levels, onClose 
               <Label>Skill</Label>
               <Popover open={pickOpen} onOpenChange={setPickOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="justify-between font-normal">{chosen ? `${chosen.name} · ${chosen.category}` : "Choose a skill…"}</Button>
+                  <Button variant="outline" className="h-auto min-h-9 justify-start py-1.5 text-left font-normal whitespace-normal">{chosen ? <SkillOption name={chosen.name} category={chosen.category} /> : "Choose a skill…"}</Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <PopoverContent className={SKILL_PICKER_CLASS} align="start">
                   <Command filter={substringFilter}>
                     <CommandInput placeholder="Find a skill…" value={query} onValueChange={setQuery} />
-                    <CommandList>
+                    <CommandList className={SKILL_LIST_CLASS}>
                       <CommandEmpty>Not in the catalogue.</CommandEmpty>
                       {query.trim().length >= 2 && !skills.some((s) => s.name.toLowerCase() === query.trim().toLowerCase()) && (
                         <CommandGroup forceMount>
@@ -127,7 +128,7 @@ function NeedDialog({ unitId, row, skills, categories, parents, levels, onClose 
                       <CommandGroup>
                         {skills.map((s) => (
                           <CommandItem key={s.id} value={`${s.name} ${s.category}`} onSelect={() => { setSkillId(s.id); setPickOpen(false); }}>
-                            <span className="flex-1 truncate">{s.name}</span><span className="text-xs text-muted-foreground">{s.category}</span>
+                            <SkillOption name={s.name} category={s.category} />
                           </CommandItem>
                         ))}
                       </CommandGroup>

@@ -3,13 +3,16 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getViewer } from "@/lib/server";
 import { readSsoSettings } from "@/lib/sso-gate";
+import { safeNext } from "@/lib/safe-next";
 import { LoginForm } from "./login-form";
 
 export const metadata = { title: "Sign in" };
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  if (await getViewer()) redirect("/");
   const sp = await searchParams;
+  // ?next=: the page an e-mail link points to; already signed in, go straight there
+  const next = safeNext(sp.next);
+  if (await getViewer()) redirect(next);
   const db = await getDb();
   // Single sign-on is offered only once an administrator has tested and activated it.
   const sso = await readSsoSettings(db);
@@ -21,7 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const demo = process.env.SEED_DEMO === "true" && demoUsers.length > 0;
   return (
     <div className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
-      <LoginForm providers={providers} demo={demo} error={sp.error ?? null} />
+      <LoginForm providers={providers} demo={demo} error={sp.error ?? null} next={next} />
     </div>
   );
 }

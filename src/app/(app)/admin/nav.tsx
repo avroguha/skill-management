@@ -13,6 +13,7 @@ export const ADMIN_SECTIONS = [
   { href: "/admin/users", label: "Users & access" },
   { href: "/admin/directory", label: "ServiceNow" },
   { href: "/admin/sso", label: "Single sign-on" },
+  { href: "/admin/email", label: "Email" },
   { href: "/admin/integrations", label: "Integrations" },
   { href: "/admin/feedback", label: "Help & feedback" },
   { href: "/admin/data", label: "Import & export" },

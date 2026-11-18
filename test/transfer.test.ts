@@ -2,6 +2,7 @@
 // and exports again identically; the numbers the app shows come out the same.
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { count } from "drizzle-orm";
 import { PGlite } from "@electric-sql/pglite";
@@ -13,7 +14,7 @@ process.env.SEED_DEMO = "true";
 delete process.env.DATABASE_URL;
 
 const { getDb, closeDb, schema } = await import("../src/db/index.ts");
-const { exportCsv, importCsv, KINDS } = await import("../src/lib/transfer.ts");
+const { exportCsv, importCsv, KINDS, skillSimilarity } = await import("../src/lib/transfer.ts");
 const { parseCsv, parseCsvObjects, toCsv } = await import("../src/lib/csv.ts");
 const { loadDatasetFrom } = await import("../src/lib/dataset.ts");
 const { createEngine } = await import("../src/lib/engine/engine.ts");
@@ -95,6 +96,99 @@ test("dry run reports and changes nothing; bad rows are skipped with their line 
     assert.equal(eve.managerId, people.find((p) => p.email === "ann@acme.test")!.id, "manager resolved in the second pass");
     const missing = await importCsv(t.db, "ratings", "email,level\nann@acme.test,3\n");
     assert.match(missing.errors[0].message, /Missing column/);
+  } finally {
+    await t.close();
+  }
+});
+
+test("near-identical skill names: typos, the same words, one inside the other; not mere overlap", () => {
+  assert.match(skillSimilarity("Kubernets cluster upgrades", "Kubernetes Cluster Upgrades")!.reason, /same|almost/);
+  assert.match(skillSimilarity("Release Management", "Release Management – Blue/Green")!.reason, /contains/);
+  assert.ok(skillSimilarity("Network Capacity Planning", "Capacity planning, network"), "same words in another order");
+  assert.equal(skillSimilarity("Unit Testing", "Grow unit testing habits in every squad through pairing"), null);
+  assert.equal(skillSimilarity("Kubernetes", "Terraform"), null);
+});
+
+test("an upload with near-identical skills waits for a decision: keep both, merge, skip or replace", async () => {
+  const t = await emptyDb();
+  const skills = async () => t.db.select().from(schema.skill);
+  try {
+    await importCsv(t.db, "skills", [
+      "category,skill,sub_skill,aliases,description,status",
+      "Ops,Problem Management,,,,active",
+      "Ops,Problem Management,Root Cause Analysis,RCA,,active",
+      "Ops,Problem Management,Known Error Database,,,active",
+      "Ops,Monitoring,,,,active",
+      "Ops,Monitoring,Splunk Dashboards,,,active",
+      "Ops,Monitoring,Grafana Dashboards,,,active",
+    ].join("\n"));
+    const before = await skills();
+    const id = (name: string) => before.find((k) => k.name === name)!.id;
+    const upload = [
+      "category,skill,sub_skill,aliases,description,status",
+      "Ops,Problem Management,Root-cause analysis,,From the upload,active", // line 2: merge
+      "Ops,Problem Management,Known Error Data Base,,,active",            // line 3: replace
+      "Ops,Monitoring,Splunk Dashboard,,,active",                         // line 4: skip
+      "Ops,Monitoring,Grafana Dashboards for Executives,,,active",        // line 5: keep both
+      "Ops,Monitoring,Prometheus Alerts,,,active",                         // line 6: nothing like it, plain new
+    ].join("\n");
+
+    const dry = await importCsv(t.db, "skills", upload, { dryRun: true });
+    const keyOf = (line: number) => dry.matches.find((m) => m.lines.includes(line))!.key;
+    assert.deepEqual(dry.matches.flatMap((m) => m.lines).sort(), [2, 3, 4, 5]);
+    assert.equal(dry.matches.find((m) => m.lines.includes(2))!.candidates[0].id, id("Root Cause Analysis"));
+    assert.equal(dry.undecided, 4);
+    assert.equal(dry.created, 1, "only the skill like nothing else would be added");
+
+    // without decisions the near-identical rows are refused, the rest goes in
+    const blind = await importCsv(t.db, "skills", upload);
+    assert.deepEqual(blind.errors.map((e) => e.line), [2, 3, 4, 5]);
+    assert.equal((await skills()).length, before.length + 1);
+
+    const real = await importCsv(t.db, "skills", upload, { decisions: [
+      { key: keyOf(2), action: "merge", targetId: id("Root Cause Analysis") },
+      { key: keyOf(3), action: "replace", targetId: id("Known Error Database") },
+      { key: keyOf(4), action: "skip" },
+      { key: keyOf(5), action: "separate" },
+    ] });
+    assert.deepEqual(real.errors, []);
+    const after = await skills();
+    const rca = after.find((k) => k.id === id("Root Cause Analysis"))!;
+    assert.deepEqual(rca.aliases, ["RCA", "Root-cause analysis"], "merged: the new name is an alias, no new skill");
+    assert.equal(rca.description, "From the upload", "an empty description is filled in");
+    const kedb = after.find((k) => k.id === id("Known Error Database"))!;
+    assert.equal(kedb.name, "Known Error Data Base", "replaced in place: same skill, so its ratings stay");
+    assert.deepEqual(kedb.aliases, ["Known Error Database"]);
+    assert.ok(!after.some((k) => k.name === "Splunk Dashboard"), "skipped");
+    assert.ok(after.some((k) => k.name === "Grafana Dashboards for Executives"), "kept both");
+    assert.equal(after.length, before.length + 2);
+
+    // a decision for a skill it was not matched with is ignored, not applied
+    const forged = await importCsv(t.db, "skills", "category,skill,sub_skill\nOps,Monitoring,Grafana Dashboard\n",
+      { dryRun: true, decisions: [{ key: "sub:monitoring>grafana dashboard", action: "replace", targetId: id("Problem Management") }] });
+    assert.equal(forged.undecided, 1);
+  } finally {
+    await t.close();
+  }
+});
+
+// The site's own catalogue stays out of git (it names the teams that suggested each skill):
+// the test runs where the file is, and is skipped elsewhere.
+const SITE_CATALOGUE = path.join(import.meta.dirname, "..", "docs", "skills-catalogue.csv");
+test("the site catalogue in docs/ imports cleanly into an empty database, and again without changes", { skip: !fs.existsSync(SITE_CATALOGUE) && "docs/skills-catalogue.csv is not here" }, async () => {
+  const csv = fs.readFileSync(SITE_CATALOGUE, "utf8");
+  const t = await emptyDb();
+  try {
+    const first = await importCsv(t.db, "skills", csv);
+    assert.deepEqual(first.errors, []);
+    assert.deepEqual(first.matches, [], "nothing in the file looks like anything else in it");
+    const cats = await t.db.select().from(schema.skillCategory);
+    const all = await t.db.select().from(schema.skill);
+    assert.ok(cats.length > 0 && all.some((k) => k.parentId), "categories, skills and sub-skills");
+    assert.ok(all.every((k) => k.name.length <= 120), "every name can still be edited on the page");
+    const again = await importCsv(t.db, "skills", csv);
+    assert.equal(again.created, 0);
+    assert.deepEqual(again.matches, []);
   } finally {
     await t.close();
   }

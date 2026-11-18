@@ -317,6 +317,32 @@ export const ssoPending = pgTable("sso_pending", {
   at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ---- e-mail (Admin › Email) ----------------------------------------------------------------
+// Every e-mail the app sends, as an outbox: written when something happens, sent by whichever
+// worker holds the outbox lease, then kept as the log. Returns and validations wait a moment
+// (sendAfter) so several from one sitting go out as one e-mail. dedupeKey keeps a reminder
+// from going out twice.
+export const emailMessage = pgTable("email_message", {
+  id: id(),
+  // test | submitted | returned | validated | reminder | nudge
+  kind: text("kind").notNull(),
+  // the person it is about
+  employeeId: text("employee_id"),
+  toEmail: text("to_email").notNull(),
+  toName: text("to_name").notNull().default(""),
+  // what the e-mail shows (names, skills, levels, notes), captured when it was written
+  payload: jsonb("payload").notNull().default({}),
+  // pending | sent | failed
+  status: text("status").notNull().default("pending"),
+  subject: text("subject").notNull().default(""),
+  error: text("error").notNull().default(""),
+  attempts: integer("attempts").notNull().default(0),
+  dedupeKey: text("dedupe_key"),
+  createdAt: created(),
+  sendAfter: timestamp("send_after", { withTimezone: true }).defaultNow().notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+}, (t) => [index("email_message_due_idx").on(t.status, t.sendAfter), index("email_message_created_idx").on(t.createdAt), uniqueIndex("email_message_dedupe_uq").on(t.dedupeKey)]);
+
 // ---- groups from ServiceNow (sys_user_group / sys_user_grmember) ----------------------------
 // Imported by the directory sync for the people it brings in; used to decide who may sign in.
 
