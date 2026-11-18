@@ -1,5 +1,5 @@
 "use server";
-// Admin › Email (the mail relay and which e-mails go out) and a manager's Remind on My team.
+// Settings › E-mail (the mail relay and which e-mails go out) and a manager's Remind on My team.
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getDb } from "@/db";
@@ -19,18 +19,17 @@ const settingsIn = z.object({
   fromAddress: address("The sender"),
   fromName: z.string().trim().max(100).regex(/^[^\r\n]*$/),
   replyTo: address("Reply-to"),
-  send: z.object({ submitted: z.boolean(), returned: z.boolean(), validated: z.boolean(), reminders: z.boolean(), nudge: z.boolean() }),
+  send: z.object({ submitted: z.boolean(), returned: z.boolean(), validated: z.boolean(), reminders: z.boolean(), nudge: z.boolean(), digest: z.boolean() }),
   timeZone: z.string().trim().refine(validTimeZone, "Not a time zone. Use a name such as America/New_York or Asia/Kolkata."),
   sendHour: z.coerce.number().int().min(0).max(23),
   weeklyDay: z.coerce.number().int().min(0).max(6),
-  daysBeforeDue: z.coerce.number().int().min(0).max(30),
 }).superRefine((v, ctx) => {
   if (v.enabled && !v.host) ctx.addIssue({ code: "custom", message: "Set the mail relay before switching e-mail on." });
   if (v.enabled && !v.fromAddress) ctx.addIssue({ code: "custom", message: "Set the sender address before switching e-mail on." });
 });
 
 async function admin() {
-  const g = await guardAction();
+  const g = await guardAction({ live: true });
   if (g.fail) throw new Error(g.fail.error);
   if (!g.v.isAdmin) throw new Error("Administrators only.");
   return g.v;
@@ -43,7 +42,7 @@ export async function saveEmailSettings(input: EmailSettings): Promise<Result> {
     const db = await getDb();
     await writeEmailSettings(db, { ...DEFAULT_EMAIL, ...d });
     await audit(v, "save_email_settings", "app_setting", "email", d);
-    revalidatePath("/admin/email");
+    revalidatePath("/settings/email");
     return { ok: true, message: d.enabled ? "Saved. E-mail is on." : "Saved. E-mail is off: nothing is sent." };
   } catch (e) { return fail(e); }
 }
@@ -56,7 +55,7 @@ export async function sendTest(input: EmailSettings, to: string): Promise<Result
     const db = await getDb();
     const response = await sendTestEmail(db, { ...DEFAULT_EMAIL, ...d }, to.trim(), v.name);
     await audit(v, "send_test_email", "app_setting", "email", { to: to.trim(), host: d.host, port: d.port });
-    revalidatePath("/admin/email");
+    revalidatePath("/settings/email");
     return { ok: true, message: `Sent to ${to.trim()}. The relay answered: ${response}` };
   } catch (e) { return fail(e); }
 }
@@ -66,6 +65,7 @@ export async function remindTeam(employeeIds: string[], note: string): Promise<R
   const g = await guardAction();
   if (g.fail) return g.fail;
   const v = g.v;
+  if (v.demo) return { ok: true, message: "Demo mode: in real use each of them gets an e-mail with what they still have to rate. Nothing was sent." };
   try {
     const ids = z.array(z.string().min(1)).min(1, "Choose who to remind.").max(5000).parse(employeeIds);
     const text = z.string().max(1000).parse(note ?? "");

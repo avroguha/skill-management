@@ -139,7 +139,6 @@ services:
       APP_URL: ${APP_URL?set it in the env file (the address people type)}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS?set it in the env file (may be empty)}
       # true = load the demo organisation once into an empty database; false = start empty.
-      SEED_DEMO: ${SEED_DEMO?set it in the env file - true or false}
       FORCE_PASSWORD_CHANGE: ${FORCE_PASSWORD_CHANGE?set it in the env file - true or false}
       ORG_NAME: ${ORG_NAME?set it in the env file}
       TZ: ${TZ?set it in the env file, e.g. Asia/Kolkata}

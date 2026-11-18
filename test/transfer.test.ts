@@ -10,14 +10,13 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 
 process.env.PGLITE_DIR = "memory://";
-process.env.SEED_DEMO = "true";
 delete process.env.DATABASE_URL;
 
 const { getDb, closeDb, schema } = await import("../src/db/index.ts");
 const { exportCsv, importCsv, KINDS, skillSimilarity } = await import("../src/lib/transfer.ts");
 const { parseCsv, parseCsvObjects, toCsv } = await import("../src/lib/csv.ts");
 const { loadDatasetFrom } = await import("../src/lib/dataset.ts");
-const { createEngine } = await import("../src/lib/engine/engine.ts");
+const { createEngine, ALL } = await import("../src/lib/engine/engine.ts");
 type DB = Awaited<ReturnType<typeof getDb>>;
 
 async function emptyDb(): Promise<{ db: DB; close: () => Promise<void> }> {
@@ -39,7 +38,7 @@ test("CSV: quotes, commas, line breaks, doubled quotes, BOM, CRLF and header nor
 });
 
 test("every export re-imports into an empty database and exports again identically", async () => {
-  const source = await getDb();
+  const source = await getDb("demo"); // the made-up organisation: something of every kind
   const exported = Object.fromEntries(await Promise.all(KINDS.map(async (k) => [k, await exportCsv(source, k)] as const)));
   const target = await emptyDb();
   try {
@@ -59,11 +58,11 @@ test("every export re-imports into an empty database and exports again identical
     }
     const a = createEngine(await loadDatasetFrom(source));
     const b = createEngine(await loadDatasetFrom(target.db));
-    const ka = a.kpis(a.roots[0].id), kb = b.kpis(b.roots[0].id);
-    for (const key of ["people", "required", "onTargetPct", "assessedPct", "criticalGaps", "spof", "pendingValidation"] as const) {
+    const ka = a.kpis(ALL), kb = b.kpis(ALL);
+    for (const key of ["people", "asked", "required", "onTargetPct", "assessedPct", "short", "nobody", "spof", "pendingConfirmation"] as const) {
       assert.equal(kb[key], ka[key], `KPI ${key}`);
     }
-    const short = (x: typeof a) => x.shortNeeds(x.roots[0].id).map((c) => [x.unitById.get(c.unitId)?.name, x.skillLabel(c.skillId), c.count, c.headcount]);
+    const short = (x: typeof a) => x.shortNeeds(ALL).map((c) => [x.teamLabel(c.managerId), x.skillLabel(c.skillId), c.count, c.headcount]);
     assert.deepEqual(short(b), short(a));
   } finally {
     await target.close();
@@ -73,27 +72,29 @@ test("every export re-imports into an empty database and exports again identical
 test("dry run reports and changes nothing; bad rows are skipped with their line numbers", async () => {
   const t = await emptyDb();
   try {
-    await importCsv(t.db, "units", "path,kind\nAcme,company\nAcme > Ops,team\n");
     const before = (await t.db.select({ n: count() }).from(schema.employee))[0].n;
     const csv = [
-      "email,name,unit,role,manager_email",
-      "ann@acme.test,Ann,Acme > Ops,,",
-      "not-an-email,Bob,Acme > Ops,,",
-      "cat@acme.test,Cat,Acme > Nowhere,,",
-      "dan@acme.test,Dan,Acme > Ops,Wizard,",
-      "eve@acme.test,Eve,Acme > Ops,,ann@acme.test",
+      "email,name,team_name,role,manager_email",
+      "ann@acme.test,Ann,Ops,,",
+      "not-an-email,Bob,,,",
+      "cat@acme.test,Cat,,,nobody@acme.test",
+      "dan@acme.test,Dan,,Wizard,",
+      "eve@acme.test,Eve,,,ann@acme.test",
     ].join("\n");
     const dry = await importCsv(t.db, "people", csv, { dryRun: true });
     assert.equal(dry.dryRun, true);
-    assert.deepEqual(dry.errors.map((e) => e.line), [3, 4, 5]);
-    assert.match(dry.errors[1].message, /Unknown unit/);
-    assert.match(dry.errors[2].message, /Unknown role/);
+    assert.deepEqual(dry.errors.map((e) => e.line), [3, 5, 4]);
+    assert.match(dry.errors[1].message, /Unknown role/);
+    assert.match(dry.errors[2].message, /Manager nobody@acme.test not found/);
     assert.equal((await t.db.select({ n: count() }).from(schema.employee))[0].n, before, "dry run wrote nothing");
     const real = await importCsv(t.db, "people", csv);
-    assert.equal(real.created, 2);
+    assert.equal(real.created, 3);
     const people = await t.db.select().from(schema.employee);
     const eve = people.find((p) => p.email === "eve@acme.test")!;
     assert.equal(eve.managerId, people.find((p) => p.email === "ann@acme.test")!.id, "manager resolved in the second pass");
+    assert.equal(people.find((p) => p.email === "ann@acme.test")!.teamName, "Ops");
+    const needs = await importCsv(t.db, "team-needs", "manager_email,skill,min_level\nnobody@acme.test,AWS,3\n");
+    assert.match(needs.errors[0].message, /Unknown manager/);
     const missing = await importCsv(t.db, "ratings", "email,level\nann@acme.test,3\n");
     assert.match(missing.errors[0].message, /Missing column/);
   } finally {

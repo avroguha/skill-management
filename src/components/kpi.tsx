@@ -1,10 +1,15 @@
+// Number tiles and page sections. Every tile and section says what it shows through its (i).
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { Info } from "@/components/info";
 
 export interface Kpi {
   label: string;
   value: string;
+  /** one short line under the number */
   hint: string;
+  /** what the number is and how it is worked out: shown by the (i) */
+  info: string;
   tone?: "default" | "good" | "warn" | "bad";
   href?: string;
 }
@@ -16,35 +21,43 @@ const TONE: Record<NonNullable<Kpi["tone"]>, string> = {
   bad: "text-status-critical dark:text-[color:oklch(0.75_0.15_27)]",
 };
 
-export function KpiTiles({ items }: { items: Kpi[] }) {
+export function KpiTiles({ items, className }: { items: Kpi[]; className?: string }) {
   return (
-    <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" data-tour="kpis">
+    <div className={cn("mb-5 grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(10.5rem,1fr))]", className)}>
       {items.map((k) => {
         const body = (
           <>
             <div className="text-xs text-muted-foreground">{k.label}</div>
             <div className={cn("mt-1 text-2xl font-semibold tracking-tight tabular", TONE[k.tone ?? "default"])}>{k.value}</div>
-            <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground sm:line-clamp-1">{k.hint}</div>
+            <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{k.hint}</div>
           </>
         );
-        return k.href ? (
-          <Link key={k.label} href={k.href} className="rounded-lg border bg-card px-4 py-3 transition-colors hover:bg-accent/50">{body}</Link>
-        ) : (
-          <div key={k.label} className="rounded-lg border bg-card px-4 py-3">{body}</div>
+        return (
+          <div key={k.label} className="relative rounded-lg border bg-card transition-colors has-[a:hover]:bg-accent/50">
+            {k.href ? <Link href={k.href} className="block px-4 py-3 pr-8">{body}</Link> : <div className="px-4 py-3 pr-8">{body}</div>}
+            <Info className="absolute right-3 top-3" label={`About ${k.label}`}>{k.info}</Info>
+          </div>
         );
       })}
     </div>
   );
 }
 
-export function Section({ title, description, actions, children, className }: {
-  title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode; className?: string;
+export function Section({ title, description, info, actions, children, className, id }: {
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  /** what this section shows: the (i) next to the title */
+  info?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+  id?: string;
 }) {
   return (
-    <section className={cn("rounded-lg border bg-card", className)}>
+    <section id={id} className={cn("min-w-0 scroll-mt-16 rounded-lg border bg-card", className)}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-        <div>
-          <h2 className="text-sm font-semibold">{title}</h2>
+        <div className="min-w-0">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold">{title}{info ? <Info label="About this section">{info}</Info> : null}</h2>
           {description && <p className="text-xs text-muted-foreground">{description}</p>}
         </div>
         {actions}

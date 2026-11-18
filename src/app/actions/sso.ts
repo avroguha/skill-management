@@ -1,5 +1,5 @@
 "use server";
-// Admin › Single sign-on: the test capture, the mapping of what the identity provider sends
+// Settings › Single sign-on: the test capture, the mapping of what the identity provider sends
 // (who the person is, and the account fields), who may sign in, activation, and what an
 // uploaded metadata file holds.
 import { revalidatePath } from "next/cache";
@@ -17,7 +17,7 @@ type Fail = { ok: false; error: string };
 const fail = (e: unknown): Fail => ({ ok: false, error: e instanceof z.ZodError ? e.issues[0]?.message ?? "Check the fields." : (e as Error).message });
 
 async function admin() {
-  const v = await actionViewer();
+  const v = await actionViewer({ live: true });
   if (!v.isAdmin) throw new Error("Administrators only.");
   return v;
 }
@@ -118,7 +118,7 @@ export async function saveSso(input: SettingsIn & { active: boolean }): Promise<
       }
     }
     await audit(v, input.active ? "activate_sso" : "save_sso_mapping", "app_setting", "sso", { ...m, active: input.active });
-    revalidatePath("/admin/sso");
+    revalidatePath("/settings/sso");
     revalidatePath("/login");
     return { ok: true, message: input.active ? "Single sign-on is active. The sign-in page now offers it." : "Saved." };
   } catch (e) { return fail(e); }

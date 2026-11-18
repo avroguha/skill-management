@@ -1,22 +1,24 @@
 # Skill Management
 
-Track what people can do and what each team needs, and see where team and individual capability falls short, from the whole organisation down to one person.
+Who knows what, and what each team needs. People rate their own skills (0 to 5), their manager confirms them, and managers and leaders see what every team can do, where it is short, and who elsewhere in the organisation already has what is missing.
 
-Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* rather than the raw level, a few charts, and drill-down from executive to team to person. People, managers and designations come from **ServiceNow `sys_user`**, synced on a schedule. Light and dark themes. Local sign-in to start (`admin` / `admin`), SAML 2.0 single sign-on once tested and activated.
+Kept deliberately simple: people, their managers and skills. A team is a manager and everyone below them, straight from the reporting lines in **ServiceNow `sys_user`**. Seven places to go, none more than a click or two away; every number, column and setting has an **(i)** that says what it is. A **Demo** switch shows a made-up organisation for presentations without touching the real data.
 
-![Overview](docs/screenshots/01-overview.png)
+![Home](docs/screenshots/01-home.png)
 
 ## Contents
 
 - [What it does](#what-it-does)
+- [Demo mode](#demo-mode)
+- [Upgrading from version 1](#upgrading-from-version-1)
 - [How the numbers work](#how-the-numbers-work)
+- [E-mail](#e-mail)
 - [People from ServiceNow](#people-from-servicenow)
 - [Sign-in and access](#sign-in-and-access)
 - [Deploy with Docker](#deploy-with-docker)
 - [HTTPS and the certificate](#https-and-the-certificate)
 - [Backups and starting over](#backups-and-starting-over)
 - [Import and export](#import-and-export)
-- [Integrations: Power BI, Tableau, Excel](#integrations-power-bi-tableau-excel)
 - [Scale and sizing](#scale-and-sizing)
 - [Develop](#develop)
 - [Stack and supply chain](#stack-and-supply-chain)
@@ -24,107 +26,138 @@ Built to stay simple: filters in one toolbar, a heatmap that colours the *gap* r
 
 ## What it does
 
-### For executives and department heads
+The menu has seven entries, and each person sees only those that apply to them:
 
-- **Overview** for any unit: five tiles (on target, assessed, critical gaps, single points of failure, stale), a **heatmap of units by skill category** coloured by the share of required skill ratings on target, **where teams are thin** (team needs with fewer people at the level than needed, worst first), a 12-month **trend**, and **rating calibration** by team.
-- Click a unit to go down a level; click a category to see its skills. Every filter (unit, category, role, validated or self-assessed levels) lives in the URL, so any view can be bookmarked or shared.
-- **Talent** for any unit, at any level of the organisation: strengths (skills most people hold at level 3 or above), **what is lacking** (skills people need and do not have, team needs nobody covers), depth by category, the role and grade mix, people with skills **beyond their role**, what people want to learn, and the same picture for each team one level down. Every skill in one table to sort, search or download.
-- **Charts** (operators, executives, administrators): build your own charts over the hierarchies you may see, without taking the data out of the app.
-  - **Show**: on target %, assessed %, below target, critical gaps, people, people at a level or above, ratings, want to learn.
-  - **Group by** and **split by**: team, role, grade, person, skill category, skill, level, or month (from the monthly snapshots).
-  - **Only**: a category, skill, role or grade; validated or self-assessed levels; how many bars; biggest first or A–Z.
-  - **Chart types**: bar, horizontal bar, stacked bar, line, area, pie / donut, radar, heatmap, single number. Eight ready-made starting points (on target by team, team × category heatmap, bench depth by category, skills below target, experts per skill, people by grade, trend, single number).
-  - A saved chart is its settings only: it is worked out from live data every time it is shown, within what the viewer may see. **PNG** saves a picture with the title, what it shows, the legend and the date; **Download all as PNG** saves every chart on the page; **Copy** puts the picture on the clipboard (https or localhost only).
-- **Gaps**: team needs that are short, skills only one person holds, people below their targets, required skills nobody has rated, and training booked. It shows capability only and never suggests hiring. Every table exports to CSV.
-- **Org chart**: who reports to whom, on a canvas you drag to move and scroll or pinch to zoom, with zoom and fit buttons and a minimap. Each card shows the photo, name, designation, level (L0 is the top), headcount and how much of what everyone below them needs is on target; blue cards lead a team, olive cards are team members. Connectors turn at rounded right angles, and a team of three or more individual contributors stacks in two columns either side of a spine, so a wide team does not stretch the chart. It opens on the top person and one level down, every card collapsed to its numbers; the number under a card loads and shows that person's people (from the server, so a 10,000-person organisation is never sent whole), and **Expand all** opens what is loaded. Selecting a person highlights the line up to the top and shows their details (login, e-mail, manager, team, source, weakest skills below them, team needs that are short) in a panel beside the chart, or a sheet from the bottom on a phone, never on top of the cards. Searching (on the server) finds anyone; one already on the chart is brought into view, anyone else opens their part of the chart. A **List** view keeps the expandable list. The layout follows the pattern of established org chart tools (d3-org-chart, BALKAN OrgChart JS, GoJS); the canvas is React Flow.
+| | Who | What |
+|---|---|---|
+| **Home** | everyone | What needs you first (your skills, ratings waiting for you, who has not started), then the headline numbers of your team or the organisation |
+| **My skills** | everyone with a person record | Rate your skills and send them to your manager |
+| **My team** | managers, leaders, administrators | Confirm ratings, see your people, remind them, say what the team needs, the skills grid |
+| **Insights** | managers, leaders, administrators | Capability by team, where teams are short, strengths, who could strengthen another team |
+| **People** · **Org chart** | managers, leaders, administrators | Find anyone, or everyone with a skill at a level; who reports to whom |
+| **Skills** | everyone | The catalogue and the 0-5 scale; for managers, who has each skill |
+| **Settings** | administrators | Everything the app needs, one section per item, always listed on the left |
 
-| Team heatmap | Gaps |
-|---|---|
-| ![Team heatmap](docs/screenshots/02-team-heatmap.png) | ![Gaps](docs/screenshots/03-gaps.png) |
+### For people (rating your own skills)
 
-![Org chart](docs/screenshots/11-org-chart.png)
+**My skills** is one page, with nothing hidden behind a pop-up:
+
+- **Your role asks for**: the skills your job role and grade expect, with the target underlined. Tap a level (0-5); tap it again to clear it. Skills your team needs are listed here too.
+- **Other skills you have**: skills you added yourself. They count as capability, and leaders use them to find people for other teams.
+- **Add skills you have**: a full-width search box over the **whole catalogue** (name, category or another name it goes by), category chips, and the results listed right there, each with its six level buttons. Press a level and the skill is added. A skill that is not in the catalogue can be added from the same place.
+- **Save** keeps a draft; **Send to (manager)** gives every changed level to your manager. A bar at the top shows how many of your role's skills you have rated, and stays in view.
+- Next to each skill: a star (*I want to grow in this*), a note for your manager, and where it stands (waiting, confirmed at what level, or sent back with your manager's note).
+
+**Managers are not asked to rate themselves** (a setting turns that on). They can still add skills of their own, for example a technical manager.
+
+![My skills](docs/screenshots/04-my-skills.png)
 
 ### For managers
 
-- **People × skills heatmap** for their team: each cell is the person's validated level, coloured by the gap to *their own* target. A dot means awaiting validation, faded means stale, hatched means not assessed. The bottom row is **team coverage** (people at the level / people needed), flagging single points of failure.
-- **Validate**: a queue of submitted self-assessments. Accept the level or change it, add evidence (required for Advanced and Expert), or send it back with a note. Bulk-accept per person.
-- **My team** (in the menu for anyone with people reporting to them, whatever their role): one place for what a manager looks after. Tiles show people, on target, assessed (and how many have not started), ratings waiting for them, and team needs that are short; buttons open Validate, the team heatmap and the org chart from them. Tabs:
-  - **People**: direct reports, or everyone below, with role, how far each self-assessment has got, ratings waiting for validation, on-target share, skills below target, open training and the last rating; a link opens a report's own team.
-  - **Skills needed**: say what the team needs, as in "2 people at Proficient in Kubernetes", on top of what the roles already expect (also listed). A skill missing from the catalogue can be added there and then.
-  - **Gaps**: team needs that are short or rest on one person, and each person below their own target.
-  - **Open positions**: positions the manager is filling, added only by them (the app never suggests hiring). **Add an open position** with a title, a role and grade (or "suggest one"), how many people, skills it must have on top of the role, and notes. Under each position the app suggests the talent to look for: its skills split into **must bring** (the team, or a team below it, is short of it), **can be coached** (two or more people in the team hold it) and **nice to have** (optional for the role); short team needs it would also help with; a role and grade when none was chosen; whether it is an experienced hire; and people elsewhere in the organisation who already hold most of it. Positions are marked filled or cancelled (kept, and can be reopened) or deleted. With no position open, the tab shows the training that would help the team.
-  - **Training**: the training that would help, worst first (below), with **Book** to create a training plan for several people at once; then the training plans booked for the team.
+**My team**, four tabs, each with its own address (an e-mail can point straight at one):
 
-  Managers of managers, executives and administrators can switch to any team they can see.
-- **Per-person targets**: set a different required level for one person, with a reason, without touching the role standard.
-- **Training plans** against a gap, with a link, due date and status.
+- **To confirm**: what your direct reports sent. Each level starts at what they chose; tap another level to change it, or write a note and **Send back**. **Confirm all** does everyone at once. The person gets one e-mail with the result.
+- **People**: your direct reports (or everyone below you), how far each has got (not started, in progress, sent back, waiting, done), with **Remind** to e-mail those who still have something to do.
+- **Needs**: what the team needs, as in "2 people at Proficient in Kubernetes": how many it has, who, and how many people **elsewhere in the organisation** already have it. Needs are also implied when two or more of your people have a role that asks for a skill.
+- **Skills grid**: people × skills, each cell the confirmed level coloured by the gap to that person's own target.
 
-| My team | Validate |
-|---|---|
-| ![My team](docs/screenshots/06-my-team.png) | ![Validate](docs/screenshots/07-validate.png) |
+Managers of managers, leaders and administrators can open any team they may see, and rename a team (it is called after its manager until then).
 
-### For everyone
+![Confirming ratings](docs/screenshots/03-team-confirm.png)
 
-- **Self-assessment**: rate each skill 0–5 against plain-language level definitions. The person's role target is marked, and so is what their team needs. Add a comment, flag "I want to grow this", add skills they have beyond their role, or **suggest a skill** the catalogue lacks (an administrator approves it).
-- **My profile**: role fit, self against validated against target by category (radar), what the next grade needs, training plans, and skills well above target.
-- **Help**: the FAQ (with questions for managers and administrators shown only to them), who to contact, a **feedback** form (it notes the page it came from) and the replies to your own feedback.
-- **Guided tour** for each audience (team member, manager, executive, administrator): each step goes to the real page and spotlights the button it explains, which stays clickable. It is offered once and can be started again from Help. On a phone, steps about menu items point at the menu button.
+### For leadership
 
-| Self-assessment | Profile |
-|---|---|
-| ![Self-assessment](docs/screenshots/08-self-assessment.png) | ![Profile](docs/screenshots/04-person.png) |
+**Insights**, for a team or the whole organisation, read top to bottom:
+
+1. **The numbers**: people, how many finished rating, on target, team needs short, needs that rest on one person.
+2. **Capability by team**: each team one level down × each skill category, the share of required skills at target. Click a team to go down, a category to see its skills.
+3. **Where teams are short**, worst first, with **who elsewhere already has it** at that level.
+4. **Strengths**: the skills people hold, the deepest first, including capability beyond what roles ask for and what people want to grow in.
+5. **People who could strengthen another team**: people who already meet a need another team is short of.
+
+Capability only: the app never judges a person and never suggests hiring.
+
+![Insights](docs/screenshots/02-insights.png)
 
 ### For administrators
 
+**Settings**, every section one click from the list on the left (a row of chips on a phone):
+
 | Section | What |
 |---|---|
-| Organisation | The unit tree (company, division, department, team), unit managers, people (deactivate leavers; history stays) |
-| Taxonomy | Category › skill › sub-skill (for example Cloud › AWS › EC2), aliases, status. Approve suggested skills, **merge duplicates** (ratings, targets and needs move across; the old name becomes an alias) |
-| Roles & targets | Required level per role and skill, for all grades or per grade; mandatory or optional |
-| Levels | The wording of the 0–5 scale |
-| Cycles | Assessment rounds with a due date; one open at a time |
-| Users & access | Accounts, access role, which person an account is, local passwords, disable; the hierarchies each operator works on |
-| ServiceNow | The `sys_user` connection, the top-level user, which user types come in, field mapping, the sync schedule, **Test**, **Sync now** and the sync history; the people's **groups** and their members; the photo URL |
-| Single sign-on | Download this app's metadata; upload the identity provider's Federation Metadata XML (certificate expiry shown); a **Test SSO pop-up** showing what the provider returns, where it is mapped to the person and the account; **who may sign in** (everyone, or members of ServiceNow / AD groups); **Activate** |
-| Integrations | A key per report or tool (Power BI, Tableau, Excel/CSV, scripts), limited to chosen datasets, shown once with that tool's connection steps; last use, request count, expiry, **revoke**. See [Integrations](#integrations-power-bi-tableau-excel) |
-| Help & feedback | The feedback inbox (status, a reply the person sees on their Help page; new ones show as a badge on Admin), the FAQ and the contact details |
-| Import & export | CSV in and out for everything below; dry run first; backups, restore, automatic backups, start from scratch |
-| Settings | When a rating goes stale; colour thresholds |
+| Overview | A checklist of what the app needs (people, single sign-on, the catalogue, roles with targets, e-mail), each one click away; what came across from version 1 |
+| People & access | Everyone with their role, grade, manager and team name, editable; the accounts that sign in (Administrator, Leader, local passwords) |
+| Skills | **Upload a CSV** of skills (checked first, near-identical skills listed with a choice: merge, replace, keep both, skip), then the catalogue and its categories; approve suggested skills, merge duplicates |
+| Roles & targets | What each role needs, for all grades or per grade |
+| Levels & rules | The wording of 0-5; whether managers rate themselves; when a rating goes stale; colour thresholds |
+| ServiceNow | Where people and managers come from (below) |
+| Single sign-on | SAML 2.0 with the company identity provider (below) |
+| E-mail | The mail relay, which e-mails go out, when the weekly ones go, a **preview of every e-mail**, the log |
+| Data & backups | Backups and restore, CSV import and export, start from scratch |
+| Demo | What demo mode is, and a way in |
+| Help page | The FAQ and contact details people see on Help |
 | Audit log | Every change: who, what, when |
 
-![Roles and targets](docs/screenshots/09-admin-roles.png)
+Every field has an **(i)** with what it does; a test fails the build if a settings page gains a field without one.
 
-Every page is fluid, from a 320-pixel phone to a wide desktop: nothing makes the page scroll sideways. Wide grids (heatmaps, long tables) scroll inside their own card, and the validation queue turns each rating into its own block on a phone.
+![Settings](docs/screenshots/05-settings-skills.png)
 
-Dark mode follows the system and can be set per person:
+Every page works from a 320-pixel phone to a wide desktop without sideways scrolling; wide tables scroll inside their own card. Light and dark themes follow the system.
 
-![Dark mode](docs/screenshots/10-overview-dark.png)
+## Demo mode
+
+Like a phone's store mode. The **Demo** button at the top (for managers, leaders and administrators) switches **this browser** to a made-up organisation of about 130 people, **Avro Corp**, kept in a database of its own:
+
+- An **orange bar** stays at the top while it is on. In it you choose who you are: the **head of the organisation**, a **director**, a **team manager** (with ratings waiting to be confirmed), a **team member** (who has not started) or an **administrator**. Each sees the app exactly as that person would.
+- Everything works: rate, send, confirm, send back, set team needs, upload skills. It all stays in the demo database. **No e-mail is sent and no sync runs.** Accounts, single sign-on, ServiceNow, e-mail settings and backups are real, so they are read-only there.
+- **Reset demo** puts the made-up data back as it was, for the next presentation. **Back to real data** switches back. It also ends by itself after 12 hours, and the audit log records each switch.
+- The demo is built in so it always tells a story: a team short of a skill nobody in it has, needs resting on one person, people elsewhere who already have what is missing, ratings waiting, people who have not started.
+
+The switch is a signed cookie that counts only for the account that set it; every database call follows it, so nothing done in demo mode can reach the real data (`src/db/index.ts`, `src/lib/server.ts`, `test/db.test.ts`).
+
+## Upgrading from version 1
+
+Version 2 keeps its data in a **new database next to the old one** (`skills_v2` beside `skills` on the same PostgreSQL; the demo in `skills_demo`). On its first start it **imports version 1 once**, and **never changes the version-1 database**, so going back means deploying version 1 again.
+
+| Comes across, ids unchanged | Converted | Left in version 1 |
+|---|---|---|
+| accounts and sessions, single sign-on providers and settings, people (with their managers, roles, grades, ServiceNow ids), skills and categories, levels, roles, grades and targets, ratings and their history, ServiceNow settings and groups, e-mail settings and log, the help page, the audit log | a unit's team needs become its manager's team needs; a hand-made unit's name becomes its manager's team name | units, assessment rounds, per-person targets, training plans, open positions, charts, operator assignments, API keys, feedback, monthly snapshots |
+
+Settings › Overview shows what was imported and what was left behind. Executives and operators become **leaders**. Nobody has to sign in again, and single sign-on and the ServiceNow sync carry on as configured. `test/import.test.ts` builds a real version-1 database from the version-1 migrations, imports it and checks all of the above, including that version 1 is unchanged.
 
 ## How the numbers work
 
-All of it is computed in one place (`src/lib/engine/engine.ts`), unit-tested, never stored.
+All of it is computed in one place (`src/lib/engine/engine.ts`), unit-tested, never stored. The Help page says the same in plain words.
 
-- **Levels 0–5**: No Exposure, Awareness, Working, Proficient, Advanced, Expert. "Not assessed" is blank, never 0.
-- **Self and validated are separate.** Management views use the manager-validated level by default; a toggle shows self-assessed levels instead.
-- **Required level precedence**: a manager's per-person target, then the role's target for the person's grade, then the role's target for all grades. The source is shown on hover.
-- **The top of the organisation is not asked for skills**: the person with nobody above them and people below them has nothing required, gets no self-assessment, and is counted in no roll-up, gap or implied team need. Someone with no manager and nobody below is still assessed (their record is usually just incomplete).
-- **Only leaf skills are rated.** A skill with active sub-skills is a heading.
-- **Gap = target − level.** 0 or less meets the target; 1 is minor; 2 is significant. 3 or more is critical, and so is a target of Proficient or higher held at Awareness or below.
-- **Roll-ups count pairs, never average levels.** "On target" is the share of (person, required skill) pairs at or above target, so a department's number is exactly the sum of its teams.
-- **Team needs**: an explicit need (N people at level L), or one implied when two or more members' roles need a mandatory skill (one person at the role baseline). **Coverage** is the people at or above L. One holder is a single point of failure; none is a critical gap.
-- **Short and single holders**: a need is short when fewer people hold the level than it asks for, worst first. Overview, Gaps and Talent report capability only.
-- **The app never suggests hiring.** A position exists only when a manager adds one; a test fails if any page text nudges towards hiring.
-- **Open positions and training** (My team only, `src/lib/engine/advice.ts`, tested in `test/advice.test.ts`):
-  - A position's skills are the role's targets for its grade plus the skills added to it. A skill is *must bring* when a team need for it is short (in the manager's unit or a team below it) at or under the level asked, or when it is required and nobody, or only one person, in the unit holds the level; *can be coached* when it is required and two or more hold it; *nice to have* when the role marks it optional.
-  - With no role, the role and grade whose targets cover the most of what is asked (the added skills and the short team needs) is suggested. With a role and no grade, the grade that brings the most must-bring skills is suggested.
-  - *Already in the organisation*: people the viewer can see, outside the unit, holding at least half of the must-bring and can-be-coached skills at the level, most first.
-  - Training per skill: people below their own target (assessed ones only: an unassessed skill needs a self-assessment first) plus, for a short team need, the people in that team one level below it. Ranked by weight: a required gap counts twice its size, an optional one once, a short team need three per missing person and three more when nobody holds it; booked people do not count. Three or more learners: a course; someone at the level in the team: coaching by them; nobody: external training. A short need nobody is within one level of is flagged as one that will take longer.
-- **Stale**: a validated rating older than the setting (12 months by default) shows faded; optionally it stops counting as on target.
-- **Calibration**: the average of self minus validated per team. Above +1 means people and managers read the scale differently.
+- **Levels 0-5**: No Exposure, Awareness, Working, Proficient, Advanced, Expert. "Not rated" is blank, never 0.
+- **Only confirmed levels count.** A person's own level and the one their manager confirmed are kept apart; every number uses the confirmed one.
+- **A team is a manager and everyone below them.** Whoever has people reporting to them is a manager; nobody assigns it.
+- **Who is asked**: everyone except managers (unless *Managers rate themselves too* is on) and the head of the organisation. A manager's own skills still count as the team's capability, never as a gap.
+- **Targets** come from the person's role: the target for their grade, else for all grades.
+- **Only leaf skills are rated.** A skill with sub-skills is a heading.
+- **Gap = target − level.** 0 or less meets it; 1 is minor; 2 significant; 3 or more critical, and so is a target of Proficient or higher held at Awareness or below.
+- **Roll-ups count pairs, never average levels.** "On target" is the share of (person, required skill) pairs at target, so a director's number is exactly the sum of their teams'.
+- **Team needs**: set by the manager ("N people at level L"), or implied when two or more of a manager's direct reports have a role that needs a mandatory skill (one person at the lowest such target). **Short** = fewer people at the level than needed; **rests on one person** = exactly one. **Elsewhere** = people outside the team at that level or above.
+- **Stale**: a confirmed rating older than the setting (12 months by default) is flagged; optionally it stops counting as on target.
+
+## E-mail
+
+Through the company mail relay (Settings › E-mail): plain SMTP, STARTTLS or TLS, no sign-in, as an open relay inside the network expects. Nothing is sent until e-mail is switched on; **Send test** tries the relay first and shows its answer. Each e-mail can be switched off on its own:
+
+| E-mail | To | When |
+|---|---|---|
+| Ratings to confirm | the manager | someone sends ratings (levels, comments, a button straight to confirming them) |
+| Weekly digest | each manager with something waiting | on the weekly day: ratings waiting, from whom, and who has not started |
+| Confirmed | the person | their manager confirms (several in one sitting: one e-mail) |
+| Sent back | the person | their manager sends a rating back, with the note |
+| Weekly reminder | each person with something left to do | on the weekly day (not started, unfinished, or sent back); nobody else |
+| Manager's reminder | the people chosen | a manager presses Remind (at most one per person per day) |
+
+Every e-mail is HTML (tables and inline styles, so Outlook shows it as meant) with a plain-text twin, and its button goes through sign-in to the right page. **Preview** on the settings page shows each one filled in with made-up content; `test/email.test.ts` sends them all through a stand-in relay. Sending is from an outbox, one worker at a time, three tries, with the relay's answer kept in the log.
 
 ## People from ServiceNow
 
-Admin › ServiceNow brings people in from the `sys_user` table, so names, e-mail, managers and designations are kept in one place.
+Settings › ServiceNow brings people in from the `sys_user` table, so names, e-mail, managers and designations are kept in one place.
 
 1. **Connection**: the instance URL, an integration user and its password. The user needs read access to `sys_user`. The password is stored encrypted (AES-256-GCM, keyed from the app's own secret) and is never shown again; leave the box blank to keep it.
 2. **Who comes in**: a **top-level user** by `user_name`. The sync walks down the manager field from that person, recursively, to everyone below them.
@@ -132,31 +165,28 @@ Admin › ServiceNow brings people in from the `sys_user` table, so names, e-mai
 4. **Fields**: login name (`user_name`), display name (`name`), e-mail, manager and designation (`title`), each mappable to another column. **Also keep** stores extra columns, for example `employee_number` for the photo URL.
 5. **Roles from designation**: an ordered list of rules, "designation is / starts with / contains *text*" gives a role and, optionally, a grade. The first matching rule wins, so specific rules go above broad ones; matching ignores case and extra spaces. By default rules only fill an empty role, so a role set by hand is kept; a switch lets them change existing roles too. **Create from current roles** writes one rule per designation from the roles synced people already have.
 6. **Test** runs the whole walk and shows who would come in, at what level, under which manager, which role the rules give them, and who the type filter leaves out. Nothing is saved.
-7. **Groups**: **Import their groups** brings in the ServiceNow groups (`sys_user_group`) the synced people belong to, with their memberships (`sys_user_grmember`), filtered by an encoded query (`active=true` by default). They are listed under **Groups** with their members, and Admin › Single sign-on can let in only members of chosen groups. The integration user needs read access to both tables. Each sync replaces them; a group none of the synced people is in any more goes.
+7. **Groups**: **Import their groups** brings in the ServiceNow groups (`sys_user_group`) the synced people belong to, with their memberships (`sys_user_grmember`), filtered by an encoded query (`active=true` by default). They are listed under **Groups** with their members, and Settings › Single sign-on can let in only members of chosen groups. The integration user needs read access to both tables. Each sync replaces them; a group none of the synced people is in any more goes.
 8. **Sync now**, or a **schedule** every N hours. Each run is listed in the sync history with what it created, updated and deactivated, or why it failed. A failed run changes nothing.
 
 What a sync does:
 
 - Matches an existing person by ServiceNow `sys_id`, then e-mail, then login name, so people added by hand or by CSV are adopted rather than duplicated.
 - Sets each person's manager from ServiceNow. People who leave the result are **deactivated, never deleted**, so their history stays.
-- **Builds teams from the manager chain** (switchable): every manager leads a team named after them, and everyone else sits in their manager's team. Turn it off to keep units managed by hand or by CSV.
+- **The reporting lines are the teams**: every manager leads a team (named after them until renamed), so nothing else needs keeping up to date.
 - **Only people who came in this way, or were added by an administrator, can sign in with single sign-on.**
 
-**Photos** (Admin › ServiceNow › Photos): a URL with placeholders, such as `https://photos.example.com/{user_name}.jpg`. `{user_name}`, `{email}`, `{sys_id}` and any kept column are filled from each person. Empty means initials.
+**Photos** (Settings › ServiceNow › Photos): a URL with placeholders, such as `https://photos.example.com/{user_name}.jpg`. `{user_name}`, `{email}`, `{sys_id}` and any kept column are filled from each person. Empty means initials.
 
 The running app needs to reach the instance. Behind a proxy, set `RUNTIME_HTTPS_PROXY` in the env file.
-
-![ServiceNow](docs/screenshots/12-servicenow.png)
 
 ## Sign-in and access
 
 - **First start** creates `admin` / `admin` for setup. It is not forced to change its password; set `FORCE_PASSWORD_CHANGE=true` to require that (any new password needs 10+ characters).
 - **`admin` stays after single sign-on is on**: it is the way in when SSO is down or misconfigured. The app will not disable it, change its role or tie it to a person, and single sign-on never signs anyone into it, even when its e-mail is someone's. Once SSO works, give your own SSO account **Administrator** for everyday work and **change `admin`'s password** (Reset password on its row, or its own profile) to a long one kept somewhere safe. The rules live in `src/lib/local-admin.ts`, tested in `test/saml.test.ts`.
-- **Access follows who people are.** Anyone who manages a unit or has direct reports is a **manager** automatically, and sees, validates and sets targets for their people. Everyone else is a **team member**: their own profile and self-assessment. **Executive** (read everything, build charts over it) and **Administrator** are assigned in Admin › Users & access.
-- **Operator**, for a leader who builds charts: assigned in Admin › Users & access. An operator reads, and builds charts over, their own hierarchy (if they lead anyone) plus every hierarchy an administrator gives them with the network button on their row: a **leader** (that person and everyone below them) or a **unit** (and the units under it). An assigned hierarchy is **read-only** for them: they validate, set targets and edit team needs only for their own people and units. The rules live in `src/lib/access.ts`, tested in `test/access.test.ts`.
+- **Access follows who people are.** Anyone with people reporting to them is a **manager** by themselves: they see everyone below them, confirm their direct reports' ratings and set what their teams need. Everyone else sees their own skills, the catalogue and Help. **Leader** (reads the whole organisation: an executive, HR, a programme lead) and **Administrator** are given in Settings › People & access. The rules live in `src/lib/access.ts`, tested in `test/access.test.ts`.
 - **Local accounts** can be added for people without SSO; they set their own password at first sign-in.
-- **View as** (administrators, for troubleshooting): a person's profile, or their row in Admin › Users & access, has **View as**. The app then shows exactly what that person sees: their menu, pages, scope and role, including people synced from ServiceNow who have never signed in. It is **read-only**: every change is refused with a message, so nothing is validated or edited in their name. A banner shows who is being viewed, with **Stop viewing**; it ends by itself after an hour. Administrators cannot view as another administrator. The administrator stays signed in throughout, and the audit log records each start and stop, and anything else, under the administrator's name. The choice is held in a signed, http-only cookie that counts only while that administrator is signed in.
-- **SAML 2.0 single sign-on** (Admin › Single sign-on). No provider ID is needed. The page shows the exact values to set at the identity provider, with copy buttons, in the order Entra ID asks for them (Enterprise application › Single sign-on › SAML › Basic SAML Configuration):
+- **View as** (administrators, for troubleshooting): a person's page has **View as**. The app then shows exactly what that person sees: their menu, pages, scope and role, including people synced from ServiceNow who have never signed in. It is **read-only**: every change is refused with a message, so nothing is validated or edited in their name. A banner shows who is being viewed, with **Stop viewing**; it ends by itself after an hour. Administrators cannot view as another administrator. The administrator stays signed in throughout, and the audit log records each start and stop, and anything else, under the administrator's name. The choice is held in a signed, http-only cookie that counts only while that administrator is signed in.
+- **SAML 2.0 single sign-on** (Settings › Single sign-on). No provider ID is needed. The page shows the exact values to set at the identity provider, with copy buttons, in the order Entra ID asks for them (Enterprise application › Single sign-on › SAML › Basic SAML Configuration):
 
   | Entra ID field | Value |
   |---|---|
@@ -181,8 +211,6 @@ The running app needs to reach the instance. Behind a proxy, set `RUNTIME_HTTPS_
 
   `test/saml.test.ts` runs the whole flow against a made-up identity provider. Before activation every sign-in is a captured test. After it, a synced person signs in and a stranger is refused; with a group rule, a member of the ServiceNow group or of the AD group gets in and anyone else is refused; the mapped name and login reach the account. A tampered assertion, or one signed by another key, is refused.
 
-  ![Single sign-on](docs/screenshots/13-sso.png)
-
 ## Deploy with Docker
 
 One command per place, each with a committed env file that holds **no secrets**:
@@ -201,10 +229,10 @@ docker compose --env-file work.env up --build -d
 - **HTTPS on 443**, with port 80 redirecting to it. Set `APP_URL` to the https address people type: secure cookies and SAML depend on it. The **app** publishes `${APP_PORT}` (443) and `${APP_HTTP_PORT}` (80); **PostgreSQL 17** sits on an internal network with the app only and publishes no port. (Published ports rather than host networking: the app runs unprivileged and cannot bind a port below 1024 itself.) Behind a load balancer that terminates TLS, set `APP_TLS=off`: the app then serves plain HTTP on `APP_HTTP_PORT`.
 - **The certificate** lives in `${TLS_DIR}` (`tls.crt`, `tls.key`), outside the code folder. See [HTTPS and the certificate](#https-and-the-certificate).
 - **Data** lives in `${DATA_DIR}`, outside the code folder at home and at work (`../skill-management-state`). `pgdata/` holds the database (bind mount). `secrets/` holds the database password and the session-signing secret, generated on the first start and readable only by the app's user. Backups go to `${BACKUP_DIR}`.
-- **First start** migrates the database and creates `admin`. With `SEED_DEMO=true` it also loads the demo organisation (Avro Corp, made-up people), once per database, never again (not after a clear, not after a redeploy). Sign in as `exec`, `manager` or `employee` with password `demo` to see each audience. Remove the demo in Admin › Import & export when going live.
+- **First start** creates the version-2 database (`<name>_v2` beside the `DATABASE_URL` one), migrates it, **imports version 1 if it is there** ([Upgrading from version 1](#upgrading-from-version-1)) and creates `admin` if no account exists. The made-up organisation lives only in its own database (`<name>_demo`), for [demo mode](#demo-mode); it never reaches the real data.
 - **Upgrade**: replace the code, run the same command again. **A redeploy never touches the data**:
   - the database and backups live outside the code folder and outside the image, so replacing or rebuilding the code cannot reach them;
-  - nothing in the app deletes data on start; the demo loads only into an empty database, once;
+  - nothing in the app deletes data on start; the version-1 database is only ever read;
   - database changes are migrations, applied on start, and **before any of them runs, a full backup is written** to `BACKUP_DIR`; if it cannot be written, the app stops without changing anything;
   - `docker compose down` and `up --build` keep the data; only deleting `DATA_DIR` would not.
 - **Backups**: see [Backups and starting over](#backups-and-starting-over). A database-level dump also works:
@@ -220,7 +248,7 @@ docker compose --env-file work.env up --build -d
 | `APP_PORT`, `APP_HTTP_PORT`, `APP_BIND`, `APP_URL`, `TRUSTED_ORIGINS` | How people reach it: HTTPS port (443), the port that redirects to it (80), the host address both are published on, the address people type |
 | `APP_TLS`, `TLS_DIR`, `TLS_HOSTNAMES` | HTTPS: `on` (or `off` behind a TLS-terminating load balancer), the certificate folder, extra names for the self-signed certificate |
 | `DB_PORT` | PostgreSQL's port on the internal network |
-| `SEED_DEMO`, `FORCE_PASSWORD_CHANGE`, `ORG_NAME` | First start |
+| `FORCE_PASSWORD_CHANGE`, `ORG_NAME` | First start; the organisation's name in e-mails |
 | `DATA_DIR`, `TZ` | Where the data lives (outside the code folder); time zone |
 | `APP_WORKERS` | App processes serving requests. Empty: one per CPU core, at most 8. See [Scale and sizing](#scale-and-sizing). |
 | `BACKUP_DIR` | Where backups go. Put it on another disk or a network share, so losing the server does not lose the backups. |
@@ -248,21 +276,23 @@ The app always serves HTTPS on 443; port 80 only redirects. The certificate is t
 
 ## Backups and starting over
 
-Admin › Import & export.
+Settings › Data & backups.
 
-- **One backup holds everything**: people, units, ratings, the skill catalogue, roles, targets, training plans, user accounts, ServiceNow and single sign-on configuration, settings, and the audit log, read from one consistent snapshot into a single compressed file. Sessions are not kept.
+- **One backup holds everything**: people, ratings, the skill catalogue, roles, targets, team needs, user accounts, ServiceNow and single sign-on configuration, settings, and the audit log, read from one consistent snapshot into a single compressed file. Sessions are not kept.
 - **Back up now** writes one to `BACKUP_DIR`; **Download a fresh backup** takes one and downloads it; every stored backup can be downloaded, restored or deleted.
 - **Automatic backups**: on by default, daily, keeping the newest 14; how often and how many are set on the page. Backups made by hand are kept until deleted.
 - **Safety backups** are written automatically before every restore, every "start from scratch" and every upgrade that changes the database.
-- **Restore** a stored backup or upload a downloaded one (for example onto a new server after the old one was lost). Everything is replaced in one transaction: all of it or nothing. A backup from an older version restores into a newer one; one from a newer version is refused. Everyone signs in again afterwards. On a server with a different app secret, re-enter the ServiceNow password.
-- **Start from scratch** deletes the organisation (units, people, catalogue, roles, ratings, plans) and, if chosen, every user account but the administrators, and the audit log and sync history. ServiceNow and single sign-on configuration, levels and settings stay. A backup is taken first, so it can be undone from the list.
+- **Restore** a stored backup or upload a downloaded one (for example onto a new server after the old one was lost). Everything is replaced in one transaction: all of it or nothing. A backup from an older version restores into a newer one; one from a newer version is refused, and so is one from version 1 (that data is in the version-1 database, which version 2 imported and left alone). Everyone signs in again afterwards. On a server with a different app secret, re-enter the ServiceNow password.
+- **Start from scratch** deletes the organisation (people, catalogue, roles, ratings, team needs) and, if chosen, every user account but the administrators, and the audit log and sync history. ServiceNow and single sign-on configuration, levels and settings stay. A backup is taken first, so it can be undone from the list.
 - A backup file contains everything, including password hashes and configuration: keep it somewhere safe.
 
 ## Import and export
 
-Admin › Import & export, or `GET /api/export/<kind>` as an administrator. CSV with names, paths (`Avro Corp > Technology`, `AWS > EC2`) and e-mail addresses, never internal ids. Every export imports back unchanged (`test/transfer.test.ts` proves it end to end). Bad rows are skipped and reported by line; **Check (dry run)** changes nothing.
+Settings › Data & backups (and the skill upload on Settings › Skills), or `GET /api/export/<kind>` as an administrator. CSV with names, skill paths (`AWS > EC2`) and e-mail addresses, never internal ids. Every export imports back unchanged (`test/transfer.test.ts` proves it end to end). Bad rows are skipped and reported by line; **Check (dry run)** changes nothing.
 
-Load in this order the first time: `skills`, `grades`, `roles`, `role-skills`, `units`, `people`, `person-targets`, `team-needs`, `ratings`, `training-plans`.
+Load in this order the first time: `skills`, `grades`, `roles`, `role-skills`, `people` (with `manager_email`, which builds the teams, and `team_name`), `team-needs` (by `manager_email`), `ratings`.
+
+**Skills** (`category, skill, sub_skill, aliases, description, status`): before anything is imported, each **new** skill is compared with the catalogue. One that looks like an existing skill (the same name apart from case and punctuation, almost the same wording, the same words in another order, one name containing the other, or one of its aliases) is listed with the skill it resembles, and nothing is imported until each has a choice: **merge** into the existing one (its name becomes an alias), **replace** the existing one (renamed in place, keeping its ratings), **keep both**, or **skip**. A skill that already exists by exactly that name is updated without asking. A site's own catalogue can be kept in `docs/skills-catalogue.csv`, which is gitignored; its test runs when the file is there.
 
 ## Develop
 
@@ -274,7 +304,7 @@ npm ci
 npm run dev
 ```
 
-Without `DATABASE_URL` the app uses an embedded PostgreSQL (PGlite) in `.data/`, so development needs no database server and no Docker. Put `SEED_DEMO=true` in `.env.local` for the demo organisation.
+Without `DATABASE_URL` the app uses embedded PostgreSQL (PGlite) in `.data/` (`pglite-v2` live, `pglite-demo` for demo mode; an old `pglite` folder is imported once), so development needs no database server and no Docker.
 
 ```bash
 npm test
@@ -287,10 +317,14 @@ npm run typecheck
 | Test | What it holds |
 |---|---|
 | `test/engine.test.ts` | Every rule in *How the numbers work* |
-| `test/db.test.ts` | Migrations, seeding (idempotent), `admin`/`admin`, the demo story |
-| `test/transfer.test.ts` | CSV round trip of everything, dry run, line-numbered errors |
+| `test/access.test.ts` | Who sees and confirms what: employee, manager (from the reporting lines), leader, administrator |
+| `test/db.test.ts` | Migrations, seeding (idempotent), `admin`/`admin`, the live database starts empty of made-up people, the demo database tells its story, reset leaves live alone |
+| `test/import.test.ts` | Version 1 to version 2 on a real version-1 database: everything with a meaning comes across with its ids, units become teams, version 1 is unchanged, it runs once |
+| `test/email.test.ts` | The SMTP client against a stand-in relay; every e-mail renders (HTML and text); to the manager, sent back as one, weekly reminders and digests, Remind once a day |
+| `test/info.test.ts` | Every settings field, tile and column has its (i); every settings section is in the menu and has a page |
+| `test/transfer.test.ts` | CSV round trip of everything, dry run, line-numbered errors, near-identical skills (each choice), the site catalogue when present |
 | `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, a chosen Entity ID (requests carry it, other audiences refused), tampered and wrongly signed assertions refused |
-| `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, teams from the chain, no empty second top, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs |
+| `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs, groups |
 | `test/servicenow.live.test.ts` | The same walk against a real instance; skipped unless `SN_LIVE_INSTANCE`, `SN_LIVE_USER`, `SN_LIVE_PASS` and `SN_LIVE_ROOT` are set |
 | `test/backup.test.ts` | Backups: every table out and back exactly (dates, configuration), older backups restore with defaults, newer ones and foreign files refused, no path tricks, pruning, the automatic schedule |
 | `test/view-as.test.ts` | The view-as cookie: a genuine one reads back; an edited, re-signed, truncated or expired one counts for nothing |
@@ -313,44 +347,26 @@ src/lib/engine/engine.ts   every number: targets, gaps, roll-ups, coverage
 src/lib/org-layout.ts      the org chart geometry (cards, connectors, compact teams)
 src/lib/directory/         ServiceNow client, the sync, its settings and schedule
 src/lib/sso-gate.ts        who may sign in with SSO, test capture, linking
-src/db/                    schema, migrations, first-start seed, demo organisation
+src/db/                    schema, migrations, the live and demo databases, first-start seed, demo organisation
+src/lib/import-v1.ts       the one-time import of version 1
+src/lib/mail/              the SMTP client, the e-mails, the outbox and the weekly run
+src/components/info.tsx    the (i) and the form fields that carry one
 src/lib/transfer.ts        CSV import and export
 src/lib/auth.ts, saml.ts   local sign-in and SAML single sign-on
 src/app/(app)/             the pages; src/app/actions/ the server actions
 deploy/db-entrypoint.sh    generates the secrets on the first start
 ```
 
-## Integrations: Power BI, Tableau, Excel
-
-Admin › Integrations › **New integration**: name it, choose the tool, the datasets it may read and when the key expires. The key is shown **once**, with the steps for that tool; only a hash is stored. Make one integration per report, so each can be revoked alone.
-
-| Dataset | Rows |
-|---|---|
-| `people` | Everyone active: unit, manager, role, grade, required skills on target |
-| `units` | The organisation tree with headcount, on target, assessed, uncovered team needs |
-| `skills` | The catalogue |
-| `ratings` | Person × skill: self and validated level, target, gap, wanted, stale |
-| `team-needs` | What each team needs (set or implied) and how many cover it |
-| `talent` | Unit × skill: holders, level 3+, level 4+, average, need it, on target, beyond role, want it |
-
-The same data three ways, read-only, manager-validated levels, rebuilt whenever anything changes:
-
-- **OData v4** at `/api/odata` (with `$metadata`, `$top`, `$skip`, `$select`, `$count`, pages of 5,000 joined by `@odata.nextLink`): Power BI *OData feed* and Tableau *OData* connect to it natively.
-- **CSV** at `/api/v1/<dataset>.csv`: Excel *From Web*, or any script.
-- **JSON** at `/api/v1/<dataset>?page=&size=` (up to 10,000 a page, follow `next`); `/api/v1` lists what the key may read, with every column.
-
-The key goes in `Authorization: Bearer <key>`, in `X-API-Key`, or as the **password of Basic authentication** (any user name), which is how Power BI, Tableau and Excel ask for it. Never in a URL. Without a key the answer is 401 with a Basic challenge, so the tools prompt for it; a dataset the key was not given is 403. Up to 240 requests a minute per key. A scheduled refresh in the Power BI service or Tableau Cloud reaches a server on the company network through their gateway (on-premises data gateway, Tableau Bridge).
-
 ## Scale and sizing
 
 Built and measured for **8,000-10,000 people** using the portal.
 
-- **The picture is computed once per change, not per request.** Every page reads one in-memory engine. A `data_version` counter is moved by database triggers on every table the engine reads; each app process checks it every few seconds and, when it moves, rebuilds the engine and precomputes reporting lines, unit members, team-need coverage and the talent summary **before** anyone asks. Reporting lines are indexed once (a manager's whole tree was a scan of everyone per step).
-- **Pages send what fits on a screen.** The org chart sends two levels and loads more on demand; long lists (team, gaps, people, validation) send a page or the worst first, with the totals always counted over everyone.
+- **The picture is computed once per change, not per request.** Every page reads one in-memory engine. A `data_version` counter is moved by database triggers on every table the engine reads; each app process checks it every few seconds and, when it moves, rebuilds the engine and precomputes reporting lines, team members, team-need coverage and the talent summary **before** anyone asks. Reporting lines are indexed once (a manager's whole tree was a scan of everyone per step).
+- **Pages send what fits on a screen.** The org chart sends two levels and loads more on demand; long lists (team, people, ratings to confirm) send a page or the worst first, with the totals always counted over everyone.
 - **Several processes.** `APP_WORKERS` app processes share the port (default: one per core, at most 8); sessions live in the database, scheduled jobs take a lease so one process runs each, start-up work (backup, migrations, seed) runs in one process at a time.
 - **PostgreSQL 17** with an index on every foreign key; the app's own lookups use primary keys.
 
-Measured on the lab container (4 vCPU, 4 GB, 3 app processes, PostgreSQL on the same box) with a synthetic organisation of **10,404 people, 734 units and 55,397 ratings**, a mix of 70% team members, 22% managers and 8% executives requesting whole pages (`scripts/loadtest`):
+Measured with version 1 on the lab container (4 vCPU, 4 GB, 3 app processes, PostgreSQL on the same box; version 2 reads less) with a synthetic organisation of **10,404 people and 55,397 ratings**, a mix of 70% team members, 22% managers and 8% executives requesting whole pages (`scripts/loadtest`):
 
 | | before | after |
 |---|---|---|
@@ -363,10 +379,10 @@ Most of the 8,000-10,000 people are not clicking at the same moment: at one page
 
 ## Not built yet
 
-Picked up from the design notes in `IDEAS.md`; none needed for the requirements so far.
+None needed for the requirements so far.
 
 - Certifications with expiry dates and reminders
-- E-mail digests for managers (pending validations, new critical gaps)
+- Charts built in the app, an API for Power BI and Tableau, open positions and training plans (in version 1; left out of version 2 to keep it simple)
 - Peer endorsements as a third, labelled value
 - SCIM provisioning from the identity provider (people come from ServiceNow, CSV or an administrator)
 - Organisation data beyond the manager chain (departments or cost centres from another source)

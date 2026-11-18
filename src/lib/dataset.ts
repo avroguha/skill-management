@@ -12,17 +12,15 @@ export async function readSettings(db: DB): Promise<Settings> {
 }
 
 export async function loadDatasetFrom(db: DB): Promise<Dataset> {
-  const [settings, units, employees, categories, skills, roles, grades, roleSkills, unitRequirements, employeeTargets, ratings] = await Promise.all([
+  const [settings, employees, categories, skills, roles, grades, roleSkills, teamNeeds, ratings] = await Promise.all([
     readSettings(db),
-    db.select().from(s.orgUnit),
     db.select().from(s.employee),
     db.select().from(s.skillCategory),
     db.select().from(s.skill),
     db.select().from(s.jobRole),
     db.select().from(s.grade),
     db.select().from(s.roleSkill),
-    db.select().from(s.unitRequirement),
-    db.select().from(s.employeeTarget),
+    db.select().from(s.teamNeed),
     db.select({
       employeeId: s.rating.employeeId, skillId: s.rating.skillId,
       selfLevel: s.rating.selfLevel, selfAt: s.rating.selfAt,
@@ -33,9 +31,8 @@ export async function loadDatasetFrom(db: DB): Promise<Dataset> {
   return {
     now: Date.now(),
     settings,
-    units: units.map((u) => ({ id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, managerId: u.managerId, sort: u.sort })),
     employees: employees.map((e) => ({
-      id: e.id, name: e.name, email: e.email, title: e.title, unitId: e.unitId, roleId: e.roleId,
+      id: e.id, name: e.name, email: e.email, title: e.title, teamName: e.teamName, roleId: e.roleId,
       gradeId: e.gradeId, managerId: e.managerId, active: e.active, location: e.location,
     })),
     categories: categories.map((c) => ({ id: c.id, name: c.name, sort: c.sort })),
@@ -43,8 +40,7 @@ export async function loadDatasetFrom(db: DB): Promise<Dataset> {
     roles: roles.map((r) => ({ id: r.id, name: r.name })),
     grades: grades.map((g) => ({ id: g.id, name: g.name, rank: g.rank })),
     roleSkills: roleSkills.map((r) => ({ roleId: r.roleId, gradeId: r.gradeId, skillId: r.skillId, target: r.target, mandatory: r.mandatory })),
-    unitRequirements: unitRequirements.map((r) => ({ unitId: r.unitId, skillId: r.skillId, minLevel: r.minLevel, headcount: r.headcount })),
-    employeeTargets: employeeTargets.map((t) => ({ employeeId: t.employeeId, skillId: t.skillId, target: t.target, reason: t.reason })),
+    teamNeeds: teamNeeds.map((n) => ({ managerId: n.managerId, skillId: n.skillId, minLevel: n.minLevel, headcount: n.headcount })),
     ratings,
   };
 }

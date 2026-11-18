@@ -1,8 +1,9 @@
-// First-start seeding. Idempotent: every step checks before it writes.
+// First-start seeding of the live database. Idempotent: every step checks before it writes.
 //
-//   always    the six proficiency levels (0-5, P0 #2), default settings, a root org unit
+//   always    the six proficiency levels (0-5) and default settings
 //   always    the local administrator admin / admin when no user exists yet
-//   optional  a demo organisation when SEED_DEMO=true and there are no employees yet
+//
+// Made-up people live only in the demo database (src/db/demo.ts), never here.
 import { count, eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
 import type { DB } from "./index.ts";
@@ -27,19 +28,6 @@ export async function seed(db: DB): Promise<void> {
 
   const [{ n: users }] = await db.select({ n: count() }).from(s.user);
   if (users === 0) await createLocalAdmin(db);
-
-  const [{ n: employees }] = await db.select({ n: count() }).from(s.employee);
-  const [{ n: units }] = await db.select({ n: count() }).from(s.orgUnit);
-  // The demo is loaded once per database: after an administrator clears it to go live,
-  // a restart must not bring it back.
-  const [demoDone] = await db.select().from(s.appSetting).where(eq(s.appSetting.key, "demo_seeded"));
-  if (employees === 0 && process.env.SEED_DEMO === "true" && !demoDone) {
-    const { seedDemo } = await import("./demo.ts");
-    await seedDemo(db);
-    await db.insert(s.appSetting).values({ key: "demo_seeded", value: { at: new Date().toISOString() } });
-  } else if (units === 0) {
-    await db.insert(s.orgUnit).values({ name: process.env.ORG_NAME || "Organisation", kind: "company" });
-  }
 }
 
 /** admin / admin. Sign-in does not check password length, so the short seed password works;

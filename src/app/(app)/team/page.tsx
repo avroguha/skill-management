@@ -1,404 +1,179 @@
-// My team: everything a manager looks after, for anyone with people reporting to them.
-//   People         direct reports (or everyone below): role, self-assessment, what waits for
-//                  validation, on-target share, gaps and open training
-//   Skills needed  what the team needs beyond its roles (editable), and what roles already expect
-//   Gaps           team needs that are short, and each person below their target
-//   Open positions positions the manager chose to open, each with the talent to look for
-//                  (advice.ts); with none open, the training that would help the team. The
-//                  app never suggests that a team should hire (owner, 2026-11-15).
-//   Training       training that would help (advice.ts) and the plans booked for the team
-// Administrators, executives and managers of managers can open any team they can see.
-import { redirect } from "next/navigation";
+// My team: a manager's people. Four tabs, each one click: ratings to confirm, the people and
+// how far each has got (with Remind), what the team needs, and the skills grid. Leaders and
+// administrators can open any team they may see.
 import Link from "next/link";
-import { asc, desc, eq, inArray } from "drizzle-orm";
-import { CheckCheck, LayoutGrid, Network, Sparkles } from "lucide-react";
-import { getDb, schema } from "@/db";
+import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
-import { FilterBar, UnitPicker, type UnitOption } from "@/components/filter-bar";
-import { KpiTiles, Section } from "@/components/kpi";
+import { Section } from "@/components/kpi";
 import { DataTable } from "@/components/data-table";
-import { NeedList } from "@/components/needs";
-import { Empty } from "@/components/heatmap";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { requireViewer, getEngine, loadDataset, param, type SearchParams } from "@/lib/server";
-import { needView, withParams } from "@/lib/views";
-import type { Employee } from "@/lib/engine/engine";
-import { TeamNeeds, type NeedRow } from "./team-needs";
-import { Positions, TrainingIdeas, type PositionView, type TrainingView } from "./hiring";
+import { Empty, PeopleHeatmap, HeatLegend } from "@/components/heatmap";
+import { UnitPicker } from "@/components/filter-bar";
+import { TabLinks } from "@/components/tab-links";
+import { Info } from "@/components/info";
+import { requireTeamViewer, getEngine, param, canSeeEmployee, type SearchParams } from "@/lib/server";
+import { getLevels } from "@/lib/levels";
+import { peopleHeatmapData, scopeOptions, withParams } from "@/lib/views";
+import { readEmailSettings } from "@/lib/mail/notify";
+import { eq, inArray } from "drizzle-orm";
+import { getDb, schema } from "@/db";
+import { ALL, type Employee } from "@/lib/engine/engine";
+import { ConfirmQueue, type ConfirmPerson } from "./confirm";
 import { RemindTeam, type RemindCandidate } from "./remind";
-import { hiringAdvice, trainingAdvice } from "@/lib/engine/advice";
-import { assessmentState, readEmailSettings } from "@/lib/mail/notify";
+import { TeamNeeds, type NeedRow } from "./needs";
+import { TeamTitle } from "./rename";
 
 export const metadata = { title: "My team" };
 
-const TABS = ["people", "skills", "gaps", "positions", "training"] as const;
-const MAX_IDEAS = 30;
-// What one page sends at most; tiles always count everyone, and a lower manager narrows the list.
-const MAX_ROWS = 1000;
-const MAX_NEEDS = 200;
+const STATE_LABEL: Record<string, string> = {
+  not_started: "Not started", in_progress: "In progress", sent_back: "Sent back", waiting: "Waiting for the manager", done: "Done", not_asked: "Not asked (manages people)",
+};
 
 export default async function TeamPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const v = await requireViewer();
+  const v = await requireTeamViewer();
   const engine = await getEngine();
-  const active = (e: Employee | undefined): e is Employee => !!e && e.active;
-  const below = (id: string) => engine.reportsOf(id).filter(active);
-  const directOf = (id: string) => engine.directReportsOf(id);
-
-  // whose team: the viewer's own, or one they may open (admins and executives: anyone's;
-  // a manager: their own and those of managers below them)
-  const own = v.employee && below(v.employee.id).length ? v.employee : null;
-  const pool: Employee[] = v.allUnits ? [...engine.empById.values()].filter(active) : own ? [own, ...below(own.id)] : [];
-  const leads = pool.filter((e) => (directOf(e.id).length > 0 || engine.managedUnitIds(e.id).length > 0) && below(e.id).length > 0);
-  // ?unit=<id> (from Admin › Organisation): that unit's manager, on the skills it needs
-  const unitParam = param(sp, "unit");
-  const requested = param(sp, "manager") ?? (unitParam ? engine.unitById.get(unitParam)?.managerId ?? undefined : undefined);
-  const manager = (requested && leads.find((e) => e.id === requested)) || own
-    || [...leads].sort((a, b) => below(b.id).length - below(a.id).length)[0] || null;
-  if (!manager) {
-    if (!v.allUnits) redirect(v.employee ? `/people/${v.employee.id}` : "/");
-    return (<><PageHeader title="My team" /><Empty>Nobody reports to anyone yet. Sync people from ServiceNow, or set managers in Admin › Organisation.</Empty></>);
+  const options = scopeOptions(engine, v).filter((o) => o.id !== ALL);
+  const requested = param(sp, "scope");
+  const own = v.employee && engine.isManager(v.employee) ? v.employee.id : null;
+  const scope = requested && requested !== ALL && options.some((o) => o.id === requested) ? requested : own ?? options[0]?.id ?? null;
+  if (!scope) {
+    return (<><PageHeader title="My team" /><Empty>Nobody reports to anyone yet. People and their managers come from ServiceNow (Settings › ServiceNow) or a people CSV (Settings › Data).</Empty></>);
   }
-  const mine = manager.id === own?.id;
-  const tab = (TABS as readonly string[]).includes(param(sp, "tab") ?? "") ? param(sp, "tab")! : unitParam ? "skills" : "people";
-  const everyone = below(manager.id);
-  const direct = directOf(manager.id);
-  const scopeAll = param(sp, "scope") === "all" || !direct.length; // a unit manager may have no reporting lines
-  const people = scopeAll ? everyone : direct;
-  const link = (patch: Record<string, string | null>) => withParams("/team", { manager: mine ? null : manager.id, tab, scope: scopeAll && direct.length ? "all" : null, ...patch });
+  if (requested && requested !== scope) redirect(withParams("/team", { scope, tab: param(sp, "tab") }));
+  const manager = engine.empById.get(scope)!;
+  const levels = await getLevels();
+  const direct = engine.directReportsOf(scope);
+  const everyone = engine.reportsOf(scope);
+  const mine = scope === v.employee?.id;
+  const canConfirm = v.isAdmin || mine;
+  const canEdit = v.isAdmin || v.manageIds.has(scope);
 
-  // the team the "skills needed" belong to: the unit this manager leads (the top one if several)
-  const units = engine.managedUnitIds(manager.id);
-  const unitId = (unitParam && units.includes(unitParam) ? unitParam : null)
-    ?? units.find((u) => !engine.ancestors(u).some((a) => units.includes(a.id))) ?? units[0] ?? null;
-  const unit = unitId ? engine.unitById.get(unitId) ?? null : null;
+  const waitingOf = (e: Employee) => engine.ratingsOf(e.id).filter((r) => r.status === "submitted");
+  const toConfirm = direct.filter((e) => waitingOf(e).length > 0);
+  const waitingTotal = toConfirm.reduce((t, e) => t + waitingOf(e).length, 0);
+  const tab = (["confirm", "people", "needs", "grid"] as const).find((t) => t === param(sp, "tab")) ?? (canConfirm && waitingTotal ? "confirm" : "people");
+  const href = (t: string, extra: Record<string, string | null> = {}) => withParams("/team", { scope: scope === own ? null : scope, tab: t, ...extra });
+  const demands = engine.demands(scope);
+  const short = demands.map(engine.coverage).filter((c) => c.shortfall > 0 || c.spof).length;
 
-  const db = await getDb();
-  const ids = everyone.map((e) => e.id);
-  const [levels, categories, reqs, plans, positionRows, emailSettings] = await Promise.all([
-    db.select().from(schema.proficiencyLevel).orderBy(asc(schema.proficiencyLevel.level)),
-    db.select().from(schema.skillCategory).orderBy(asc(schema.skillCategory.sort)),
-    unitId ? db.select().from(schema.unitRequirement).where(eq(schema.unitRequirement.unitId, unitId)) : Promise.resolve([]),
-    ids.length ? db.select().from(schema.trainingPlan).where(inArray(schema.trainingPlan.employeeId, ids)) : Promise.resolve([]),
-    unitId ? db.select().from(schema.openPosition).where(eq(schema.openPosition.unitId, unitId)).orderBy(desc(schema.openPosition.createdAt)) : Promise.resolve([]),
-    readEmailSettings(db),
-  ]);
-  const levelName = (n: number) => levels.find((l) => l.level === n)?.name ?? String(n);
-  const dataset = await loadDataset();
-  const roleName = new Map(dataset.roles.map((r) => [r.id, r.name]));
-  const openPlans = plans.filter((p) => p.status === "planned" || p.status === "in_progress");
-
-  // ---- people ----
-  const gapsAll = engine.individualGaps(people);
-  const gapCount = new Map<string, number>();
-  for (const g of gapsAll) if (g.level != null) gapCount.set(g.employeeId, (gapCount.get(g.employeeId) ?? 0) + 1);
-  const openCount = new Map<string, number>();
-  for (const p of openPlans) openCount.set(p.employeeId, (openCount.get(p.employeeId) ?? 0) + 1);
-  const rows = people.slice(0, MAX_ROWS).map((e) => {
-    const cells = engine.personProfile(e).cells;
-    const required = cells.filter((c) => c.target != null && c.mandatory);
-    const selfDone = required.filter((c) => c.selfLevel != null).length;
-    const waiting = cells.filter((c) => c.status === "submitted").length;
-    const returned = cells.filter((c) => c.status === "returned").length;
-    const status = waiting ? "Waiting for validation" : returned ? "Sent back" : !cells.some((c) => c.selfLevel != null) ? "Not started"
-      : selfDone < required.length || cells.some((c) => c.status === "draft") ? "In progress" : "Up to date";
-    const last = cells.reduce<number>((m, c) => Math.max(m, c.at?.getTime() ?? 0), 0);
-    const team = directOf(e.id).length;
-    return {
-      name: e.name, href: `/people/${e.id}`, title: e.title,
-      role: [roleName.get(e.roleId ?? ""), engine.gradeById.get(e.gradeId ?? "")?.name].filter(Boolean).join(" · "),
-      selfAssessed: required.length ? `${selfDone} / ${required.length}` : "–",
-      status, toValidate: v.reportIds.has(e.id) && waiting ? waiting : null,
-      onTarget: engine.aggregate([e]).pct, gaps: gapCount.get(e.id) || null,
-      training: openCount.get(e.id) || null,
-      last: last ? new Date(last).toISOString() : null,
-      team: team ? `${team} report${team === 1 ? "" : "s"}` : "", teamHref: team ? withParams("/team", { manager: e.id }) : "",
-    };
-  });
-
-  // ---- tiles: always over everyone below ----
-  const agg = engine.aggregate(everyone);
-  // Remind (e-mail): the people listed who still have to send their self-assessment, and whom the viewer manages
-  const remindable: RemindCandidate[] = emailSettings.enabled && emailSettings.send.nudge && !v.viewAs
-    ? people.filter((e) => v.reportIds.has(e.id)).flatMap((e) => {
-      const st = assessmentState(engine, e);
-      if (!st.needsUpdate) return [];
-      const rs = engine.ratingsOf(e.id);
-      const state = rs.some((r) => r.status === "returned") ? "Sent back" : rs.some((r) => r.selfLevel != null) ? "In progress" : "Not started";
-      return [{ id: e.id, name: e.name, state, progress: st.required ? `${st.rated} of ${st.required} required skills rated` : "" }];
-    }).sort((a, b) => a.name.localeCompare(b.name))
-    : [];
-  const waitingForMe = engine.submittedCount(everyone.filter((e) => v.reportIds.has(e.id)).map((e) => e.id));
-  const notStarted = everyone.filter((e) => !engine.isTop(e) && !engine.ratingsOf(e.id).some((r) => r.selfLevel != null)).length;
-  const needsRaw = unitId ? engine.shortNeeds(unitId) : [];
-  const short = needsRaw.filter((n) => n.count < n.headcount);
-  const single = needsRaw.filter((n) => n.count >= n.headcount && n.spof);
-  const shown = (list: typeof needsRaw) => list.slice(0, MAX_NEEDS).map((c) => needView(engine, c, levelName));
-
-  // ---- skills needed ----
-  const covBySkill = new Map((unitId ? engine.demands(unitId) : []).map((d) => [d.skillId, engine.coverage(d)]));
-  const needs: NeedRow[] = reqs.map((r) => {
-    const c = covBySkill.get(r.skillId);
-    return {
-      skillId: r.skillId, skill: engine.skillLabel(r.skillId) || "(retired skill)", minLevel: r.minLevel, levelName: levelName(r.minLevel),
-      headcount: r.headcount, note: r.note, have: c?.count ?? 0,
-      state: !c ? "–" : c.critical ? "Nobody" : c.shortfall ? `Short ${c.shortfall}` : c.spof ? "One holder" : "Covered",
-    };
-  }).sort((a, b) => a.skill.localeCompare(b.skill));
-  const implied = (unitId ? engine.demands(unitId) : []).filter((d) => !d.explicit).map((d) => {
-    const c = engine.coverage(d);
-    return { skill: engine.skillLabel(d.skillId), href: `/skills/${d.skillId}?unit=${unitId}`, level: d.level, have: c.count, state: c.critical ? "Nobody" : c.spof ? "One holder" : "Covered" };
-  });
-  const skills = [...engine.skillById.values()].filter((s) => engine.isRateable(s.id))
-    .map((s) => ({ id: s.id, name: engine.skillLabel(s.id), category: engine.categoryById.get(s.categoryId)?.name ?? "" }))
-    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
-  const parents = [...engine.skillById.values()].filter((s) => !s.parentId && s.status === "active")
-    .map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId }));
-
-  // ---- gaps and training ----
-  const gapRows = gapsAll.slice(0, MAX_ROWS).map((n) => {
-    const e = engine.empById.get(n.employeeId)!;
-    return {
-      person: e.name, personHref: `/people/${e.id}`, skill: engine.skillLabel(n.skillId),
-      category: engine.categoryById.get(engine.skillById.get(n.skillId)!.categoryId)?.name ?? "",
-      level: n.level, target: n.target, gap: n.category, mandatory: n.mandatory ? "Required" : "Optional", interest: n.interest ? "Yes" : "",
-    };
-  });
-  const inList = new Set(people.map((e) => e.id));
-  const planAll = plans.filter((p) => inList.has(p.employeeId));
-  const planRows = planAll.slice(0, MAX_ROWS).map((p) => ({
-    person: engine.empById.get(p.employeeId)?.name ?? "", personHref: `/people/${p.employeeId}`, skill: engine.skillLabel(p.skillId),
-    title: p.title, level: engine.levelOf(p.employeeId, p.skillId).level, target: p.targetLevel, due: p.dueOn, status: p.status.replace("_", " "),
-  }));
-
-  // ---- open positions (added by the manager) and the talent to look for in each ----
-  const canManage = !!unitId && (v.isAdmin || v.manageUnitIds.has(unitId));
-  const catName = (id: string) => engine.categoryById.get(id)?.name ?? "";
-  const gradeName = (id: string | null) => (id ? engine.gradeById.get(id)?.name ?? "" : "");
-  // people the viewer can see, for "already in the organisation"
-  const seen = v.allUnits ? [...engine.empById.values()] : [...v.employeeIds].map((id) => engine.empById.get(id)).filter(active);
-  const positionView = (p: (typeof positionRows)[number]): PositionView => {
-    const a = hiringAdvice(engine, { unitId: p.unitId, roleId: p.roleId, gradeId: p.gradeId, skills: p.skills }, seen);
-    const bring = a.skills.filter((s) => s.group === "bring");
-    const coach = a.skills.filter((s) => s.group === "coach");
-    const lookFor = a.roleId ? [roleName.get(a.roleId), gradeName(a.gradeId)].filter(Boolean).join(" · ") : "";
-    const strong = a.focus.slice(0, 2).map((f) => catName(f.categoryId)).filter(Boolean);
-    const headline = !a.skills.length
-      ? "Nothing to go on yet: choose a role, or add the skills the position must have."
-      : `Look for ${lookFor ? `a ${lookFor}` : "someone with the skills below"}${a.experienced ? ", experienced" : ""}${strong.length ? `, strong in ${strong.join(" and ")}` : ""}.`;
-    const lines: string[] = [];
-    if (a.suggestedRole) lines.push(`No role was chosen: ${lookFor} covers ${a.suggestedRole.covers} of the ${a.suggestedRole.of} skills asked for or short in the team.`);
-    const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
-    if (a.suggestedGrade) lines.push(`No grade was chosen: ${gradeName(a.suggestedGrade.gradeId)} would bring ${n(a.suggestedGrade.closes, "skill", "skills")} the team is short of.`);
-    if (bring.length) lines.push(`${bring.length} of the ${n(bring.length + coach.length, "required skill", "required skills")} ${bring.length === 1 ? "is" : "are"} short in the team: ${bring.length === 1 ? "it has" : "they have"} to come with the hire.`);
-    if (coach.length) lines.push(`${coach.length} can be learned on the job: people in the team have ${coach.length === 1 ? "it" : "them"}.`);
-    if (!bring.length && coach.length && !a.suggestedGrade) lines.push("Nothing has to come with the hire: the team can coach every required skill, so someone earlier in their career fits.");
-    if (a.experienced) lines.push(bring.some((s) => s.level >= 4) ? "Some are needed at level 4 or above, so this is an experienced hire." : "Nobody in the team has some of these at any level, so the hire would have nobody to learn them from.");
-    if (a.candidates.length) lines.push(`${a.candidates.length === 1 ? "One person" : `${a.candidates.length} people`} elsewhere already ${a.candidates.length === 1 ? "has" : "have"} most of it (below).`);
-    return {
-      id: p.id, title: p.title, status: p.status, headcount: p.headcount, note: p.note, createdBy: p.createdByName,
-      createdAt: p.createdAt.toISOString(), closedAt: p.closedAt?.toISOString() ?? null,
-      roleId: p.roleId, gradeId: p.gradeId, roleName: p.roleId ? roleName.get(p.roleId) ?? "" : "", gradeName: gradeName(p.gradeId),
-      input: p.skills, headline, lines,
-      skills: a.skills.map((s) => ({
-        skillId: s.skillId, skill: engine.skillLabel(s.skillId), category: catName(engine.skillById.get(s.skillId)?.categoryId ?? ""),
-        level: s.level, group: s.group, source: s.source, why: s.why,
-      })),
-      alsoCloses: a.alsoCloses.map((c) => ({ ...c, skill: engine.skillLabel(c.skillId), team: c.unitId === p.unitId ? "" : engine.unitById.get(c.unitId)?.name ?? "" })),
-      candidates: a.candidates.map((c) => {
-        const e = engine.empById.get(c.employeeId)!;
-        return { id: e.id, name: e.name, title: e.title, team: e.unitId ? engine.unitById.get(e.unitId)?.name ?? "" : "", matched: c.matched, of: c.of };
-      }),
-    };
-  };
-  const openPositions = positionRows.filter((p) => p.status === "open").map(positionView);
-  // closed ones are only listed: no advice is worked out for them
-  const closedPositions: PositionView[] = positionRows.filter((p) => p.status !== "open").map((p) => ({
-    id: p.id, title: p.title, status: p.status, headcount: p.headcount, note: p.note, createdBy: p.createdByName,
-    createdAt: p.createdAt.toISOString(), closedAt: p.closedAt?.toISOString() ?? null, roleId: p.roleId, gradeId: p.gradeId,
-    roleName: "", gradeName: "", input: p.skills, headline: "", lines: [], skills: [], alsoCloses: [], candidates: [],
-  }));
-
-  // ---- training that would help ----
-  const ideasAll = trainingAdvice(engine, everyone, unitId, openPlans);
-  const ideas: TrainingView[] = ideasAll.slice(0, MAX_IDEAS).map((t) => ({
-    skillId: t.skillId, skill: engine.skillLabel(t.skillId), category: catName(engine.skillById.get(t.skillId)?.categoryId ?? ""),
-    href: unitId ? `/skills/${t.skillId}?unit=${unitId}` : `/skills/${t.skillId}`, how: t.how, why: t.why, slow: t.slow,
-    learners: t.learners.map((l) => ({
-      id: l.employeeId, name: engine.empById.get(l.employeeId)?.name ?? "", level: l.level, target: l.target,
-      interest: l.interest, booked: l.booked, canBook: v.reportIds.has(l.employeeId), reason: l.reason,
-    })),
-    mentors: t.mentors.map((id) => ({ id, name: engine.empById.get(id)?.name ?? "", level: engine.levelOf(id, t.skillId).level ?? 0 })),
-  }));
-  const levelOpts = levels.map((l) => ({ level: l.level, name: l.name }));
-  const training = <TrainingIdeas ideas={ideas} total={ideasAll.length} levels={levelOpts} />;
-
-  // teams this viewer may switch to
-  const pick: UnitOption[] = leads.length > 1
-    ? leads.sort((a, b) => engine.ancestors(a.unitId ?? "").length - engine.ancestors(b.unitId ?? "").length || a.name.localeCompare(b.name))
-      .map((e) => ({ id: e.id, name: `${e.name}${e.title ? ` · ${e.title}` : ""}`, depth: 0, kind: "team" }))
-    : [];
+  let body: React.ReactNode = null;
+  if (tab === "confirm") {
+    if (!canConfirm) {
+      body = <p className="text-sm text-muted-foreground">{waitingTotal ? `${waitingTotal} ratings wait for ${manager.name} to confirm.` : "Nothing waits here."} Only the person&apos;s own manager confirms their ratings.</p>;
+    } else {
+      const people: ConfirmPerson[] = toConfirm.map((e) => ({
+        id: e.id, name: e.name, title: e.title,
+        items: waitingOf(e).filter((r) => engine.isRateable(r.skillId)).map((r) => {
+          const full = engine.rating(e.id, r.skillId);
+          return { skillId: r.skillId, skill: engine.skillLabel(r.skillId), target: engine.targetFor(e, r.skillId)?.target ?? null, self: r.selfLevel ?? 0, before: full?.validatedLevel ?? null, comment: "" };
+        }).sort((a, b) => a.skill.localeCompare(b.skill)),
+      }));
+      // their comments come with the ratings, from the database
+      const db = await getDb();
+      const ids = people.map((p) => p.id);
+      const comments = ids.length ? await db.select({ e: schema.rating.employeeId, s: schema.rating.skillId, c: schema.rating.selfComment }).from(schema.rating).where(inArray(schema.rating.employeeId, ids)) : [];
+      const note = new Map(comments.map((x) => [`${x.e}|${x.s}`, x.c]));
+      for (const p of people) for (const it of p.items) it.comment = note.get(`${p.id}|${it.skillId}`) ?? "";
+      body = <ConfirmQueue people={people} levels={levels} focus={param(sp, "person")} />;
+    }
+  } else if (tab === "people") {
+    const all = param(sp, "all") === "1";
+    const list = all ? everyone : direct;
+    const rows = list.slice(0, 1000).map((e) => {
+      const p = engine.progress(e);
+      return {
+        name: e.name, href: `/people/${e.id}`, title: e.title, manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? "" : "",
+        state: STATE_LABEL[p.state], rated: p.required ? `${p.rated} / ${p.required}` : "–", waiting: waitingOf(e).length || null,
+        onTarget: engine.aggregate([e]).pct,
+      };
+    });
+    const email = await readEmailSettings(await getDb());
+    const remindable: RemindCandidate[] = mine && (email.enabled || v.demo) ? direct.flatMap((e) => {
+      const p = engine.progress(e);
+      return p.needsAction ? [{ id: e.id, name: e.name, state: STATE_LABEL[p.state], progress: p.required ? `${p.rated} of ${p.required} rated` : "" }] : [];
+    }) : [];
+    body = (
+      <Section title={all ? `Everyone below ${manager.name} (${everyone.length})` : `Reporting to ${manager.name} (${direct.length})`}
+        info="Each person, how far their own skills have got, and whether ratings wait for their manager. Managers are not asked to rate themselves."
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            <RemindTeam people={remindable} />
+            {mine && !email.enabled && !v.demo && <span className="text-xs text-muted-foreground">Reminders need e-mail (Settings › E-mail)</span>}
+            {everyone.length !== direct.length && (
+              <div className="inline-flex rounded-md border p-0.5 text-xs" role="group" aria-label="Who to list">
+                <Link href={href("people")} aria-current={!all ? "page" : undefined} className={!all ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Direct ({direct.length})</Link>
+                <Link href={href("people", { all: "1" })} aria-current={all ? "page" : undefined} className={all ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Everyone ({everyone.length})</Link>
+              </div>
+            )}
+          </div>
+        )}>
+        {list.length > rows.length && <p className="mb-2 text-xs text-muted-foreground">The first {rows.length} of {list.length} by name. Open a manager lower down to see their part in full.</p>}
+        <DataTable csvName="my-team" rows={rows} pageSize={25} initialSort={{ key: "name" }} searchPlaceholder="Find a person…"
+          columns={[
+            { key: "name", header: "Name", kind: "link", hrefKey: "href" },
+            { key: "title", header: "Designation", kind: "muted" },
+            ...(all ? [{ key: "manager", header: "Manager", kind: "muted" as const, facet: true }] : []),
+            { key: "state", header: "Their skills", facet: true, info: "Not started: nothing rated. In progress: some rated, or saved and not sent. Sent back: the manager returned a rating with a note. Waiting: sent, the manager has not confirmed yet. Done: confirmed." },
+            { key: "rated", header: "Rated", align: "right", info: "Skills rated, of those their role asks for." },
+            { key: "waiting", header: "To confirm", kind: "number", align: "right", info: "Ratings this person sent that wait for their manager." },
+            { key: "onTarget", header: "On target", kind: "pct", align: "right", info: "Of the skills their role asks for, the share where the confirmed level reaches the target." },
+          ]} />
+      </Section>
+    );
+  } else if (tab === "needs") {
+    const lv = new Map(levels.map((l) => [l.level, l.name]));
+    const rows: NeedRow[] = demands.map((d) => {
+      const c = engine.coverage(d);
+      return {
+        skillId: d.skillId, skill: engine.skillLabel(d.skillId), minLevel: d.level, levelName: lv.get(d.level) ?? "", headcount: d.headcount,
+        note: "", have: c.count, state: c.critical ? "Nobody" : c.count < c.headcount ? "Short" : c.spof ? "One holder" : "Covered",
+        explicit: d.explicit, holders: c.holders.map((id) => engine.empById.get(id)?.name ?? "?"),
+        elsewhere: engine.holdersOutside(scope, d.skillId, d.level).filter((e) => canSeeEmployee(v, e.id) || v.allPeople).length,
+      };
+    }).sort((a, b) => (a.have - a.headcount) - (b.have - b.headcount) || a.skill.localeCompare(b.skill));
+    const notes = await (await getDb()).select().from(schema.teamNeed).where(eq(schema.teamNeed.managerId, scope));
+    for (const r of rows) r.note = notes.find((n) => n.skillId === r.skillId)?.note ?? "";
+    const skills = [...engine.skillById.values()].filter((s) => engine.isRateable(s.id))
+      .map((s) => ({ id: s.id, name: engine.skillLabel(s.id), category: engine.categoryById.get(s.categoryId)?.name ?? "" }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    body = (
+      <Section title="What this team needs" info="Skills the team depends on: how many people it needs at what level, and how many it has (the manager and everyone below count). Needs the manager did not set are implied when two or more of their people have a role that asks for a skill.">
+        <TeamNeeds managerId={scope} needs={rows} skills={skills} levels={levels} canEdit={canEdit}
+          categories={[...engine.categoryById.values()].sort((a, b) => a.sort - b.sort).map((c) => ({ id: c.id, name: c.name }))}
+          parents={[...engine.skillById.values()].filter((s) => !s.parentId && s.status === "active").map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId }))} />
+      </Section>
+    );
+  } else {
+    const all = param(sp, "all") === "1";
+    const data = peopleHeatmapData(engine, scope, { everyone: all, hideMet: param(sp, "short") === "1", includeRated: true });
+    body = (
+      <Section title="Skills grid" info="One row per person, one column per skill their roles ask for (and the team's needs, and skills they added). The number is their confirmed level; the colour is how far it is from their target. Hover a cell for the detail."
+        actions={(
+          <div className="inline-flex rounded-md border p-0.5 text-xs" role="group" aria-label="Who to show">
+            <Link href={href("grid")} className={!all ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Direct</Link>
+            <Link href={href("grid", { all: "1" })} className={all ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Everyone below</Link>
+          </div>
+        )}>
+        <HeatLegend mode="people" />
+        <PeopleHeatmap data={data} levels={levels.map((l) => l.name)} />
+      </Section>
+    );
+  }
 
   return (
     <>
-      <PageHeader title={mine ? "My team" : `${manager.name}'s team`}
-        description={[manager.title, unit?.name, `${direct.length} direct report${direct.length === 1 ? "" : "s"}`, `${everyone.length} in all`].filter(Boolean).join(" · ")}
-        crumbs={mine ? undefined : [{ label: "My team", href: own ? "/team" : undefined }, { label: manager.name }]}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            {waitingForMe > 0 && <Button asChild size="sm"><Link href="/validate"><CheckCheck />Validate {waitingForMe}</Link></Button>}
-            {unitId && <Button asChild size="sm" variant="outline"><Link href={withParams("/", { unit: unitId, view: "people" })}><LayoutGrid />Heatmap</Link></Button>}
-            {unitId && <Button asChild size="sm" variant="outline"><Link href={withParams("/talent", { unit: unitId })}><Sparkles />Talent</Link></Button>}
-            <Button asChild size="sm" variant="outline"><Link href={`/org?root=${manager.id}`}><Network />Org chart</Link></Button>
-          </div>
-        } />
-      {pick.length > 1 && <FilterBar><UnitPicker units={pick} value={manager.id} paramName="manager" /></FilterBar>}
-      <KpiTiles items={[
-        { label: "People", value: String(everyone.length), hint: direct.length === everyone.length ? "all report directly" : `${direct.length} direct, ${everyone.length - direct.length} below them` },
-        { label: "On target", value: agg.pct == null ? "–" : `${agg.pct}%`, hint: `${agg.met} of ${agg.required} required skill ratings`, tone: agg.pct == null ? "default" : agg.pct >= engine.settings.greenAt ? "good" : agg.pct >= engine.settings.amberAt ? "warn" : "bad" },
-        { label: "Assessed", value: agg.required ? `${Math.round((agg.assessed / agg.required) * 100)}%` : "–", hint: `${notStarted} not started a self-assessment`, tone: notStarted ? "warn" : "default" },
-        { label: "Waiting for you", value: String(waitingForMe), hint: "ratings to validate", tone: waitingForMe ? "warn" : "default", href: waitingForMe ? "/validate" : undefined },
-        { label: "Team needs short", value: unitId ? String(short.length) : "–", hint: unitId ? `${single.length} rest on one person` : "no team unit", tone: short.length ? "bad" : "default", href: link({ tab: "gaps" }) },
+      <PageHeader
+        title={<TeamTitle managerId={scope} name={engine.teamLabel(scope)} custom={manager.teamName ?? ""} canEdit={canEdit} />}
+        description={<span className="inline-flex flex-wrap items-center gap-1.5">Manager {manager.name} · {direct.length} directly, {everyone.length} in all
+          <Info label="About the team">A team is a manager and everyone below them, from the reporting lines (ServiceNow or the people CSV).</Info></span>}
+        actions={options.length > 1 ? <UnitPicker units={options.map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" /> : undefined} />
+      <TabLinks active={tab} tabs={[
+        { key: "confirm", label: "To confirm", href: href("confirm"), count: waitingTotal, tone: "attention" },
+        { key: "people", label: "People", href: href("people"), count: direct.length },
+        { key: "needs", label: "Needs", href: href("needs"), count: short || undefined, tone: "attention" },
+        { key: "grid", label: "Skills grid", href: href("grid") },
       ]} />
-      <Tabs defaultValue={tab}>
-        <TabsList className="mb-3 flex-wrap" data-tour="team-tabs">
-          <TabsTrigger value="people">People</TabsTrigger>
-          <TabsTrigger value="skills">Skills needed</TabsTrigger>
-          <TabsTrigger value="gaps">Gaps</TabsTrigger>
-          <TabsTrigger value="positions">Open positions{openPositions.length ? ` (${openPositions.length})` : ""}</TabsTrigger>
-          <TabsTrigger value="training">Training</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="people">
-          <Section title={scopeAll ? `Everyone below (${people.length})` : `Direct reports (${people.length})`}
-            description="Who reports here, how far each self-assessment has got, what waits for your validation and where each person stands."
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <RemindTeam people={remindable} />
-                {direct.length > 0 && direct.length !== everyone.length && (
-                  <div className="inline-flex rounded-md border p-0.5 text-xs" role="group" aria-label="Who to list">
-                    <Link href={link({ scope: null, tab: "people" })} aria-current={!scopeAll ? "page" : undefined}
-                      className={!scopeAll ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Direct ({direct.length})</Link>
-                    <Link href={link({ scope: "all", tab: "people" })} aria-current={scopeAll ? "page" : undefined}
-                      className={scopeAll ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Everyone ({everyone.length})</Link>
-                  </div>
-                )}
-              </div>
-            )}>
-            {people.length > rows.length && <p className="mb-2 text-xs text-muted-foreground">The first {rows.length.toLocaleString("en-GB")} of {people.length.toLocaleString("en-GB")} by name. Open a manager lower down (the Team column) to see their part in full.</p>}
-            <DataTable csvName="my-team" rows={rows} pageSize={20} initialSort={{ key: "name" }} searchPlaceholder="Find a person…"
-              columns={[
-                { key: "name", header: "Name", kind: "link", hrefKey: "href" },
-                { key: "title", header: "Designation", kind: "muted" },
-                { key: "role", header: "Role", kind: "muted", facet: true },
-                { key: "status", header: "Self-assessment", kind: "badge", facet: true },
-                { key: "selfAssessed", header: "Rated", kind: "muted", align: "right", sortable: false },
-                { key: "toValidate", header: "To validate", kind: "number", align: "right" },
-                { key: "onTarget", header: "On target", kind: "pct", align: "right" },
-                { key: "gaps", header: "Below target", kind: "number", align: "right" },
-                { key: "training", header: "Training", kind: "number", align: "right" },
-                { key: "last", header: "Last rating", kind: "date" },
-                { key: "team", header: "Their team", kind: "link", hrefKey: "teamHref", sortable: false },
-              ]} />
-          </Section>
-        </TabsContent>
-
-        <TabsContent value="skills">
-          {unitId ? (
-            <div className="grid gap-5 xl:grid-cols-3">
-              <Section className="xl:col-span-2" title="Skills the team needs"
-                description="“We need N people at level L in this skill”, on top of what the roles expect. Coverage counts validated ratings of everyone in the team.">
-                <TeamNeeds unitId={unitId} needs={needs} skills={skills} categories={categories.map((c) => ({ id: c.id, name: c.name }))}
-                  parents={parents} levels={levels.map((l) => ({ level: l.level, name: l.name }))} />
-              </Section>
-              <Section title="Already expected by roles" description="Mandatory skills two or more people's roles need: one person at the role baseline">
-                {implied.length ? (
-                  <ul className="grid gap-1.5 text-sm">
-                    {implied.map((i) => (
-                      <li key={i.href} className="flex items-center justify-between gap-2">
-                        <Link href={i.href} className="truncate hover:underline">{i.skill}</Link>
-                        <span className="shrink-0 text-xs text-muted-foreground tabular">{i.level}+ · {i.have}{i.state === "Covered" ? "" : ` · ${i.state}`}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p className="text-sm text-muted-foreground">Nothing: no two people here share a mandatory role skill.</p>}
-              </Section>
-            </div>
-          ) : (
-            <Empty>Team needs are kept per team, and {mine ? "you do" : `${manager.name} does`} not lead a team unit yet. Turn on “Build teams from the manager chain” in Admin › ServiceNow, or set the team's manager in Admin › Organisation.</Empty>
-          )}
-        </TabsContent>
-
-        <TabsContent value="gaps" className="grid gap-5">
-          {unitId && (
-            <div className="grid gap-5 lg:grid-cols-2">
-              <Section title="Team needs short" description="Fewer people at the level than the team needs. Worst first.">
-                <NeedList items={shown(short)} empty="No team need is short." />
-                {short.length > MAX_NEEDS && <p className="mt-2 text-xs text-muted-foreground">The worst {MAX_NEEDS} of {short.length.toLocaleString("en-GB")}. Open a manager lower down to see the rest.</p>}
-              </Section>
-              <Section title="Resting on one person" description="Enough people on paper, but only one holds it.">
-                <NeedList items={shown(single)} empty="No team need rests on one person." />
-                {single.length > MAX_NEEDS && <p className="mt-2 text-xs text-muted-foreground">{MAX_NEEDS} of {single.length.toLocaleString("en-GB")}. Open a manager lower down to see the rest.</p>}
-              </Section>
-            </div>
-          )}
-          <Section title="People below their target" description="Each person below their own target, or with a required skill not yet assessed.">
-            {gapsAll.length > gapRows.length && <p className="mb-2 text-xs text-muted-foreground">The worst {gapRows.length.toLocaleString("en-GB")} of {gapsAll.length.toLocaleString("en-GB")}. Open a manager lower down to see their part in full.</p>}
-            <DataTable csvName="team-gaps" rows={gapRows} searchPlaceholder="Find a person or skill…" emptyText="Everyone is at or above target."
-              columns={[
-                { key: "person", header: "Person", kind: "link", hrefKey: "personHref" },
-                { key: "skill", header: "Skill" },
-                { key: "category", header: "Category", kind: "muted", facet: true },
-                { key: "level", header: "Level", kind: "level", align: "center" },
-                { key: "target", header: "Target", kind: "level", align: "center" },
-                { key: "gap", header: "Gap", kind: "gap", facet: true },
-                { key: "mandatory", header: "", kind: "muted", facet: true },
-                { key: "interest", header: "Wants it", kind: "muted", facet: true },
-              ]} />
-          </Section>
-        </TabsContent>
-
-        <TabsContent value="positions" className="grid gap-5">
-          {unitId ? (
-            <Section title="Open positions"
-              description="Positions you are filling in this team. For each: the talent to look for, from the role's targets, the skills you add and what the team is short of; and who in the organisation already has most of it.">
-              <Positions unitId={unitId} positions={openPositions} closed={closedPositions} canManage={canManage}
-                roles={dataset.roles.map((r) => ({ id: r.id, name: r.name })).sort((a, b) => a.name.localeCompare(b.name))}
-                grades={[...dataset.grades].sort((a, b) => a.rank - b.rank).map((g) => ({ id: g.id, name: g.name }))}
-                skills={skills} levels={levelOpts} />
-            </Section>
-          ) : (
-            <Empty>Open positions are kept per team, and {mine ? "you do" : `${manager.name} does`} not lead a team unit yet. Turn on “Build teams from the manager chain” in Admin › ServiceNow, or set the team&apos;s manager in Admin › Organisation.</Empty>
-          )}
-          {!openPositions.length && (
-            <Section title="Training that would help the team"
-              description="From each person's target and the team's needs, the skills where training would close the most, worst first.">
-              {training}
-            </Section>
-          )}
-        </TabsContent>
-
-        <TabsContent value="training" className="grid gap-5">
-          <Section title="Training that would help"
-            description="From each person's target and the team's needs, worst first. Book it for several people at once; a skill not yet assessed needs a self-assessment first.">
-            {training}
-          </Section>
-          <Section title="Training plans" description="Booked from a person's profile, against a gap. Open a person to add or update one.">
-            {planAll.length > planRows.length && <p className="mb-2 text-xs text-muted-foreground">{planRows.length.toLocaleString("en-GB")} of {planAll.length.toLocaleString("en-GB")} plans.</p>}
-            <DataTable csvName="team-training" rows={planRows} emptyText="No training booked for this team."
-              columns={[
-                { key: "person", header: "Person", kind: "link", hrefKey: "personHref" },
-                { key: "skill", header: "Skill" },
-                { key: "title", header: "Plan", kind: "muted" },
-                { key: "level", header: "Now", kind: "level", align: "center" },
-                { key: "target", header: "Aim", kind: "level", align: "center" },
-                { key: "due", header: "Due", kind: "date" },
-                { key: "status", header: "Status", kind: "badge", facet: true },
-              ]} />
-          </Section>
-        </TabsContent>
-      </Tabs>
+      {body}
     </>
   );
 }

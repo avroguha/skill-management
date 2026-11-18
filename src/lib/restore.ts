@@ -7,7 +7,7 @@ import { audit, forgetSharedEngine, type Viewer } from "@/lib/server";
 
 export async function restoreFrom(buf: Buffer, v: Viewer, source: string) {
   const b = decodeBackup(buf);
-  const db = await getDb();
+  const db = await getDb("live");
   const safety = await saveBackup(db, v.name, "before-restore");
   await restoreBackup(db, b);
   forgetSharedEngine();

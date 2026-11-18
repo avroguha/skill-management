@@ -60,9 +60,9 @@ export async function orgInfo(id: string): Promise<{ ok: true; info: OrgInfo } |
       .sort((a, b) => a[1].met / a[1].required - b[1].met / b[1].required || b[1].required - a[1].required)
       .slice(0, 4).map(([sid, p]) => ({ skill: engine.skillLabel(sid), ...p }));
 
-    const shortNeeds = engine.managedUnitIds(id).flatMap((u) => engine.shortNeeds(u))
+    const shortNeeds = (engine.isManager(engine.empById.get(id)!) ? engine.shortNeeds(id) : [])
       .filter((c) => c.shortfall > 0).slice(0, 5)
-      .map((c) => ({ skill: engine.skillLabel(c.skillId), have: c.count, need: c.headcount, unit: engine.unitById.get(c.unitId)?.name ?? "" }));
+      .map((c) => ({ skill: engine.skillLabel(c.skillId), have: c.count, need: c.headcount, unit: engine.teamLabel(c.managerId) }));
 
     const e = engine.empById.get(id)!;
     return {
@@ -70,7 +70,7 @@ export async function orgInfo(id: string): Promise<{ ok: true; info: OrgInfo } |
       info: {
         userName: row.userName, email: row.email,
         manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? null : null,
-        unit: e.unitId ? engine.unitById.get(e.unitId)?.name ?? null : null,
+        unit: e.managerId ? engine.teamLabel(e.managerId) : null,
         role: roles.find((r) => r.id === row.roleId)?.name ?? null,
         grade: grades.find((g) => g.id === row.gradeId)?.name ?? null,
         location: row.location, source: row.source, userType: row.userType,

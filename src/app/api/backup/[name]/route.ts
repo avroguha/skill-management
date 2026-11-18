@@ -15,7 +15,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ name: s
   let fileName = name;
   try {
     if (name === "latest") {
-      const b = await saveBackup(await getDb(), v.name, "manual");
+      const b = await saveBackup(await getDb("live"), v.name, "manual");
       fileName = b.name;
     }
     file = backupPath(fileName);

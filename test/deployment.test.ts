@@ -143,7 +143,6 @@ test("work.env and home.env define the same keys, everything compose requires, a
   }
   for (const [name, env] of [["work.env", work], ["home.env", home]] as const) {
     for (const [k, v] of Object.entries(env)) if (/(PASSWORD|SECRET|TOKEN|KEY)$/.test(k)) assert.equal(v, "", `${name} holds a value for ${k}`);
-    assert.match(env.SEED_DEMO, /^(true|false)$/);
     assert.match(env.FORCE_PASSWORD_CHANGE, /^(true|false)$/);
   }
   assert.equal(home.IMAGE_REGISTRY, "");

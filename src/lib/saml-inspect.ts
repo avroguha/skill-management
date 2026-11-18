@@ -1,4 +1,4 @@
-// What an identity provider's metadata says, for Admin › Single sign-on: its entity ID, the
+// What an identity provider's metadata says, for Settings › Single sign-on: its entity ID, the
 // sign-in URL this app will use, and the signing certificates with their expiry dates.
 // Server only (reads certificates with node:crypto).
 import { X509Certificate } from "node:crypto";

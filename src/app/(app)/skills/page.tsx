@@ -4,11 +4,12 @@
 import { asc } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
-import { FilterBar, UnitPicker, ClearFilters } from "@/components/filter-bar";
+import { FilterBar, UnitPicker } from "@/components/filter-bar";
 import { Section } from "@/components/kpi";
 import { DataTable } from "@/components/data-table";
-import { requireViewer, getEngine, scopeUnit, param, type SearchParams } from "@/lib/server";
-import { unitOptions } from "@/lib/views";
+import { requireViewer, getEngine, param, type SearchParams } from "@/lib/server";
+import { maySeeScope } from "@/lib/access";
+import { scopeOptions } from "@/lib/views";
 import { LEVEL_CLASS } from "@/lib/status";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,7 @@ export default async function SkillsPage({ searchParams }: { searchParams: Searc
   const catName = (id: string) => engine.categoryById.get(id)?.name ?? "";
 
   const levelGuide = (
-    <Section title="Proficiency levels" description="The same scale for every skill. Rate what you can do on your own today.">
+    <Section title="Proficiency levels" info="The same 0-5 scale for every skill. Rate what you can do on your own today, not what you did once. Administrators can change the wording in Settings › Levels & rules.">
       <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {levels.map((l) => (
           <li key={l.level} className="flex gap-3">
@@ -37,7 +38,7 @@ export default async function SkillsPage({ searchParams }: { searchParams: Searc
     </Section>
   );
 
-  if (!v.canSeeOrg) {
+  if (!v.canSeeTeams) {
     const rows = rateable.map((s) => ({
       skill: engine.skillLabel(s.id), href: `/skills/${s.id}`, category: catName(s.categoryId), description: s.description,
       aliases: s.aliases.join(", "),
@@ -59,46 +60,43 @@ export default async function SkillsPage({ searchParams }: { searchParams: Searc
     );
   }
 
-  const unitId = scopeUnit(v, param(sp, "unit"));
-  const summary = unitId ? engine.skillSummaryIn(unitId) : new Map();
+  const requested = param(sp, "scope");
+  const scope = requested && maySeeScope(v, requested) ? requested : v.homeScope!;
+  const t = engine.talent(scope);
   const covBySkill = new Map<string, { short: number; spof: number }>();
-  for (const x of unitId ? engine.coverageIn(unitId) : []) {
+  for (const x of engine.coverageIn(scope)) {
     const c = covBySkill.get(x.skillId) ?? { short: 0, spof: 0 };
     if (x.shortfall > 0) c.short += 1;
     if (x.spof) c.spof += 1;
     covBySkill.set(x.skillId, c);
   }
   const rows = rateable.map((s) => {
-    const sum = summary.get(s.id);
-    const agg = sum?.agg ?? { required: 0, pct: null };
-    const proficient = sum?.proficient ?? 0;
-    const interested = sum?.interested ?? 0;
+    const x = t.skills.get(s.id);
     const c = covBySkill.get(s.id);
     return {
-      skill: engine.skillLabel(s.id), href: `/skills/${s.id}${unitId ? `?unit=${unitId}` : ""}`, category: catName(s.categoryId),
-      required: agg.required || null, onTarget: agg.pct, proficient: proficient || null, interested: interested || null,
-      short: c?.short || null, spof: c?.spof || null,
-      status: s.status,
+      skill: engine.skillLabel(s.id), href: `/skills/${s.id}${scope !== v.homeScope ? `?scope=${scope}` : ""}`, category: catName(s.categoryId),
+      required: x?.needed || null, onTarget: x?.needed ? Math.round((x.onTarget / x.needed) * 100) : null, holders: x?.holders || null,
+      proficient: x?.proficient || null, interested: x?.interested || null, short: c?.short || null, spof: c?.spof || null,
     };
   });
   return (
     <>
-      <PageHeader title="Skills" description="Each skill across the chosen unit: who needs it, who has it, where it is thin." />
+      <PageHeader title="Skills" description="Every skill in the catalogue: who needs it, who has it, where it is thin." />
       <FilterBar>
-        <UnitPicker units={unitOptions(engine, v)} value={unitId} />
-        <ClearFilters keys={[]} />
+        <UnitPicker units={scopeOptions(engine, v).map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" />
       </FilterBar>
       <div className="grid gap-5">
         <DataTable csvName="skills" rows={rows} initialSort={{ key: "required", desc: true }} searchKeys={["skill", "category"]} searchPlaceholder="Find a skill…"
           columns={[
             { key: "skill", header: "Skill", kind: "link", hrefKey: "href" },
             { key: "category", header: "Category", facet: true },
-            { key: "required", header: "Required by", kind: "number", align: "right" },
-            { key: "onTarget", header: "On target", kind: "pct", align: "right" },
-            { key: "proficient", header: "Proficient+", kind: "number", align: "right" },
-            { key: "interested", header: "Want to grow", kind: "number", align: "right" },
-            { key: "short", header: "Teams short", kind: "number", align: "right" },
-            { key: "spof", header: "One holder", kind: "number", align: "right" },
+            { key: "required", header: "Role asks", kind: "number", align: "right", info: "People here whose role asks for this skill." },
+            { key: "onTarget", header: "On target", kind: "pct", align: "right", info: "Of those, the share at or above their target (confirmed levels)." },
+            { key: "holders", header: "Have it", kind: "number", align: "right", info: "People here with a confirmed level of 1 or more." },
+            { key: "proficient", header: "3+", kind: "number", align: "right", info: "People here confirmed at Proficient (3) or above." },
+            { key: "interested", header: "Want to grow", kind: "number", align: "right", info: "People who starred it: they want to get better at it." },
+            { key: "short", header: "Teams short", kind: "number", align: "right", info: "Teams here that need it and have fewer people at the level than needed." },
+            { key: "spof", header: "One holder", kind: "number", align: "right", info: "Teams here where only one person covers the need." },
           ]} />
         {levelGuide}
       </div>

@@ -1,15 +1,20 @@
-// The engine's rules, one test each. A small hand-built organisation:
+// The engine's rules, one test each. A small hand-built organisation (v2: a team is a manager
+// and everyone below them):
 //
-//   Acme (company)
-//   ├─ Platform (department)
-//   │   ├─ Cloud team      ann (Engineer, Senior), bob (Engineer, Junior), cat (Engineer, Junior)
-//   │   └─ Data team       dan (Engineer, Junior), eve (Analyst), ivy (Analyst)
-//   └─ Ops (team)          fay (Engineer, Junior)  <- spare AWS capacity
+//   tia (CEO, the top)
+//   ├─ ann (manager, Engineer Senior)      "Cloud"
+//   │   ├─ bob (Engineer Junior)
+//   │   └─ cat (Engineer Junior)
+//   └─ dan (manager, Engineer Junior)
+//       ├─ eve (Analyst)
+//       └─ ivy (Analyst)
+//   fay (Engineer Junior, no manager, nobody below)  <- spare AWS capacity
+//   gus (has left)
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createEngine, gapCategory, DEFAULT_SETTINGS, type Dataset, type Rating } from "../src/lib/engine/engine.ts";
+import { createEngine, gapCategory, ALL, DEFAULT_SETTINGS, type Dataset, type Rating } from "../src/lib/engine/engine.ts";
 
-const NOW = Date.parse("2026-11-12T00:00:00Z");
+const NOW = Date.parse("2026-11-18T00:00:00Z");
 const daysAgo = (d: number) => new Date(NOW - d * 86400e3);
 
 function rating(employeeId: string, skillId: string, validated: number | null, self: number | null = validated, o: Partial<Rating> = {}): Rating {
@@ -22,28 +27,23 @@ function rating(employeeId: string, skillId: string, validated: number | null, s
   };
 }
 
+const emp = (id: string, managerId: string | null, roleId: string | null, gradeId: string | null, o: { active?: boolean; teamName?: string } = {}) =>
+  ({ id, name: id[0].toUpperCase() + id.slice(1), email: `${id}@x`, title: "", roleId, gradeId, managerId, active: o.active ?? true, teamName: o.teamName ?? "" });
+
 function dataset(over: Partial<Dataset> = {}): Dataset {
   return {
     now: NOW,
     settings: { ...DEFAULT_SETTINGS },
-    units: [
-      { id: "acme", name: "Acme", kind: "company", parentId: null, managerId: null },
-      { id: "plat", name: "Platform", kind: "department", parentId: "acme", managerId: "ann" },
-      { id: "cloud", name: "Cloud team", kind: "team", parentId: "plat", managerId: "ann" },
-      { id: "data", name: "Data team", kind: "team", parentId: "plat", managerId: null },
-      { id: "ops", name: "Ops", kind: "team", parentId: "acme", managerId: null },
-    ],
     employees: [
-      // the head of the organisation: not asked for skills (engine isTop)
-      { id: "tia", name: "Tia", email: "tia@x", title: "CEO", unitId: null, roleId: null, gradeId: null, managerId: null, active: true },
-      { id: "ann", name: "Ann", email: "ann@x", title: "", unitId: "cloud", roleId: "eng", gradeId: "sr", managerId: "tia", active: true },
-      { id: "bob", name: "Bob", email: "bob@x", title: "", unitId: "cloud", roleId: "eng", gradeId: "jr", managerId: "ann", active: true },
-      { id: "cat", name: "Cat", email: "cat@x", title: "", unitId: "cloud", roleId: "eng", gradeId: "jr", managerId: "ann", active: true },
-      { id: "dan", name: "Dan", email: "dan@x", title: "", unitId: "data", roleId: "eng", gradeId: "jr", managerId: "ann", active: true },
-      { id: "eve", name: "Eve", email: "eve@x", title: "", unitId: "data", roleId: "ana", gradeId: null, managerId: "dan", active: true },
-      { id: "ivy", name: "Ivy", email: "ivy@x", title: "", unitId: "data", roleId: "ana", gradeId: null, managerId: "dan", active: true },
-      { id: "fay", name: "Fay", email: "fay@x", title: "", unitId: "ops", roleId: "eng", gradeId: "jr", managerId: null, active: true },
-      { id: "gus", name: "Gus", email: "gus@x", title: "", unitId: "ops", roleId: "eng", gradeId: "jr", managerId: null, active: false },
+      emp("tia", null, null, null),
+      emp("ann", "tia", "eng", "sr", { teamName: "Cloud" }),
+      emp("bob", "ann", "eng", "jr"),
+      emp("cat", "ann", "eng", "jr"),
+      emp("dan", "tia", "eng", "jr"),
+      emp("eve", "dan", "ana", null),
+      emp("ivy", "dan", "ana", null),
+      emp("fay", null, "eng", "jr"),
+      emp("gus", "ann", "eng", "jr", { active: false }),
     ],
     categories: [{ id: "cloudc", name: "Cloud", sort: 1 }, { id: "datac", name: "Data", sort: 2 }],
     skills: [
@@ -65,8 +65,7 @@ function dataset(over: Partial<Dataset> = {}): Dataset {
       { roleId: "eng", gradeId: null, skillId: "aws", target: 3, mandatory: true }, // a heading: ignored
       { roleId: "eng", gradeId: null, skillId: "old", target: 3, mandatory: true }, // retired: ignored
     ],
-    unitRequirements: [],
-    employeeTargets: [],
+    teamNeeds: [{ managerId: "ann", skillId: "k8s", minLevel: 2, headcount: 2 }],
     ratings: [
       rating("ann", "ec2", 4), rating("ann", "sql", 3),
       rating("bob", "ec2", 2, 3),
@@ -80,249 +79,183 @@ function dataset(over: Partial<Dataset> = {}): Dataset {
 }
 
 test("gap categories, including critical for a far-off high target and unassessed never 0", () => {
+  assert.equal(gapCategory(null, 3), "not_required");
+  assert.equal(gapCategory(3, null), "unassessed");
   assert.equal(gapCategory(3, 3), "meets");
   assert.equal(gapCategory(3, 5), "meets");
   assert.equal(gapCategory(3, 2), "minor");
   assert.equal(gapCategory(4, 2), "significant");
-  assert.equal(gapCategory(3, 1), "critical");
   assert.equal(gapCategory(5, 2), "critical");
+  assert.equal(gapCategory(3, 1), "critical");
   assert.equal(gapCategory(2, 0), "significant");
-  assert.equal(gapCategory(3, null), "unassessed");
-  assert.equal(gapCategory(null, 4), "not_required");
 });
 
-test("target precedence: person override > grade-specific > all-grades, with the source reported", () => {
-  const e = createEngine(dataset({ employeeTargets: [{ employeeId: "bob", skillId: "k8s", target: 4, reason: "project" }] }));
-  const ann = e.empById.get("ann")!, bob = e.empById.get("bob")!;
-  assert.deepEqual([e.targetFor(ann, "ec2")?.target, e.targetFor(ann, "ec2")?.source], [4, "grade"]);
-  assert.deepEqual([e.targetFor(bob, "ec2")?.target, e.targetFor(bob, "ec2")?.source], [3, "role"]);
-  const k = e.targetFor(bob, "k8s")!;
-  assert.deepEqual([k.target, k.source, k.mandatory, k.reason], [4, "person", false, "project"]);
+test("targets: grade-specific beats all-grades; managers and the top have none unless managers assess", () => {
+  const e = createEngine(dataset());
+  const at = (id: string, s: string) => e.targetFor(e.empById.get(id)!, s);
+  assert.deepEqual(at("bob", "ec2"), { target: 3, mandatory: true, source: "role" });
+  assert.equal(at("ann", "ec2"), null, "ann manages people: not asked to rate herself");
+  assert.equal(at("tia", "ec2"), null);
+  assert.equal(e.assesses(e.empById.get("fay")!), true, "nobody below and nobody above: still rates");
+  const m = createEngine(dataset({ settings: { ...DEFAULT_SETTINGS, managersAssess: true } }));
+  assert.deepEqual(m.targetFor(m.empById.get("ann")!, "ec2"), { target: 4, mandatory: true, source: "grade" });
+  assert.equal(m.targetFor(m.empById.get("tia")!, "ec2"), null, "the top is never asked");
 });
 
 test("only active leaf skills are required or rated", () => {
   const e = createEngine(dataset());
-  assert.equal(e.isRateable("aws"), false, "AWS has active sub-skills");
-  assert.equal(e.isRateable("old"), false, "retired");
-  assert.equal(e.isRateable("ec2"), true);
   assert.deepEqual(e.requiredSkillIds(e.empById.get("bob")!).sort(), ["ec2", "k8s"]);
-  // retiring both sub-skills turns the heading back into a rateable skill
-  const ds = dataset();
-  ds.skills = ds.skills.map((s) => (s.parentId === "aws" ? { ...s, status: "retired" } : s));
-  assert.equal(createEngine(ds).isRateable("aws"), true);
+  assert.equal(e.isRateable("aws"), false);
+  assert.equal(e.isRateable("old"), false);
+  assert.equal(e.isRateable("ec2"), true);
 });
 
-test("validated basis ignores self ratings; self basis uses them", () => {
-  const v = createEngine(dataset());
+test("confirmed basis ignores self ratings; self basis uses them", () => {
+  const e = createEngine(dataset());
+  assert.equal(e.cell(e.empById.get("eve")!, "sql").level, null);
   const s = createEngine(dataset(), { basis: "self" });
-  const eve = v.empById.get("eve")!;
-  assert.equal(v.cell(eve, "sql").category, "unassessed");
-  assert.equal(v.cell(eve, "sql").met, false);
-  assert.equal(s.cell(eve, "sql").category, "meets");
+  assert.equal(s.cell(s.empById.get("eve")!, "sql").level, 4);
 });
 
 test("stale ratings are flagged, and only excluded from on-target when the setting says so", () => {
-  const ds = dataset();
-  ds.ratings = ds.ratings.map((r) => (r.employeeId === "dan" ? { ...r, validatedAt: daysAgo(400) } : r));
-  const keep = createEngine(ds);
-  const dan = keep.empById.get("dan")!;
-  assert.equal(keep.cell(dan, "ec2").stale, true);
-  assert.equal(keep.cell(dan, "ec2").met, true);
-  ds.settings = { ...ds.settings, excludeStale: true };
-  assert.equal(createEngine(ds).cell(dan, "ec2").met, false);
+  const old = { validatedAt: daysAgo(400) };
+  const ds = dataset({ ratings: [rating("bob", "ec2", 3, 3, old)] });
+  const e = createEngine(ds);
+  const c = e.cell(e.empById.get("bob")!, "ec2");
+  assert.equal(c.stale, true);
+  assert.equal(c.met, true);
+  const x = createEngine({ ...ds, settings: { ...DEFAULT_SETTINGS, excludeStale: true } });
+  assert.equal(x.cell(x.empById.get("bob")!, "ec2").met, false);
 });
 
-test("roll-up counts pairs on target and adds up the tree; inactive people are left out", () => {
+test("teams: a manager and everyone below; the leaver is nowhere", () => {
   const e = createEngine(dataset());
-  const cloud = e.aggregate(e.membersOf("cloud"));
-  // ann: ec2 4/4 met, sql 3/3 met, k8s unassessed; bob: ec2 2/3, k8s none; cat: ec2 1/3, k8s 2/2 met
-  assert.deepEqual([cloud.required, cloud.met, cloud.assessed], [7, 3, 5]);
-  const data = e.aggregate(e.membersOf("data"));
-  const plat = e.aggregate(e.membersOf("plat"));
-  assert.equal(plat.required, cloud.required + data.required);
-  assert.equal(plat.met, cloud.met + data.met);
-  assert.equal(e.membersOf("ops").length, 1, "Gus is inactive");
-  assert.equal(e.membersOf("acme").length, 7);
+  assert.deepEqual(e.membersOf("ann").map((x) => x.id), ["ann", "bob", "cat"]);
+  assert.deepEqual(e.reportsOf("tia").map((x) => x.id), ["ann", "bob", "cat", "dan", "eve", "ivy"]);
+  assert.equal(e.membersOf(ALL).length, 8);
+  assert.deepEqual(e.tops.map((x) => x.id), ["tia"]);
+  assert.equal(e.teamLabel("ann"), "Cloud");
+  assert.equal(e.teamLabel("dan"), "Dan's team");
+  assert.deepEqual(e.chainOf("bob").map((x) => x.id), ["tia", "ann"]);
 });
 
-test("implicit team demand: one person at the role baseline (lowest mandatory target); optional skills create none", () => {
+test("roll-up counts pairs on target among people asked; managers and leavers are left out", () => {
   const e = createEngine(dataset());
-  const d = e.demands("cloud");
+  const a = e.aggregate(e.membersOf("ann"));
+  // bob: ec2 2<3, k8s -; cat: ec2 1<3, k8s 2>=2 -> 1 of 4
+  assert.deepEqual({ people: a.people, required: a.required, met: a.met, assessed: a.assessed }, { people: 2, required: 4, met: 1, assessed: 3 });
+  assert.equal(a.pct, 25);
+});
+
+test("implicit team need: two or more direct reports need a mandatory skill; optional skills create none", () => {
+  const e = createEngine(dataset());
+  const d = e.demands("ann");
   const ec2 = d.find((x) => x.skillId === "ec2")!;
-  assert.deepEqual([ec2.level, ec2.headcount, ec2.explicit], [3, 1, false], "Ann (senior) needs 4, Bob and Cat 3");
-  assert.equal(d.find((x) => x.skillId === "k8s"), undefined, "k8s is not mandatory");
-  assert.equal(d.find((x) => x.skillId === "sql"), undefined, "only Ann (senior) needs SQL: her gap, not a team need");
-  assert.equal(e.demands("plat").length, 0, "no direct members, no explicit requirement");
+  assert.deepEqual({ level: ec2.level, headcount: ec2.headcount, explicit: ec2.explicit }, { level: 3, headcount: 1, explicit: false });
+  assert.ok(d.find((x) => x.skillId === "k8s")!.explicit, "k8s is the manager's own need");
+  assert.ok(e.demands("dan").some((x) => x.skillId === "sql" && !x.explicit), "two analysts need SQL");
+  assert.deepEqual(e.demands("tia"), [], "ann and dan manage: they are asked for nothing, so they imply nothing");
 });
 
-test("coverage: single point of failure when exactly one person holds the level", () => {
+test("coverage: one holder, a shortfall, and nobody; worst first", () => {
   const e = createEngine(dataset());
-  const ec2 = e.coverage(e.demands("cloud").find((x) => x.skillId === "ec2")!);
-  assert.deepEqual([ec2.count, ec2.spof, ec2.critical, ec2.shortfall], [1, true, false, 0]);
-  assert.deepEqual(ec2.holders, ["ann"]);
+  const ec2 = e.coverage(e.demands("ann").find((x) => x.skillId === "ec2")!);
+  assert.deepEqual({ count: ec2.count, spof: ec2.spof, holders: ec2.holders }, { count: 1, spof: true, holders: ["ann"] });
+  const k8s = e.coverage(e.demands("ann").find((x) => x.skillId === "k8s")!);
+  assert.deepEqual({ count: k8s.count, shortfall: k8s.shortfall }, { count: 1, shortfall: 1 });
+  const sql = e.coverage(e.demands("dan").find((x) => x.skillId === "sql")!);
+  assert.equal(sql.critical, true, "eve's self-rating does not count until confirmed");
+  assert.deepEqual(e.shortNeeds("tia").map((c) => `${c.managerId}:${c.skillId}`), ["dan:sql", "ann:k8s", "ann:ec2"]);
 });
 
-test("explicit requirement: the shortfall is the people missing at the level", () => {
-  const e = createEngine(dataset({ unitRequirements: [{ unitId: "cloud", skillId: "ec2", minLevel: 3, headcount: 5 }] }));
-  const c = e.shortNeeds("acme").find((x) => x.unitId === "cloud" && x.skillId === "ec2")!;
-  // holders at >=3: Ann only; 5 needed
-  assert.deepEqual([c.count, c.headcount, c.shortfall, c.explicit], [1, 5, 4, true]);
-});
-
-test("short needs: nobody first, then the biggest shortfall, then single holders; covered needs left out", () => {
+test("who elsewhere has what a team is short of, and which teams a person could strengthen", () => {
   const e = createEngine(dataset());
-  const needs = e.shortNeeds("acme");
-  const sqlData = needs.find((x) => x.unitId === "data" && x.skillId === "sql")!;
-  assert.equal(sqlData.critical, true, "Eve and Ivy both need SQL; Eve is self-rated only, Ivy unrated");
-  assert.equal(needs[0].critical, true);
-  const ec2Cloud = needs.find((x) => x.unitId === "cloud" && x.skillId === "ec2")!;
-  assert.deepEqual([ec2Cloud.spof, ec2Cloud.shortfall], [true, 0], "covered, but by one person");
-  assert.ok(needs.every((x) => x.shortfall > 0 || x.spof));
+  assert.deepEqual(e.holdersOutside("dan", "sql", 3).map((x) => x.id), ["ann"]);
+  assert.deepEqual(e.holdersOutside("ann", "ec2", 3).map((x) => x.id), ["fay", "dan"], "highest level first; ann's own team left out");
+  const fits = e.fitsFor(e.empById.get("ann")!);
+  assert.deepEqual(fits.map((f) => [f.managerId, f.skills.map((s) => s.skillId)]), [["dan", ["sql"]]]);
+  assert.deepEqual(e.fitsFor(e.empById.get("fay")!).map((f) => f.managerId), ["ann"], "fay's EC2 4 strengthens ann's team");
+  assert.deepEqual(e.fitsFor(e.empById.get("bob")!), [], "nothing bob has is short anywhere he is not");
 });
 
-test("individual gaps: everyone below their own target, or not assessed; no suggestion attached", () => {
-  const e = createEngine(dataset());
-  const gaps = e.individualGaps(e.membersOf("cloud"));
-  const by = (emp: string, s: string) => gaps.find((n) => n.employeeId === emp && n.skillId === s);
-  assert.equal(by("bob", "ec2")?.category, "minor");
-  assert.equal(by("cat", "ec2")?.category, "critical", "target 3, level 1: critical even though the gap is 2");
-  assert.equal(by("bob", "k8s")?.category, "unassessed");
-  assert.equal(by("ann", "ec2"), undefined, "met");
-  assert.ok(gaps.every((g) => !("action" in g)));
-});
-
-test("calibration: average self minus validated per team, needing at least three pairs", () => {
-  const e = createEngine(dataset());
-  const c = e.calibration("acme");
-  const cloud = c.find((x) => x.unitId === "cloud")!;
-  // ann 4-4, 3-3; bob 3-2; cat 2-1, 2-2 -> (0+0+1+1+0)/5
-  assert.deepEqual([cloud.n, cloud.delta], [5, 0.4]);
-  assert.equal(c.find((x) => x.unitId === "data"), undefined, "only one pair with both levels");
-});
-
-test("KPIs for a scope", () => {
-  const e = createEngine(dataset());
-  const k = e.kpis("cloud");
-  assert.equal(k.people, 3);
-  assert.equal(k.required, 7);
-  assert.equal(k.onTargetPct, 43);
-  assert.equal(k.assessedPct, 71);
-  assert.equal(k.spof, 1, "ec2: Ann is the only holder");
-  assert.equal(k.criticalGaps, 0);
-  assert.equal(createEngine(dataset()).kpis("data").pendingValidation, 1);
-});
-
-test("unit heatmap: child units as rows, direct members as their own row, categories as columns", () => {
-  const e = createEngine(dataset());
-  const h = e.unitHeatmap("acme");
-  assert.deepEqual(h.rows.map((r) => r.id), ["ops", "plat"].sort((a, b) => (a === "ops" ? 1 : -1)).sort((a, b) => (e.unitById.get(a)!.name.localeCompare(e.unitById.get(b)!.name))));
-  assert.deepEqual(h.columns.map((c) => c.id), ["cloudc", "datac"]);
-  const plat = h.rows.find((r) => r.id === "plat")!;
-  assert.equal(plat.cells.cloudc.required + plat.cells.datac.required, plat.total.required);
-  const cat = e.unitHeatmap("acme", { categoryId: "cloudc" });
-  assert.deepEqual(cat.columns.map((c) => c.name).sort(), ["AWS › EC2", "AWS › S3", "Kubernetes"]);
-});
-
-test("people heatmap: worst rows first, coverage on each demanded column, hide-met drops all-green columns", () => {
-  const e = createEngine(dataset());
-  const h = e.peopleHeatmap("cloud");
-  assert.equal(h.rows[0].employee.id, "bob", "two unmet (ec2, k8s) and alphabetically before Cat");
-  const ec2 = h.columns.find((c) => c.id === "ec2")!;
-  assert.equal(ec2.coverage?.spof, true);
-  const hidden = e.peopleHeatmap("cloud", { hideMet: true });
-  assert.equal(hidden.columns.find((c) => c.id === "sql"), undefined, "SQL is met by the only person who needs it");
-  assert.ok(hidden.columns.find((c) => c.id === "ec2"), "EC2 stays: Bob and Cat are below target");
-});
-
-test("person profile: role fit, next grade, over-qualification", () => {
-  const e = createEngine(dataset());
-  const fay = e.personProfile(e.empById.get("fay")!);
-  assert.equal(fay.roleFitPct, 50, "ec2 met, k8s unassessed");
-  assert.equal(fay.nextGrade?.grade.id, "sr");
-  assert.deepEqual(fay.nextGrade?.missing.map((m) => m.skillId).sort(), ["k8s", "sql"]);
+test("progress: not started, in progress, waiting, sent back, done, not asked", () => {
   const ds = dataset();
-  ds.ratings.push(rating("bob", "k8s", 5));
-  const bob = createEngine(ds).personProfile(createEngine(ds).empById.get("bob")!);
-  assert.deepEqual(bob.overqualified.map((c) => c.skillId), ["k8s"]);
-});
-
-test("people finder and manager scope", () => {
-  const e = createEngine(dataset());
-  assert.deepEqual(e.find("acme", "ec2", 3).map((x) => x.e.id), ["ann", "fay", "dan"]);
-  assert.deepEqual(e.reportsOf("ann").map((x) => x.id), ["bob", "cat", "dan", "eve", "ivy"]);
-});
-
-test("a cycle in the unit tree does not hang", () => {
-  const ds = dataset();
-  ds.units = ds.units.map((u) => (u.id === "acme" ? { ...u, parentId: "cloud" } : u));
+  ds.ratings.push(rating("ivy", "sql", null, 2, { status: "returned" }));
   const e = createEngine(ds);
-  assert.ok(e.subtreeUnitIds("plat").length <= 5);
-  assert.ok(e.ancestors("cloud").length <= 5);
+  const st = (id: string) => e.progress(e.empById.get(id)!).state;
+  assert.equal(st("bob"), "in_progress", "k8s is not rated yet");
+  assert.equal(st("cat"), "done");
+  assert.equal(st("eve"), "waiting");
+  assert.equal(st("ivy"), "sent_back");
+  assert.equal(st("ann"), "not_asked");
+  const fresh = createEngine(dataset());
+  assert.equal(fresh.progress(fresh.empById.get("ivy")!).state, "not_started");
+  assert.deepEqual(fresh.progress(fresh.empById.get("ivy")!).missing, ["sql"]);
 });
 
-test("the top of the organisation is not asked for skills; nobody else is exempt", () => {
-  const base = dataset();
-  // give the head a role and a personal target: still nothing is required of her
-  const ds = dataset({
-    employees: base.employees.map((e) => (e.id === "tia" ? { ...e, roleId: "eng", gradeId: "sr", unitId: "acme" } : e)),
-    employeeTargets: [{ employeeId: "tia", skillId: "sql", target: 4, reason: "test" }],
-  });
-  const eng = createEngine(ds);
-  const tia = eng.empById.get("tia")!;
-  assert.equal(eng.isTop(tia), true, "no manager, people below");
-  assert.deepEqual(eng.requiredSkillIds(tia), []);
-  assert.equal(eng.targetFor(tia, "ec2"), null);
-  assert.equal(eng.targetFor(tia, "sql"), null, "a personal target does not apply either");
-  assert.equal(eng.aggregate([tia]).required, 0, "counted in no roll-up");
-  assert.ok(!eng.individualGaps([tia]).length, "no gaps");
-  assert.equal(eng.isTop(eng.empById.get("ann")!), false, "Ann has a manager");
-  assert.equal(eng.isTop(eng.empById.get("fay")!), false, "no manager but nobody below: still assessed");
-  assert.ok(eng.requiredSkillIds(eng.empById.get("fay")!).length > 0);
-
-  // the manager left: the person below becomes the top
-  const left = createEngine(dataset({ employees: base.employees.map((e) => (e.id === "tia" ? { ...e, active: false } : e)) }));
-  assert.equal(left.isTop(left.empById.get("ann")!), true);
+test("KPIs for a team and the whole organisation", () => {
+  const e = createEngine(dataset());
+  const k = e.kpis("tia");
+  assert.equal(k.people, 7);
+  assert.equal(k.asked, 4, "bob, cat, eve, ivy");
+  assert.equal(k.done, 2, "cat done, eve waiting");
+  assert.equal(k.notStarted, 1);
+  assert.equal(k.short, 2);
+  assert.equal(k.nobody, 1);
+  assert.equal(k.spof, 1);
+  assert.equal(k.pendingConfirmation, 1);
+  assert.equal(e.kpis(ALL).people, 8);
 });
 
-test("precomputed views agree with the plain ones: per-skill summary, reporting lines", () => {
+test("team heatmap: the teams below as rows; people in no team as their own row at the top", () => {
+  const e = createEngine(dataset());
+  const h = e.teamHeatmap("tia");
+  assert.deepEqual(h.rows.map((r) => r.name), ["Cloud", "Dan's team"]);
+  assert.deepEqual(h.columns.map((c) => c.name), ["Cloud", "Data"]);
+  assert.equal(h.rows[0].cells.cloudc.required, 4);
+  const all = e.teamHeatmap(ALL);
+  assert.deepEqual(all.rows.map((r) => r.name), ["Cloud", "Dan's team", "Not in a team"], "one head: the whole organisation opens one level down");
+  assert.equal(all.rows.find((r) => r.name === "Not in a team")!.people, 1, "fay");
+});
+
+test("people heatmap: a manager's direct reports, worst rows first, the team's needs as columns", () => {
+  const e = createEngine(dataset());
+  const h = e.peopleHeatmap("ann");
+  assert.deepEqual(h.rows.map((r) => r.employee.id), ["bob", "cat"]);
+  assert.deepEqual(h.columns.map((c) => c.id).sort(), ["ec2", "k8s"]);
+  assert.equal(h.columns.find((c) => c.id === "k8s")!.coverage!.shortfall, 1);
+  assert.deepEqual(e.peopleHeatmap("tia", { everyone: true }).rows.map((r) => r.employee.id).sort(), ["ann", "bob", "cat", "dan", "eve", "ivy"]);
+});
+
+test("person profile: fit and what the next grade asks for", () => {
+  const e = createEngine(dataset());
+  const p = e.personProfile(e.empById.get("bob")!);
+  assert.equal(p.required, 2);
+  assert.equal(p.met, 0);
+  assert.equal(p.nextGrade?.grade.id, "sr");
+  assert.deepEqual(p.nextGrade?.missing.map((m) => [m.skillId, m.target]).sort(), [["ec2", 4], ["k8s", 2], ["sql", 3]]);
+});
+
+test("people finder: confirmed level at or above, best first", () => {
+  const e = createEngine(dataset());
+  assert.deepEqual(e.find(ALL, "ec2", 3).map((x) => x.e.id), ["ann", "fay", "dan"]);
+  assert.deepEqual(e.find("ann", "ec2", 3).map((x) => x.e.id), ["ann"]);
+});
+
+test("a loop in the reporting lines does not hang", () => {
   const ds = dataset();
+  ds.employees.find((x) => x.id === "tia")!.managerId = "bob";
   const e = createEngine(ds);
-  e.warm();
-  for (const root of e.roots) {
-    const members = e.membersOf(root.id);
-    const sum = e.skillSummaryIn(root.id);
-    for (const s of ds.skills) {
-      const plain = e.aggregate(members, (sid) => sid === s.id);
-      const pre = sum.get(s.id)?.agg ?? { required: 0, met: 0, assessed: 0, pct: null };
-      assert.deepEqual([pre.required, pre.met, pre.assessed, pre.pct], [plain.required, plain.met, plain.assessed, plain.pct], s.name);
-      const proficient = members.filter((m) => (e.levelOf(m.id, s.id).level ?? -1) >= 3).length;
-      assert.equal(sum.get(s.id)?.proficient ?? 0, proficient, `${s.name} proficient`);
-    }
-  }
-  // reporting lines: the indexed walk finds what a scan of everyone finds
-  const active = ds.employees.filter((x) => x.active);
-  for (const m of active) {
-    const below = new Set<string>();
-    const stack = [m.id];
-    while (stack.length) { const id = stack.pop()!; for (const x of active) if (x.managerId === id && x.id !== m.id && !below.has(x.id)) { below.add(x.id); stack.push(x.id); } }
-    const got = new Set(e.reportsOf(m.id).map((x) => x.id));
-    for (const id of below) assert.ok(got.has(id), `${m.name}: ${id} below`);
-    assert.deepEqual(e.directReportsOf(m.id).map((x) => x.id).sort(), active.filter((x) => x.managerId === m.id).map((x) => x.id).sort());
-  }
+  assert.ok(e.reportsOf("ann").length < 10);
+  assert.ok(e.chainOf("bob").length < 10);
 });
 
 test("talent: holders, need and on-target agree with the plain roll-ups", () => {
   const e = createEngine(dataset());
-  for (const root of e.roots) {
-    const t = e.talent(root.id);
-    const sum = e.skillSummaryIn(root.id);
-    assert.equal(t.people, e.membersOf(root.id).length);
-    for (const [sid, s] of t.skills) {
-      assert.equal(s.needed, sum.get(sid)?.agg.required ?? 0, `${sid} needed`);
-      assert.equal(s.onTarget, sum.get(sid)?.agg.met ?? 0, `${sid} on target`);
-      assert.equal(s.proficient, sum.get(sid)?.proficient ?? 0, `${sid} proficient`);
-      assert.ok(s.extra <= s.proficient && s.expert <= s.proficient && s.proficient <= s.holders);
-    }
-    assert.equal([...t.roles.values()].reduce((a, b) => a + b, 0), t.people);
-  }
+  const t = e.talent("tia");
+  const ec2 = t.skills.get("ec2")!;
+  assert.equal(ec2.holders, 4, "ann, bob, cat, dan (fay is not in tia's tree)");
+  assert.equal(ec2.needed, 2);
+  assert.equal(ec2.onTarget, 0);
+  assert.equal(t.skills.get("sql")!.extra, 1, "ann holds SQL at 3 without being asked");
 });

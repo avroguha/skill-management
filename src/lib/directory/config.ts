@@ -42,8 +42,6 @@ export interface DirectoryConfig {
   fields: FieldMap;
   /** more fields to store with each person (for the photo URL, the info panel) */
   extraFields: string[];
-  /** build the organisation tree from the manager chain (a team per manager) */
-  orgFromHierarchy: boolean;
   /** 0 = manual only */
   syncEveryHours: number;
   maxPeople: number;
@@ -69,7 +67,6 @@ export const DEFAULT_DIRECTORY: DirectoryConfig = {
   extraQuery: "active=true",
   fields: { userName: "user_name", name: "name", email: "email", manager: "manager", title: "title" },
   extraFields: [],
-  orgFromHierarchy: true,
   syncEveryHours: 12,
   maxPeople: 20000,
   roleRules: [],

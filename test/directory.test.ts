@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 
 process.env.PGLITE_DIR = "memory://";
-process.env.SEED_DEMO = "false";
 process.env.BETTER_AUTH_SECRET = "test-secret-for-the-directory-tests";
 delete process.env.DATABASE_URL;
 
@@ -107,7 +106,7 @@ test("errors say what went wrong", async () => {
   assert.deepEqual(await sn.distinct("sys_user", "identity_type", "active=true"), [{ value: "human", count: 5 }, { value: "machine", count: 1 }]);
 });
 
-test("apply: creates, adopts an existing record by e-mail, sets managers and builds the tree from the manager chain", async () => {
+test("apply: creates, adopts an existing record by e-mail, and sets managers (the reporting lines are the teams)", async () => {
   const db = await getDb();
   await db.insert(s.employee).values({ name: "Bea (typed by hand)", email: "bea@acme.test", title: "" });
   const r = await fetchDirectory(sn, config);
@@ -120,16 +119,9 @@ test("apply: creates, adopts an existing record by e-mail, sets managers and bui
   assert.equal(by("bea").managerId, by("ana").id);
   assert.equal(by("xia").managerId, by("boss").id);
   assert.equal(by("ana").title, "Engineering Manager", "designation from the title field");
-  const units = await db.select().from(s.orgUnit);
-  const unitOf = (u: string) => units.find((x) => x.id === by(u).unitId)!;
-  assert.equal(unitOf("bea").name, "Ana Lead", "a person sits in their manager's team");
-  assert.equal(unitOf("ana").name, "Ana Lead", "a manager sits in the team they lead");
-  assert.equal(unitOf("ana").managerId, by("ana").id);
-  assert.equal(units.find((x) => x.name === "Ana Lead")!.parentId, unitOf("boss").id, "teams nest like the manager chain");
-  assert.equal(unitOf("boss").kind, "company");
 });
 
-test("a second run updates, deactivates people who left (never deletes), removes teams nobody leads", async () => {
+test("a second run updates and deactivates people who left (never deletes)", async () => {
   const db = await getDb();
   USERS = USERS.filter((u) => u.user_name !== "ben" && u.user_name !== "bea");
   USERS.find((u) => u.user_name === "ana")!.title = "Director";
@@ -139,27 +131,6 @@ test("a second run updates, deactivates people who left (never deletes), removes
   const people = await db.select().from(s.employee);
   assert.equal(people.find((p) => p.userName === "ben")!.active, false);
   assert.equal(people.find((p) => p.userName === "ana")!.title, "Director");
-  const units = await db.select().from(s.orgUnit);
-  assert.ok(!units.some((u) => u.name === "Ana Lead"), "Ana leads nobody now: her team is gone");
-  assert.equal(people.find((p) => p.userName === "ana")!.unitId, units.find((u) => u.name === "Bo Boss")!.id);
-  reset();
-});
-
-test("building teams removes an empty hand-made top unit, keeps one with people in it", async () => {
-  const db = await getDb();
-  const [placeholder] = await db.insert(s.orgUnit).values({ name: "Leftover placeholder", kind: "company" }).returning();
-  const [kept] = await db.insert(s.orgUnit).values({ name: "Hand-made team", kind: "team" }).returning();
-  await db.insert(s.employee).values({ name: "Pat Manual", email: "pat@acme.test", title: "", unitId: kept.id });
-  const run = await runSync(db, sn, config, "manual", "tester");
-  assert.equal(run.status, "ok", run.message);
-  const units = await db.select().from(s.orgUnit);
-  assert.ok(!units.some((u) => u.id === placeholder.id), "the empty top unit is gone: one tree, not two");
-  assert.ok(units.some((u) => u.id === kept.id), "a unit with a person in it is never touched");
-  assert.equal(units.filter((u) => !u.parentId && u.externalKey).length, 1, "the directory tree has one top");
-  const noSync = { ...config, orgFromHierarchy: false };
-  const [again] = await db.insert(s.orgUnit).values({ name: "Built by hand", kind: "company" }).returning();
-  await runSync(db, sn, noSync, "manual", "tester");
-  assert.ok((await db.select().from(s.orgUnit)).some((u) => u.id === again.id), "with teams not built from the chain, units are left alone");
   reset();
 });
 

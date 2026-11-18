@@ -1,7 +1,7 @@
 // Single sign-on gate: who may sign in, and the test capture.
 //
 //  - Until an administrator activates SSO, every SSO sign-in is a TEST: the assertion's
-//    attributes are captured for Admin › Single sign-on, and the sign-in is refused (no
+//    attributes are captured for Settings › Single sign-on, and the sign-in is refused (no
 //    user is created). The admin uses that to see what the identity provider sends.
 //  - Once active, an attribute of the assertion (or the NameID) is matched against a
 //    field of the people table (e-mail or login name). Only an ACTIVE person found that
@@ -139,7 +139,7 @@ const pending = (g.__skillsSsoPending ??= new Map());
 /** Runs a database write once the current request's auth step is over; failures only log. */
 function later(write: (db: DB) => Promise<unknown>) {
   setTimeout(() => {
-    import("../db/index.ts").then(({ getDb }) => getDb()).then(write)
+    import("../db/index.ts").then(({ getDb }) => getDb("live")).then(write)
       .catch((e: Error) => console.error(`[sso] could not save: ${e.message}`));
   }, 0);
 }

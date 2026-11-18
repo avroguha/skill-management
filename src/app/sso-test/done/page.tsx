@@ -4,7 +4,7 @@
 import { getDb, schema } from "@/db";
 import { getViewer } from "@/lib/server";
 import { readSsoSettings } from "@/lib/sso-gate";
-import { SsoActivate } from "@/app/(app)/admin/sso/activate";
+import { SsoActivate } from "@/app/(app)/settings/sso/activate";
 import { Done } from "./done";
 
 export const metadata = { title: "Single sign-on test" };

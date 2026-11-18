@@ -1,5 +1,5 @@
 "use server";
-// Admin › ServiceNow: save the connection, test it (a dry run - nothing is written),
+// Settings › ServiceNow: save the connection, test it (a dry run - nothing is written),
 // list a field's values for the user-type filter, sync now, and the photo URL template.
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -17,7 +17,7 @@ import { asc, eq } from "drizzle-orm";
 type Fail = { ok: false; error: string };
 
 async function admin(): Promise<Viewer> {
-  const v = await actionViewer();
+  const v = await actionViewer({ live: true });
   if (!v.isAdmin) throw new Error("Administrators only.");
   return v;
 }
@@ -35,7 +35,6 @@ const formSchema = z.object({
   extraQuery: z.string().trim().max(500).default(""),
   fields: z.object({ userName: field, name: field, email: field, manager: field, title: field }),
   extraFields: z.array(field).max(20).default([]),
-  orgFromHierarchy: z.boolean(),
   syncEveryHours: z.coerce.number().int().min(0).max(168),
   roleRules: z.array(z.object({
     op: z.enum(["is", "contains", "starts"]),
@@ -74,7 +73,7 @@ export async function saveDirectory(form: DirectoryForm): Promise<{ ok: true } |
     const c = await merged(form);
     await writeDirectoryConfig(await getDb(), c);
     await audit(v, "save_directory", "app_setting", "directory", publicDirectoryConfig(c));
-    revalidatePath("/admin/directory");
+    revalidatePath("/settings/servicenow");
     return { ok: true };
   } catch (e) { return { ok: false, error: message(e) }; }
 }

@@ -23,7 +23,7 @@ interface Forest {
 const memo = new WeakMap<Engine, Map<string, Forest>>();
 
 export function orgForest(engine: Engine, v: Viewer): Forest {
-  const key = v.allUnits ? "*" : `${v.userId}|${v.employee?.id ?? ""}`;
+  const key = v.allPeople ? "*" : `${v.userId}|${v.employee?.id ?? ""}`;
   let byScope = memo.get(engine);
   if (!byScope) { byScope = new Map(); memo.set(engine, byScope); }
   const hit = byScope.get(key);
@@ -31,7 +31,7 @@ export function orgForest(engine: Engine, v: Viewer): Forest {
 
   const active = [...engine.empById.values()].filter((e) => e.active);
   const activeIds = new Set(active.map((e) => e.id));
-  const visible = new Set(active.filter((e) => v.allUnits || v.employeeIds.has(e.id)).map((e) => e.id));
+  const visible = new Set(active.filter((e) => v.allPeople || v.employeeIds.has(e.id)).map((e) => e.id));
   const kids = new Map<string, string[]>();
   for (const id of visible) {
     const m = engine.empById.get(id)!.managerId;

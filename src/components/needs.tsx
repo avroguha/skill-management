@@ -1,10 +1,11 @@
-// Team needs that are short or rest on one person - capability only, no suggestion
-// of what to do about it.
+// Team needs that are short or rest on one person, and who elsewhere in the organisation
+// already has what is missing. Capability only: no suggestion of what to do about it.
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 export interface NeedView {
   key: string;
+  /** the team (a manager's) */
   unit: string;
   unitHref: string;
   skill: string;
@@ -17,6 +18,9 @@ export interface NeedView {
   spof: boolean;
   explicit: boolean;
   holders: string[];
+  /** people outside the team at this level or above (the first few) */
+  elsewhere: { id: string; name: string; team: string }[];
+  elsewhereCount: number;
 }
 
 export function coverageChipClass(n: Pick<NeedView, "critical" | "count" | "headcount" | "spof">) {
@@ -25,7 +29,7 @@ export function coverageChipClass(n: Pick<NeedView, "critical" | "count" | "head
       : n.spof ? "bg-status-minor text-status-minor-fg" : "bg-status-meets text-status-meets-fg";
 }
 
-export function NeedList({ items, empty = "Every team need in this unit is covered by two or more people." }: { items: NeedView[]; empty?: string }) {
+export function NeedList({ items, empty = "Every team need here is covered by two or more people.", showTeam = true }: { items: NeedView[]; empty?: string; showTeam?: boolean }) {
   if (!items.length) return <p className="text-sm text-muted-foreground">{empty}</p>;
   return (
     <ul className="divide-y">
@@ -37,13 +41,19 @@ export function NeedList({ items, empty = "Every team need in this unit is cover
               <span className="text-xs text-muted-foreground">level {n.level}+ {n.levelName}</span>
             </div>
             <div className="text-xs text-muted-foreground">
-              <Link href={n.unitHref} className="hover:underline">{n.unit}</Link>
-              {" · "}
-              {n.critical ? <span className="font-medium text-status-critical dark:text-[color:oklch(0.75_0.15_27)]">nobody at this level</span>
+              {showTeam && <><Link href={n.unitHref} className="hover:underline">{n.unit}</Link>{" · "}</>}
+              {n.critical ? <span className="font-medium text-status-critical dark:text-[color:oklch(0.75_0.15_27)]">nobody in the team at this level</span>
                 : n.spof ? <span>only {n.holders[0]}</span>
                   : <span>{n.holders.slice(0, 3).join(", ")}{n.holders.length > 3 ? ` +${n.holders.length - 3}` : ""}</span>}
-              {!n.explicit && " · implied by roles"}
+              {!n.explicit && " · implied by the team's roles"}
             </div>
+            {n.elsewhereCount > 0 && (
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                Elsewhere: {n.elsewhere.map((e, i) => (
+                  <span key={e.id}>{i > 0 && ", "}<Link href={`/people/${e.id}`} className="text-foreground hover:underline">{e.name}</Link>{e.team ? ` (${e.team})` : ""}</span>
+                ))}{n.elsewhereCount > n.elsewhere.length ? ` +${n.elsewhereCount - n.elsewhere.length} more` : ""}
+              </div>
+            )}
           </div>
           <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-xs font-medium tabular", coverageChipClass(n))}
             title={`${n.count} of ${n.headcount} needed`}>

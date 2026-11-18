@@ -1,4 +1,4 @@
-// Photo URLs from the template in Admin › ServiceNow (Photos), per person.
+// Photo URLs from the template in Settings › ServiceNow (Photos), per person.
 import { cache } from "react";
 import { getDb, schema } from "@/db";
 import { readProfileSettings, photoUrl } from "@/lib/directory/config";

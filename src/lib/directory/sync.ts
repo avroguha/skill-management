@@ -1,6 +1,6 @@
 // Directory sync: the people under a top-level user, recursively, from ServiceNow
-// sys_user into the employee table - and, optionally, the organisation tree built
-// from the manager chain.
+// sys_user into the employee table, with their managers. A team is a manager and the
+// people below them, so the manager chain IS the organisation.
 //
 //  fetchDirectory  walks down from rootUserName level by level (manager IN <ids>),
 //                  keeps the records whose type field is one of typeValues (the root
@@ -8,7 +8,7 @@
 //                  Excluded records (service accounts) are still walked through.
 //  applyDirectory  one transaction: match by directory id, then e-mail, then login
 //                  name; update; deactivate directory people who are gone (never
-//                  delete: their ratings are history); rebuild the sync-owned units.
+//                  delete: their ratings are history).
 import { eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { DB } from "../../db/index.ts";
 import * as s from "../../db/schema.ts";
@@ -124,12 +124,10 @@ export async function fetchDirectory(sn: ServiceNow, c: DirectoryConfig, opts: {
   return { root, people, excluded, byType, truncated };
 }
 
-export interface ApplyResult { created: number; updated: number; deactivated: number; skipped: number; messages: string[]; units: number; rolesSet: number }
-
-const KIND_BY_DEPTH = ["company", "division", "department"];
+export interface ApplyResult { created: number; updated: number; deactivated: number; skipped: number; messages: string[]; rolesSet: number }
 
 export async function applyDirectory(db: DB, r: FetchResult, c: DirectoryConfig): Promise<ApplyResult> {
-  const out: ApplyResult = { created: 0, updated: 0, deactivated: 0, skipped: 0, messages: [], units: 0, rolesSet: 0 };
+  const out: ApplyResult = { created: 0, updated: 0, deactivated: 0, skipped: 0, messages: [], rolesSet: 0 };
   const now = new Date();
   await db.transaction(async (tx) => {
     const existing = await tx.select().from(s.employee);
@@ -194,7 +192,7 @@ export async function applyDirectory(db: DB, r: FetchResult, c: DirectoryConfig)
         await tx.update(s.employee).set(gradeId === undefined ? { roleId: rule.roleId } : { roleId: rule.roleId, gradeId }).where(eq(s.employee.id, id));
         out.rolesSet += 1;
       }
-      if (missingRole) out.messages.push("a designation rule names a role that no longer exists; fix it in Admin › ServiceNow");
+      if (missingRole) out.messages.push("a designation rule names a role that no longer exists; fix it in Settings › ServiceNow");
     }
 
     // gone from the directory: deactivated, never deleted
@@ -205,71 +203,10 @@ export async function applyDirectory(db: DB, r: FetchResult, c: DirectoryConfig)
       out.deactivated = gone.length;
     }
 
-    if (c.orgFromHierarchy) out.units = await rebuildUnits(tx as unknown as DB, r, localId);
   });
   return out;
 }
 
-/** A unit per included manager ("mgr:<id>"), parented by their manager's unit. A manager
- *  sits in the unit they lead; everyone else in their manager's unit. */
-async function rebuildUnits(tx: DB, r: FetchResult, localId: Map<string, string>): Promise<number> {
-  const reports = new Map<string, number>();
-  for (const p of r.people) if (p.managerExternalId) reports.set(p.managerExternalId, (reports.get(p.managerExternalId) ?? 0) + 1);
-  const managers = r.people.filter((p) => reports.has(p.externalId) || p.externalId === r.root.externalId);
-
-  const existing = await tx.select().from(s.orgUnit).where(sql`${s.orgUnit.externalKey} is not null`);
-  const unitByKey = new Map(existing.map((u) => [u.externalKey!, u.id]));
-
-  // parents first: managers in depth order
-  for (const m of [...managers].sort((a, b) => a.depth - b.depth)) {
-    const key = `mgr:${m.externalId}`;
-    const parentKey = m.managerExternalId ? `mgr:${m.managerExternalId}` : null;
-    const values = {
-      name: m.name,
-      kind: KIND_BY_DEPTH[m.depth] ?? "team",
-      parentId: parentKey ? unitByKey.get(parentKey) ?? null : null,
-      managerId: localId.get(m.externalId) ?? null,
-      sort: 0,
-    };
-    const id = unitByKey.get(key);
-    if (id) await tx.update(s.orgUnit).set(values).where(eq(s.orgUnit.id, id));
-    else unitByKey.set(key, (await tx.insert(s.orgUnit).values({ ...values, externalKey: key }).returning({ id: s.orgUnit.id }))[0].id);
-  }
-  // membership
-  for (const p of r.people) {
-    const id = localId.get(p.externalId);
-    if (!id) continue;
-    const own = unitByKey.get(`mgr:${p.externalId}`);
-    const mgrUnit = p.managerExternalId ? unitByKey.get(`mgr:${p.managerExternalId}`) : undefined;
-    const unitId = (reports.has(p.externalId) || p.externalId === r.root.externalId ? own : mgrUnit) ?? mgrUnit ?? own ?? null;
-    await tx.update(s.employee).set({ unitId }).where(eq(s.employee.id, id));
-  }
-  // sync-owned units nobody leads any more
-  const wanted = new Set(managers.map((m) => `mgr:${m.externalId}`));
-  const stale = existing.filter((u) => !wanted.has(u.externalKey!)).map((u) => u.id);
-  if (stale.length) {
-    await tx.update(s.employee).set({ unitId: null }).where(inArray(s.employee.unitId, stale));
-    await tx.update(s.orgUnit).set({ parentId: null }).where(inArray(s.orgUnit.parentId, stale));
-    await tx.delete(s.orgUnit).where(inArray(s.orgUnit.id, stale));
-  }
-
-  // A hand-made top-level unit that holds nothing (no people, no units below, no team
-  // needs) is a leftover - for example the placeholder "Remove the organisation" leaves -
-  // and would show as a second top next to the tree built here. Units with anything in
-  // them are never touched.
-  const empty = await tx.select({ id: s.orgUnit.id }).from(s.orgUnit).where(sql`${s.orgUnit.externalKey} is null
-    and ${s.orgUnit.parentId} is null
-    and not exists (select 1 from ${s.employee} e where e.unit_id = ${s.orgUnit.id})
-    and not exists (select 1 from ${s.orgUnit} c where c.parent_id = ${s.orgUnit.id})
-    and not exists (select 1 from ${s.unitRequirement} r where r.unit_id = ${s.orgUnit.id})`);
-  if (empty.length) {
-    const ids = empty.map((u) => u.id);
-    await tx.delete(s.snapshot).where(inArray(s.snapshot.unitId, ids));
-    await tx.delete(s.orgUnit).where(inArray(s.orgUnit.id, ids));
-  }
-
-  return managers.length;
-}
 
 // ---- groups (sys_user_group, sys_user_grmember) ---------------------------------------------
 

@@ -1,5 +1,6 @@
 "use client";
-// A list with add / edit / delete for any admin entity, driven by a field list.
+// A list with add / edit / delete for any settings entity, driven by a field list. Every
+// field must say what it does (info): it is shown behind the (i) next to its label.
 import { useState, useTransition } from "react";
 import { Pencil, Plus, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DataTable, type ColSpec } from "@/components/data-table";
 import { cn } from "@/lib/utils";
+import { Info } from "@/components/info";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 type Data = Record<string, unknown>;
@@ -23,6 +25,8 @@ type Data = Record<string, unknown>;
 export interface Field {
   name: string;
   label: string;
+  /** what this field is or changes: required, shown behind the (i) */
+  info: string;
   type?: "text" | "textarea" | "select" | "number" | "switch" | "email" | "date" | "password";
   options?: { value: string; label: string }[];
   placeholder?: string;
@@ -60,7 +64,7 @@ export function RecordDialog({ title, description, fields, initial, save, onClos
             const v = values[f.name];
             return (
               <div key={f.name} className={cn("grid gap-1.5", f.half ? "col-span-1" : "col-span-2")}>
-                {f.type !== "switch" && <Label htmlFor={id}>{f.label}</Label>}
+                {f.type !== "switch" && <div className="flex items-center gap-1.5"><Label htmlFor={id}>{f.label}</Label><Info label={`About ${f.label}`}>{f.info}</Info></div>}
                 {f.type === "textarea" ? (
                   <Textarea id={id} rows={3} value={String(v ?? "")} placeholder={f.placeholder} onChange={(e) => set(f.name, e.target.value)} />
                 ) : f.type === "select" ? (
@@ -75,6 +79,7 @@ export function RecordDialog({ title, description, fields, initial, save, onClos
                   <div className="flex items-center gap-2 pt-1">
                     <Switch id={id} checked={v === true || v === "true"} onCheckedChange={(c) => set(f.name, c)} />
                     <Label htmlFor={id} className="font-normal">{f.label}</Label>
+                    <Info label={`About ${f.label}`}>{f.info}</Info>
                   </div>
                 ) : (
                   <Input id={id} type={f.type ?? "text"} value={String(v ?? "")} placeholder={f.placeholder} onChange={(e) => set(f.name, e.target.value)} />

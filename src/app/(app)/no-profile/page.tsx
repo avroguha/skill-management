@@ -11,7 +11,7 @@ export default async function NoProfilePage() {
       <PageHeader title={`Welcome, ${v.name}`} />
       <Empty>
         Your account ({v.email}) is not linked to an employee record yet, so there is nothing to show.
-        Accounts are linked automatically when the e-mail address matches; otherwise an administrator links them in Admin › Users.
+        Accounts are linked automatically when the e-mail address matches; otherwise an administrator links them in Settings › People &amp; access.
       </Empty>
     </>
   );

@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const db = await getDb();
+    const db = await getDb("live");
     await db.execute(sql`select 1`);
     return Response.json({ ok: true });
   } catch (err) {

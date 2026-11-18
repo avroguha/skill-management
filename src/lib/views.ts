@@ -1,30 +1,36 @@
 // Shapes engine results into the plain, serialisable props the view components take.
-import type { Coverage, Engine } from "@/lib/engine/engine";
+import { ALL, type Coverage, type Engine } from "@/lib/engine/engine";
 import type { NeedView } from "@/components/needs";
 import type { Viewer } from "@/lib/server";
-import type { UnitOption } from "@/components/filter-bar";
 import type { PeopleHeatmapData, UnitHeatmapData } from "@/components/heatmap";
 
-/** Units the viewer may pick, in tree order with depth. */
-export function unitOptions(engine: Engine, v: Viewer): UnitOption[] {
-  const out: UnitOption[] = [];
+export interface ScopeOption { id: string; name: string; depth: number; people: number }
+
+/** The teams a viewer may pick, in tree order with depth: the whole organisation (leaders and
+ *  administrators), then every manager's team they may see. */
+export function scopeOptions(engine: Engine, v: Viewer): ScopeOption[] {
+  const out: ScopeOption[] = [];
   const seen = new Set<string>();
   const walk = (id: string, depth: number) => {
     if (seen.has(id)) return;
     seen.add(id);
-    const u = engine.unitById.get(id);
-    if (!u) return;
-    out.push({ id, name: u.name, depth, kind: u.kind });
-    for (const c of engine.children(id)) walk(c.id, depth + 1);
+    const m = engine.empById.get(id);
+    if (!m || !engine.isManager(m)) return;
+    out.push({ id, name: `${engine.teamLabel(id)} · ${m.name}`, depth, people: engine.reportsOf(id).length });
+    for (const d of engine.directReportsOf(id)) walk(d.id, depth + 1);
   };
-  if (v.allUnits) {
-    for (const r of engine.roots) walk(r.id, 0);
-  } else {
-    // the viewer's top-most managed units, each with its subtree
-    const tops = [...v.unitIds].filter((id) => !engine.ancestors(id).some((a) => v.unitIds.has(a.id)));
-    for (const t of tops) walk(t, 0);
+  if (v.allPeople) {
+    out.push({ id: ALL, name: "Whole organisation", depth: 0, people: engine.activeEmployees.length });
+    for (const t of engine.tops) walk(t.id, 1);
+  } else if (v.employee) {
+    walk(v.employee.id, 0);
   }
   return out;
+}
+
+export function scopeName(engine: Engine, scope: string): string {
+  if (scope === ALL) return "Whole organisation";
+  return engine.teamLabel(scope);
 }
 
 export function withParams(path: string, params: Record<string, string | null | undefined>): string {
@@ -34,29 +40,28 @@ export function withParams(path: string, params: Record<string, string | null | 
   return s ? `${path}?${s}` : path;
 }
 
-export function unitHeatmapData(engine: Engine, unitId: string, o: { categoryId?: string | null; roleId?: string | null; basis?: string | null }): UnitHeatmapData {
-  const h = engine.unitHeatmap(unitId, o);
-  const keep = { role: o.roleId, basis: o.basis };
+export function teamHeatmapData(engine: Engine, scope: string, o: { categoryId?: string | null; page?: string }): UnitHeatmapData {
+  const page = o.page ?? "/insights";
+  const h = engine.teamHeatmap(scope, o);
   return {
     total: h.total,
     columns: h.columns.map((c) => ({
-      id: c.id,
-      name: c.name,
-      href: o.categoryId ? `/skills/${c.id}` : withParams("/", { unit: unitId, category: c.id, ...keep }),
+      id: c.id, name: c.name,
+      href: o.categoryId ? `/skills/${c.id}` : withParams(page, { scope, category: c.id }),
       total: c.total,
     })),
     rows: h.rows.map((r) => ({
-      id: r.id, name: r.name, kind: r.kind, people: r.people, total: r.total, cells: r.cells,
-      href: r.drill ? withParams("/", { unit: r.drill, category: o.categoryId, ...keep }) : withParams("/", { unit: unitId, view: "people", category: o.categoryId, ...keep }),
+      id: r.id, name: r.name, kind: r.drill ? "team" : "direct", people: r.people, total: r.total, cells: r.cells,
+      href: r.drill ? withParams(page, { scope: r.drill, category: o.categoryId }) : (scope === "*" ? null : withParams("/team", { scope, tab: "grid" })),
     })),
   };
 }
 
-export function peopleHeatmapData(engine: Engine, unitId: string, o: { categoryId?: string | null; roleId?: string | null; hideMet?: boolean }): PeopleHeatmapData {
-  const h = engine.peopleHeatmap(unitId, o);
+export function peopleHeatmapData(engine: Engine, scope: string, o: { categoryId?: string | null; hideMet?: boolean; everyone?: boolean; includeRated?: boolean }): PeopleHeatmapData {
+  const h = engine.peopleHeatmap(scope, o);
   return {
     columns: h.columns.map((c) => ({
-      id: c.id, name: c.name, category: c.category, href: `/skills/${c.id}?unit=${unitId}`,
+      id: c.id, name: c.name, category: c.category, href: `/skills/${c.id}`,
       coverage: c.coverage ? {
         count: c.coverage.count, headcount: c.coverage.headcount, level: c.coverage.level,
         spof: c.coverage.spof, shortfall: c.coverage.shortfall, explicit: c.coverage.explicit,
@@ -77,14 +82,15 @@ export function peopleHeatmapData(engine: Engine, unitId: string, o: { categoryI
   };
 }
 
-/** A short team need for NeedList: names of who holds it, links to drill in. */
-export function needView(engine: Engine, c: Coverage, levelName: (n: number) => string): NeedView {
+/** A short team need for NeedList: who holds it, and who elsewhere already has it. */
+export function needView(engine: Engine, c: Coverage, levelName: (n: number) => string, v?: Viewer): NeedView {
+  const elsewhere = engine.holdersOutside(c.managerId, c.skillId, c.level).filter((e) => !v || v.allPeople || v.employeeIds.has(e.id));
   return {
-    key: `${c.unitId}|${c.skillId}`,
-    unit: engine.unitById.get(c.unitId)?.name ?? "",
-    unitHref: withParams("/", { unit: c.unitId, view: "people" }),
+    key: `${c.managerId}|${c.skillId}`,
+    unit: engine.teamLabel(c.managerId),
+    unitHref: withParams("/team", { scope: c.managerId }),
     skill: engine.skillLabel(c.skillId),
-    skillHref: `/skills/${c.skillId}?unit=${c.unitId}`,
+    skillHref: `/skills/${c.skillId}`,
     level: c.level,
     levelName: levelName(c.level),
     count: c.count,
@@ -93,5 +99,7 @@ export function needView(engine: Engine, c: Coverage, levelName: (n: number) => 
     spof: c.spof,
     explicit: c.explicit,
     holders: c.holders.map((id) => engine.empById.get(id)?.name ?? "?"),
+    elsewhere: elsewhere.slice(0, 5).map((e) => ({ id: e.id, name: e.name, team: e.managerId ? engine.teamLabel(e.managerId) : "" })),
+    elsewhereCount: elsewhere.length,
   };
 }

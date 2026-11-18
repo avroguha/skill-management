@@ -1,5 +1,5 @@
 "use server";
-// Admin › Import & export: back up now, restore a stored backup, delete one, and the
+// Settings › Data & backups: back up now, restore a stored backup, delete one, and the
 // automatic backup settings. Uploading a backup file goes through /api/backup/restore
 // (files can be larger than a server action accepts); downloads through /api/backup/<name>.
 import fs from "node:fs";
@@ -14,7 +14,7 @@ type Fail = { ok: false; error: string };
 const fail = (e: unknown): Fail => ({ ok: false, error: e instanceof z.ZodError ? e.issues[0]?.message ?? "Check the values." : (e as Error).message });
 
 async function admin(): Promise<Viewer> {
-  const v = await actionViewer();
+  const v = await actionViewer({ live: true });
   if (!v.isAdmin) throw new Error("Administrators only.");
   return v;
 }
@@ -24,7 +24,7 @@ export async function backupNow(): Promise<{ ok: true; name: string } | Fail> {
     const v = await admin();
     const b = await saveBackup(await getDb(), v.name, "manual");
     await audit(v, "backup", "backup", b.name, b.summary);
-    revalidatePath("/admin/data");
+    revalidatePath("/settings/data");
     return { ok: true, name: b.name };
   } catch (e) { return fail(e); }
 }
@@ -44,7 +44,7 @@ export async function removeStored(name: string): Promise<{ ok: true } | Fail> {
     const v = await admin();
     deleteBackup(name);
     await audit(v, "delete_backup", "backup", name);
-    revalidatePath("/admin/data");
+    revalidatePath("/settings/data");
     return { ok: true };
   } catch (e) { return fail(e); }
 }
@@ -64,7 +64,7 @@ export async function saveBackupSettings(input: BackupSettings): Promise<{ ok: t
     await writeBackupSettings(db, s);
     if (s.keep < before.keep) pruneBackups(s.keep);
     await audit(v, "backup_settings", "app_setting", "backup", s);
-    revalidatePath("/admin/data");
+    revalidatePath("/settings/data");
     return { ok: true };
   } catch (e) { return fail(e); }
 }

@@ -1,14 +1,14 @@
-// People: the directory for the viewer's scope, and the people finder
-// ("who has Kubernetes at Proficient or above?").
-import { asc } from "drizzle-orm";
-import { getDb, schema } from "@/db";
+// People: everyone the viewer may see, and the finder ("who has Kubernetes at 3 or above?").
 import { PageHeader } from "@/components/page-header";
 import { FilterBar, UnitPicker, SelectFilter, ClearFilters, SearchParamInput } from "@/components/filter-bar";
 import { Section } from "@/components/kpi";
 import { DataTable } from "@/components/data-table";
 import { Empty } from "@/components/heatmap";
-import { requireOrgViewer, getEngine, scopeUnit, param, type SearchParams } from "@/lib/server";
-import { unitOptions } from "@/lib/views";
+import { Info } from "@/components/info";
+import { requireTeamViewer, getEngine, param, type SearchParams } from "@/lib/server";
+import { maySeeScope } from "@/lib/access";
+import { getLevels } from "@/lib/levels";
+import { scopeOptions } from "@/lib/views";
 
 export const metadata = { title: "People" };
 
@@ -17,109 +17,97 @@ const MAX_ROWS = 500;
 
 export default async function PeoplePage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const v = await requireOrgViewer();
+  const v = await requireTeamViewer();
   const engine = await getEngine();
-  const unitId = scopeUnit(v, param(sp, "unit"));
-  if (!unitId) return (<><PageHeader title="People" /><Empty>No organisation units yet.</Empty></>);
+  const requested = param(sp, "scope");
+  const scope = requested && maySeeScope(v, requested) ? requested : v.homeScope!;
   const roleId = param(sp, "role") ?? null;
   const skillId = param(sp, "skill") ?? null;
-  const min = Math.max(0, Math.min(5, Number(param(sp, "min") ?? 3)));
+  const min = Math.max(1, Math.min(5, Number(param(sp, "min") ?? 3)));
   const q = (param(sp, "q") ?? "").trim().toLowerCase();
+  const levels = await getLevels();
 
-  const db = await getDb();
-  const [roles, grades, levelRows] = await Promise.all([
-    db.select().from(schema.jobRole).orderBy(asc(schema.jobRole.name)),
-    db.select().from(schema.grade),
-    db.select().from(schema.proficiencyLevel).orderBy(asc(schema.proficiencyLevel.level)),
-  ]);
-  const roleName = new Map(roles.map((r) => [r.id, r.name]));
-  const gradeName = new Map(grades.map((g) => [g.id, g.name]));
-  const unitName = (id: string | null) => (id ? engine.unitById.get(id)?.name ?? "" : "");
-
-  const visible = engine.membersOf(unitId).filter((e) => (v.allUnits || v.employeeIds.has(e.id)) && (!roleId || e.roleId === roleId)
+  const visible = engine.membersOf(scope).filter((e) => (v.allPeople || v.employeeIds.has(e.id)) && (!roleId || e.roleId === roleId)
     && (!q || `${e.name} ${e.title} ${e.email}`.toLowerCase().includes(q)));
+  if (!engine.activeEmployees.length) return (<><PageHeader title="People" /><Empty>No people yet. They come from ServiceNow (Settings › ServiceNow) or a people CSV (Settings › Data).</Empty></>);
   const skills = [...engine.skillById.values()].filter((s) => engine.isRateable(s.id))
     .sort((a, b) => engine.skillLabel(a.id).localeCompare(engine.skillLabel(b.id)))
     .map((s) => ({ id: s.id, name: `${engine.skillLabel(s.id)} (${engine.categoryById.get(s.categoryId)?.name ?? ""})` }));
+  const team = (managerId: string | null) => (managerId ? engine.teamLabel(managerId) : "");
 
   const toolbar = (
     <FilterBar>
       <SearchParamInput value={param(sp, "q") ?? null} placeholder="Find anyone by name or e-mail…" />
-      <UnitPicker units={unitOptions(engine, v)} value={unitId} />
-      <SelectFilter name="role" label="Role" allLabel="All roles" value={roleId} options={roles.map((r) => ({ id: r.id, name: r.name }))} />
+      <UnitPicker units={scopeOptions(engine, v).map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" />
+      <SelectFilter name="role" label="Role" allLabel="All roles" value={roleId} options={engine.roles.map((r) => ({ id: r.id, name: r.name })).sort((a, b) => a.name.localeCompare(b.name))} />
       <SelectFilter name="skill" label="Has skill" allLabel="Any skill" value={skillId} options={skills} />
       {skillId && (
-        <SelectFilter name="min" label="At least" allLabel="At least Proficient (3)" value={param(sp, "min") ?? null}
-          options={levelRows.filter((l) => l.level > 0).map((l) => ({ id: String(l.level), name: `At least ${l.name} (${l.level})` }))} />
+        <SelectFilter name="min" label="At least" allLabel="At least 3 (Proficient)" value={param(sp, "min") ?? null}
+          options={levels.filter((l) => l.level > 0).map((l) => ({ id: String(l.level), name: `At least ${l.level} (${l.name})` }))} />
       )}
       <ClearFilters keys={["role", "skill", "min", "q"]} />
+      <Info label="About finding people">Pick a skill to find who has it at a level or above (confirmed by their manager), across the team you chose. Search finds a person by name or e-mail.</Info>
     </FilterBar>
   );
 
   if (skillId && engine.skillById.has(skillId)) {
     const ids = new Set(visible.map((e) => e.id));
-    const all = engine.find(unitId, skillId, min).filter(({ e }) => ids.has(e.id));
+    const all = engine.find(scope, skillId, min).filter(({ e }) => ids.has(e.id));
     const found = all.slice(0, MAX_ROWS).map(({ e, c }) => ({
-      name: e.name, href: `/people/${e.id}`, title: e.title, team: unitName(e.unitId), role: roleName.get(e.roleId ?? "") ?? "",
-      level: c.level, target: c.target, assessed: c.at?.toISOString() ?? null, stale: c.stale ? "Stale" : "", interest: c.interest ? "Yes" : "",
-      location: engine.empById.get(e.id)?.location ?? "",
+      name: e.name, href: `/people/${e.id}`, title: e.title, team: team(e.managerId), role: engine.roleById.get(e.roleId ?? "")?.name ?? "",
+      level: c.level, target: c.target, assessed: c.at?.toISOString() ?? null, interest: c.interest ? "Yes" : "", location: e.location ?? "",
     }));
     return (
       <>
-        <PageHeader title="People finder" description={`Who has ${engine.skillLabel(skillId)} at level ${min} or above, validated by a manager.`} />
+        <PageHeader title="People" description={`Who has ${engine.skillLabel(skillId)} at ${min} or above, confirmed by their manager`} />
         {toolbar}
         <Section title={`${all.length.toLocaleString("en-GB")} ${all.length === 1 ? "person" : "people"}`}
-          description={all.length > found.length ? `Showing the highest ${found.length} levels first. Choose a unit or role to narrow it down.` : undefined}>
-          <DataTable csvName="people-finder" rows={found} initialSort={{ key: "level", desc: true }}
-            emptyText="Nobody in this scope has a validated rating at that level."
+          description={all.length > found.length ? `Showing the highest ${found.length} levels first. Choose a team or role to narrow it down.` : undefined}>
+          <DataTable csvName="people-with-skill" rows={found} initialSort={{ key: "level", desc: true }} emptyText="Nobody here has a confirmed rating at that level."
             columns={[
               { key: "name", header: "Name", kind: "link", hrefKey: "href" },
-              { key: "title", header: "Title", kind: "muted" },
+              { key: "title", header: "Designation", kind: "muted" },
               { key: "team", header: "Team", facet: true },
               { key: "location", header: "Location", kind: "muted", facet: true },
-              { key: "level", header: "Level", kind: "level", align: "center" },
-              { key: "target", header: "Their target", kind: "level", align: "center" },
-              { key: "assessed", header: "Validated", kind: "date" },
-              { key: "stale", header: "", kind: "muted", sortable: false },
-              { key: "interest", header: "Wants more", kind: "muted", facet: true },
+              { key: "level", header: "Level", kind: "level", align: "center", info: "Their confirmed level in this skill." },
+              { key: "target", header: "Their target", kind: "level", align: "center", info: "What their own role asks for in this skill; empty when it asks for nothing." },
+              { key: "assessed", header: "Confirmed", kind: "date" },
+              { key: "interest", header: "Wants to grow", kind: "muted", facet: true, info: "They starred this skill: they would like to get better at it." },
             ]} />
         </Section>
       </>
     );
   }
 
-  // first MAX_ROWS by name; counts come straight from the ratings (no profile per person)
   const shown = [...visible].sort((a, b) => a.name.localeCompare(b.name)).slice(0, MAX_ROWS);
   const rows = shown.map((e) => {
-    const agg = engine.aggregate([e]);
+    const p = engine.progress(e);
     return {
-      name: e.name, href: `/people/${e.id}`, title: e.title, team: unitName(e.unitId),
-      role: roleName.get(e.roleId ?? "") ?? "", grade: gradeName.get(e.gradeId ?? "") ?? "", location: e.location ?? "",
-      onTarget: agg.pct, assessed: agg.required ? Math.round((agg.assessed / agg.required) * 100) : null,
-      pending: engine.ratingsOf(e.id).filter((r) => r.status === "submitted").length || null,
-      stale: agg.stale || null,
+      name: e.name, href: `/people/${e.id}`, title: e.title, team: team(e.managerId),
+      role: engine.roleById.get(e.roleId ?? "")?.name ?? "", grade: engine.gradeById.get(e.gradeId ?? "")?.name ?? "", location: e.location ?? "",
+      onTarget: engine.aggregate([e]).pct, rated: p.required ? `${p.rated} / ${p.required}` : "–",
+      skills: engine.ratingsOf(e.id).filter((r) => r.validatedLevel != null && engine.isRateable(r.skillId)).length,
     };
   });
 
   return (
     <>
-      <PageHeader title="People" description={`${visible.length.toLocaleString("en-GB")} people in ${engine.unitById.get(unitId)?.name}`} />
+      <PageHeader title="People" description={`${visible.length.toLocaleString("en-GB")} people`} />
       {toolbar}
       {visible.length > rows.length && (
-        <p className="mb-3 text-sm text-muted-foreground">Showing the first {rows.length.toLocaleString("en-GB")} of {visible.length.toLocaleString("en-GB")} by name. Search, or choose a unit or role, to narrow it down.</p>
+        <p className="mb-3 text-sm text-muted-foreground">Showing the first {rows.length.toLocaleString("en-GB")} of {visible.length.toLocaleString("en-GB")} by name. Search, or choose a team or role, to narrow it down.</p>
       )}
-      <DataTable csvName="people" rows={rows} initialSort={{ key: "name" }} searchPlaceholder="Find a person…"
+      <DataTable csvName="people" rows={rows} initialSort={{ key: "name" }} searchPlaceholder="Filter this list…"
         columns={[
           { key: "name", header: "Name", kind: "link", hrefKey: "href" },
-          { key: "title", header: "Title", kind: "muted" },
-          { key: "team", header: "Team", facet: true },
+          { key: "title", header: "Designation", kind: "muted" },
+          { key: "team", header: "Team", facet: true, info: "The team of their manager." },
           { key: "role", header: "Role", facet: true },
           { key: "grade", header: "Grade", kind: "muted", facet: true },
           { key: "location", header: "Location", kind: "muted", facet: true },
-          { key: "onTarget", header: "On target", kind: "pct", align: "right" },
-          { key: "assessed", header: "Assessed", kind: "pct", align: "right" },
-          { key: "pending", header: "To validate", kind: "number", align: "right" },
-          { key: "stale", header: "Stale", kind: "number", align: "right" },
+          { key: "skills", header: "Skills", kind: "number", align: "right", info: "Skills with a confirmed level." },
+          { key: "rated", header: "Rated", align: "right", info: "Of the skills their role asks for, how many they rated." },
+          { key: "onTarget", header: "On target", kind: "pct", align: "right", info: "Of the skills their role asks for, the share where the confirmed level reaches the target." },
         ]} />
     </>
   );

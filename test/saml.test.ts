@@ -16,7 +16,6 @@ import { SignedXml } from "xml-crypto";
 
 const APP = "https://skills.avro.test";
 process.env.PGLITE_DIR = "memory://";
-process.env.SEED_DEMO = "true";
 process.env.APP_URL = APP;
 process.env.BETTER_AUTH_SECRET = crypto.randomBytes(32).toString("hex");
 delete process.env.DATABASE_URL;
@@ -133,7 +132,17 @@ let idp: Idp;
 let adminCookie = "";
 
 test.before(async () => {
-  await getDb();
+  const db = await getDb();
+  // a few synced people (v2: made-up people live only in the demo database)
+  const boss = crypto.randomUUID();
+  await db.insert(schema.employee).values([
+    { id: boss, name: "Asha Rao", email: "asha.rao@avro.com", title: "Director", source: "directory", userName: "asha.rao" },
+    ...["Ben Cole", "Cara Diaz", "Dev Iyer", "Eli Moss", "Fia Nolan"].map((n) => ({
+      name: n, email: `${n.toLowerCase().replace(" ", ".")}@avro.com`, title: "Engineer", managerId: boss, source: "directory", userName: n.toLowerCase().replace(" ", "."),
+    })),
+  ]);
+  const { refreshGate } = await import("../src/lib/sso-gate.ts");
+  await refreshGate(db);
   idp = identityProvider();
   const res = await call("/sign-in/username", { json: { username: "admin", password: "admin" } });
   assert.equal(res.status, 200, await res.clone().text());

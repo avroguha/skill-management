@@ -7,7 +7,6 @@ import * as s from "../../db/schema.ts";
 import { readDirectoryConfig, directoryPassword } from "./config.ts";
 import { createServiceNow } from "./servicenow.ts";
 import { runSync } from "./sync.ts";
-import { takeSnapshot } from "../snapshots.ts";
 import { refreshGate } from "../sso-gate.ts";
 import { takeLease, releaseLease } from "../lease.ts";
 
@@ -22,7 +21,6 @@ export async function syncNow(db: DB, trigger: "manual" | "schedule", actorName 
     const run = await runSync(db, sn, c, trigger, actorName);
     if (run.status === "ok") {
       await refreshGate(db); // newly synced people can sign in, leavers cannot
-      await takeSnapshot(db);
     }
     return run;
   } finally {

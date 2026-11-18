@@ -2,9 +2,13 @@
 // in-memory dataset. No database, no framework imports, so it is unit-tested
 // directly (test/engine.test.ts) and every page agrees with every other page.
 //
-// Rules (IDEAS.md sections 1, 3, 4, 5):
-//  * Required level precedence: a manager's per-person target > the role's
-//    grade-specific target > the role's all-grades target. The source is reported.
+// v2: a TEAM is a manager and everyone below them. There are no units.
+//
+// Rules:
+//  * Who assesses themselves: everyone except people who manage others (unless the
+//    "managers assess too" setting is on) and the top of the organisation. A manager
+//    may still add skills of their own: they count as capability, never as a gap.
+//  * Required level: the person's role target for their grade, else for all grades.
 //  * "Not assessed" (no level) is never treated as 0.
 //  * Gap = target - level. 0 or less: meets. 1: minor. 2: significant.
 //    3+: critical; also critical when the target is Proficient (3) or above and
@@ -13,20 +17,15 @@
 //    settings.excludeStale decides whether it counts as on target.
 //  * Roll-ups count (person, required skill) pairs at or above target. Levels are
 //    never averaged across people: an average hides one expert and four novices.
-//  * Team demand: an explicit unit requirement (N people at level L), else an
-//    implicit one for every mandatory skill a direct member's role needs:
-//    1 person at the role baseline (the lowest such target in the team), and only
-//    when at least two members need it - a skill one person alone is expected to
-//    have is that person's gap, not a team bus-factor risk. A stricter or
-//    different need is what an explicit requirement is for. Coverage = members at or above L.
-//  * Capability only: the engine reports what is short and where, never what to
-//    do about it, and never suggests hiring (owner, 2026-11-12, confirmed 2026-11-15).
-//    advice.ts adds two things on My team only: the talent to look for in a position a
-//    manager has chosen to open, and the training that would help a team.
+//  * Team need: what a manager set ("N people at level L in skill S"), else an implicit
+//    one for every mandatory skill at least two of the manager's direct reports need
+//    (1 person at the lowest such target). Coverage = people in the team at or above L.
+//  * Capability only: the engine reports what is short and where, and who elsewhere
+//    already has it - never what to do about it, and never hiring.
 
 export type Basis = "validated" | "self";
 export type GapCategory = "meets" | "minor" | "significant" | "critical" | "unassessed" | "not_required";
-export type TargetSource = "person" | "grade" | "role";
+export type TargetSource = "grade" | "role";
 
 export interface Settings {
   staleMonths: number;
@@ -35,13 +34,17 @@ export interface Settings {
   greenAt: number;
   /** on-target % at or above which an aggregate cell is amber (below: red) */
   amberAt: number;
+  /** people who manage others are asked to assess themselves too */
+  managersAssess: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { staleMonths: 12, excludeStale: false, greenAt: 85, amberAt: 60 };
+export const DEFAULT_SETTINGS: Settings = { staleMonths: 12, excludeStale: false, greenAt: 85, amberAt: 60, managersAssess: false };
 
-export interface Unit { id: string; name: string; kind: string; parentId: string | null; managerId: string | null; sort?: number }
+/** The whole organisation, as a scope. */
+export const ALL = "*";
+
 export interface Employee {
-  id: string; name: string; email: string; title: string; unitId: string | null;
+  id: string; name: string; email: string; title: string; teamName?: string;
   roleId: string | null; gradeId: string | null; managerId: string | null; active: boolean; location?: string;
 }
 export interface Category { id: string; name: string; sort: number }
@@ -49,8 +52,7 @@ export interface Skill { id: string; name: string; categoryId: string; parentId:
 export interface Role { id: string; name: string }
 export interface Grade { id: string; name: string; rank: number }
 export interface RoleSkill { roleId: string; gradeId: string | null; skillId: string; target: number; mandatory: boolean }
-export interface UnitRequirement { unitId: string; skillId: string; minLevel: number; headcount: number }
-export interface EmployeeTarget { employeeId: string; skillId: string; target: number; reason: string }
+export interface TeamNeed { managerId: string; skillId: string; minLevel: number; headcount: number }
 export interface Rating {
   employeeId: string; skillId: string;
   selfLevel: number | null; selfAt: Date | null;
@@ -61,19 +63,17 @@ export interface Rating {
 export interface Dataset {
   now: number;
   settings: Settings;
-  units: Unit[];
   employees: Employee[];
   categories: Category[];
   skills: Skill[];
   roles: Role[];
   grades: Grade[];
   roleSkills: RoleSkill[];
-  unitRequirements: UnitRequirement[];
-  employeeTargets: EmployeeTarget[];
+  teamNeeds: TeamNeed[];
   ratings: Rating[];
 }
 
-export interface Target { target: number; mandatory: boolean; source: TargetSource; reason?: string }
+export interface Target { target: number; mandatory: boolean; source: TargetSource }
 
 export interface Cell {
   employeeId: string;
@@ -109,28 +109,26 @@ export interface TalentSkill {
   /** rated at level 1 or above */ holders: number;
   /** level 3 or above */ proficient: number;
   /** level 4 or above */ expert: number;
-  levelSum: number;
-  /** people whose own target asks for it */ needed: number;
+  /** people whose role asks for it */ needed: number;
   /** of those, at or above their target */ onTarget: number;
-  /** level 3 or above without their target asking for it */ extra: number;
+  /** level 3 or above without their role asking for it */ extra: number;
   interested: number;
 }
 
 export interface Talent {
   people: number;
   rated: number;
-  avgLevel: number | null;
   skills: Map<string, TalentSkill>;
   byCategory: Map<string, number[]>;
-  roles: Map<string, number>;
-  grades: Map<string, number>;
 }
 
 export interface Demand {
-  unitId: string;
+  /** the manager whose team this is */
+  managerId: string;
   skillId: string;
   level: number;
   headcount: number;
+  /** set by the manager (true) or implied by the team's roles (false) */
   explicit: boolean;
 }
 
@@ -138,12 +136,21 @@ export interface Coverage extends Demand {
   holders: string[];
   count: number;
   shortfall: number;
+  /** exactly one person holds it */
   spof: boolean;
+  /** nobody holds it */
   critical: boolean;
 }
 
+/** Someone outside a team who already has what the team is short of. */
+export interface Fit {
+  managerId: string;
+  /** the short needs of that team this person meets */
+  skills: { skillId: string; level: number; has: number }[];
+}
+
 const DAY = 86400e3;
-/** Members who must need a mandatory skill before the team as a whole is said to need it. */
+/** Direct reports who must need a mandatory skill before the team as a whole is said to need it. */
 export const MIN_REQUIRERS = 2;
 
 export function gapCategory(target: number | null, level: number | null): GapCategory {
@@ -161,43 +168,21 @@ export function pct(met: number, required: number): number | null {
 
 export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
   const basis: Basis = opts.basis ?? "validated";
-  const settings = ds.settings;
+  const settings = { ...DEFAULT_SETTINGS, ...ds.settings };
   const staleBefore = ds.now - settings.staleMonths * 30.4375 * DAY;
 
-  const unitById = new Map(ds.units.map((u) => [u.id, u]));
-  const children = new Map<string, Unit[]>();
-  for (const u of ds.units) {
-    if (u.parentId && unitById.has(u.parentId)) {
-      const list = children.get(u.parentId) ?? [];
-      list.push(u);
-      children.set(u.parentId, list);
-    }
-  }
-  for (const list of children.values()) list.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.name.localeCompare(b.name));
-
-  const roots = ds.units.filter((u) => !u.parentId || !unitById.has(u.parentId));
-  const activeEmployees = ds.employees.filter((e) => e.active);
+  const activeEmployees = ds.employees.filter((e) => e.active).sort((a, b) => a.name.localeCompare(b.name));
   const empById = new Map(ds.employees.map((e) => [e.id, e]));
-  const directMembers = new Map<string, Employee[]>();
-  for (const e of activeEmployees) {
-    if (!e.unitId) continue;
-    const list = directMembers.get(e.unitId) ?? [];
-    list.push(e);
-    directMembers.set(e.unitId, list);
-  }
-  for (const list of directMembers.values()) list.sort((a, b) => a.name.localeCompare(b.name));
-  // Reporting lines and unit managers, indexed once per data version: every page asks
-  // "who is below this person", and scanning everyone per step was O(people²) at 10k.
+  // Reporting lines, indexed once per data version: every page asks "who is below this
+  // person", and scanning everyone per step was O(people²) at 10k.
   const directReports = new Map<string, Employee[]>();
   for (const e of activeEmployees) {
-    if (!e.managerId) continue;
+    if (!e.managerId || e.managerId === e.id) continue;
     const list = directReports.get(e.managerId) ?? [];
     list.push(e);
     directReports.set(e.managerId, list);
   }
-  for (const list of directReports.values()) list.sort((a, b) => a.name.localeCompare(b.name));
-  const unitsByManager = new Map<string, string[]>();
-  for (const u of ds.units) if (u.managerId) unitsByManager.set(u.managerId, [...(unitsByManager.get(u.managerId) ?? []), u.id]);
+  const isManager = (emp: Employee) => (directReports.get(emp.id)?.length ?? 0) > 0;
 
   const skillById = new Map(ds.skills.map((s) => [s.id, s]));
   const activeChildCount = new Map<string, number>();
@@ -211,13 +196,14 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
   };
   const categoryById = new Map(ds.categories.map((c) => [c.id, c]));
   const gradeById = new Map(ds.grades.map((g) => [g.id, g]));
+  const roleById = new Map(ds.roles.map((r) => [r.id, r]));
 
   const ratingByKey = new Map(ds.ratings.map((r) => [`${r.employeeId}|${r.skillId}`, r]));
   const ratingsByEmp = new Map<string, Rating[]>();
+  const ratingsBySkill = new Map<string, Rating[]>();
   for (const r of ds.ratings) {
-    const list = ratingsByEmp.get(r.employeeId) ?? [];
-    list.push(r);
-    ratingsByEmp.set(r.employeeId, list);
+    ratingsByEmp.set(r.employeeId, [...(ratingsByEmp.get(r.employeeId) ?? []), r]);
+    ratingsBySkill.set(r.skillId, [...(ratingsBySkill.get(r.skillId) ?? []), r]);
   }
 
   // role -> grade ("" = all grades) -> skill -> RoleSkill
@@ -230,95 +216,88 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     byGrade.set(g, bySkill);
     roleIndex.set(rs.roleId, byGrade);
   }
-  const personTargets = new Map<string, Map<string, EmployeeTarget>>();
-  for (const t of ds.employeeTargets) {
-    const m = personTargets.get(t.employeeId) ?? new Map();
-    m.set(t.skillId, t);
-    personTargets.set(t.employeeId, m);
-  }
-  const unitReqs = new Map<string, UnitRequirement[]>();
-  for (const r of ds.unitRequirements) {
-    const list = unitReqs.get(r.unitId) ?? [];
-    list.push(r);
-    unitReqs.set(r.unitId, list);
-  }
+  const needsByManager = new Map<string, TeamNeed[]>();
+  for (const n of ds.teamNeeds) needsByManager.set(n.managerId, [...(needsByManager.get(n.managerId) ?? []), n]);
 
   // ---- hierarchy ----------------------------------------------------------------
 
-  const subtreeMemo = new Map<string, string[]>();
-  function subtreeUnitIds(unitId: string): string[] {
-    const hit = subtreeMemo.get(unitId);
-    if (hit) return hit;
-    const out: string[] = [];
-    const stack = [unitId];
-    const seen = new Set<string>();
-    while (stack.length) {
-      const id = stack.pop()!;
-      if (seen.has(id)) continue; // a cycle in bad data must not hang the app
-      seen.add(id);
-      out.push(id);
-      for (const c of children.get(id) ?? []) stack.push(c.id);
-    }
-    subtreeMemo.set(unitId, out);
-    return out;
-  }
-
-  const membersMemo = new Map<string, Employee[]>();
-  function membersOf(unitId: string): Employee[] {
-    const hit = membersMemo.get(unitId);
-    if (hit) return hit;
-    const out = subtreeUnitIds(unitId).flatMap((id) => directMembers.get(id) ?? []);
-    membersMemo.set(unitId, out);
-    return out;
-  }
-
-  function ancestors(unitId: string): Unit[] {
-    const out: Unit[] = [];
-    const seen = new Set<string>();
-    let u = unitById.get(unitId);
-    while (u && u.parentId && !seen.has(u.parentId)) {
-      seen.add(u.parentId);
-      const p = unitById.get(u.parentId);
-      if (!p) break;
-      out.unshift(p);
-      u = p;
-    }
-    return out;
-  }
-
-  /** Units managed by an employee, either as unit manager or through direct reports' units. */
-  function managedUnitIds(employeeId: string): string[] {
-    return unitsByManager.get(employeeId) ?? [];
-  }
-
-  /** Everyone an employee may see and validate: their managed units' members plus reports, recursively. */
+  /** Everyone below a person, recursively (not the person). ALL: everyone active. */
   const reportsMemo = new Map<string, Employee[]>();
-  function reportsOf(employeeId: string): Employee[] {
-    const hit = reportsMemo.get(employeeId);
+  function reportsOf(leaderId: string): Employee[] {
+    if (leaderId === ALL) return activeEmployees;
+    const hit = reportsMemo.get(leaderId);
     if (hit) return hit;
-    const out = new Map<string, Employee>();
-    for (const uid of managedUnitIds(employeeId)) for (const e of membersOf(uid)) if (e.id !== employeeId) out.set(e.id, e);
-    const stack = [employeeId];
-    const seen = new Set<string>();
+    const out: Employee[] = [];
+    const stack = [leaderId];
+    const seen = new Set<string>([leaderId]);
     while (stack.length) {
       const id = stack.pop()!;
-      if (seen.has(id)) continue;
-      seen.add(id);
       for (const e of directReports.get(id) ?? []) {
-        if (e.id !== employeeId) {
-          out.set(e.id, e);
-          stack.push(e.id);
-        }
+        if (seen.has(e.id)) continue; // a cycle in bad data must not hang the app
+        seen.add(e.id);
+        out.push(e);
+        stack.push(e.id);
       }
     }
-    const list = [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
-    reportsMemo.set(employeeId, list);
-    return list;
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    reportsMemo.set(leaderId, out);
+    return out;
+  }
+
+  /** The team of a manager: the manager and everyone below them. ALL: everyone active. */
+  const membersMemo = new Map<string, Employee[]>();
+  function membersOf(leaderId: string): Employee[] {
+    if (leaderId === ALL) return activeEmployees;
+    const hit = membersMemo.get(leaderId);
+    if (hit) return hit;
+    const leader = empById.get(leaderId);
+    const out = leader?.active ? [leader, ...reportsOf(leaderId)] : reportsOf(leaderId);
+    membersMemo.set(leaderId, out);
+    return out;
+  }
+
+  /** The managers above a person, nearest last. */
+  function chainOf(employeeId: string): Employee[] {
+    const out: Employee[] = [];
+    const seen = new Set<string>([employeeId]);
+    let cur = empById.get(employeeId);
+    while (cur?.managerId && !seen.has(cur.managerId)) {
+      seen.add(cur.managerId);
+      const m = empById.get(cur.managerId);
+      if (!m) break;
+      out.unshift(m);
+      cur = m;
+    }
+    return out;
+  }
+
+  // The top of the organisation leads people and has nobody (active) above them.
+  function isTop(emp: Employee): boolean {
+    const mgr = emp.managerId ? empById.get(emp.managerId) : undefined;
+    return (!mgr || !mgr.active || mgr.id === emp.id) && isManager(emp);
+  }
+  const tops = activeEmployees.filter(isTop).sort((a, b) => reportsOf(b.id).length - reportsOf(a.id).length || a.name.localeCompare(b.name));
+
+  /** Whether a person is asked to assess themselves (and so has targets and gaps). */
+  function assesses(emp: Employee): boolean {
+    if (!emp.active || isTop(emp)) return false;
+    return settings.managersAssess || !isManager(emp);
+  }
+
+  /** The managers in a scope (the leader included): each one's team is a team. */
+  function managersIn(leaderId: string): Employee[] {
+    return membersOf(leaderId).filter(isManager);
+  }
+
+  function teamLabel(managerId: string): string {
+    const m = empById.get(managerId);
+    if (!m) return "";
+    return m.teamName?.trim() || `${m.name}'s team`;
   }
 
   // ---- targets and levels ------------------------------------------------------
 
-  /** Ratings waiting for validation among these people: a count, no profiles built. */
+  /** Ratings waiting for confirmation among these people: a count, no profiles built. */
   function submittedCount(employeeIds: Iterable<string>): number {
     let n = 0;
     for (const id of employeeIds) {
@@ -328,27 +307,12 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     return n;
   }
 
-  // The top of the organisation is not asked for skills: nobody above them (no manager, or
-  // one who has left) and people below them (direct reports, or the top unit they lead).
-  // No targets, nothing required, so they count in no roll-up, gap or implied team need.
-  const leadsPeople = new Set(ds.employees.filter((e) => e.active && e.managerId).map((e) => e.managerId!));
-  const leadsTopUnit = new Set(ds.units.filter((u) => !u.parentId && u.managerId).map((u) => u.managerId!));
-  function isTop(emp: Employee): boolean {
-    const mgr = emp.managerId ? empById.get(emp.managerId) : undefined;
-    return (!mgr || !mgr.active) && (leadsPeople.has(emp.id) || leadsTopUnit.has(emp.id));
-  }
-
   function targetFor(emp: Employee, skillId: string): Target | null {
-    if (isTop(emp)) return null;
+    if (!assesses(emp)) return null;
     const byGrade = emp.roleId ? roleIndex.get(emp.roleId) : undefined;
     const graded = emp.gradeId ? byGrade?.get(emp.gradeId)?.get(skillId) : undefined;
-    const general = byGrade?.get("")?.get(skillId);
-    const roleRow = graded ?? general;
-    const person = personTargets.get(emp.id)?.get(skillId);
-    if (person) {
-      return { target: person.target, mandatory: roleRow?.mandatory ?? true, source: "person", reason: person.reason };
-    }
     if (graded) return { target: graded.target, mandatory: graded.mandatory, source: "grade" };
+    const general = byGrade?.get("")?.get(skillId);
     if (general) return { target: general.target, mandatory: general.mandatory, source: "role" };
     return null;
   }
@@ -358,12 +322,11 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
   function requiredSkillIds(emp: Employee): string[] {
     const hit = requiredMemo.get(emp.id);
     if (hit) return hit;
-    if (isTop(emp)) { requiredMemo.set(emp.id, []); return []; }
+    if (!assesses(emp)) { requiredMemo.set(emp.id, []); return []; }
     const ids = new Set<string>();
     const byGrade = emp.roleId ? roleIndex.get(emp.roleId) : undefined;
     for (const id of byGrade?.get("")?.keys() ?? []) ids.add(id);
     if (emp.gradeId) for (const id of byGrade?.get(emp.gradeId)?.keys() ?? []) ids.add(id);
-    for (const id of personTargets.get(emp.id)?.keys() ?? []) ids.add(id);
     const out = [...ids].filter(isRateable);
     requiredMemo.set(emp.id, out);
     return out;
@@ -376,6 +339,10 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     if (level == null) return { level: null, at: null, stale: false };
     return { level, at, stale: !!at && at.getTime() < staleBefore };
   }
+  const counts = (r: Rating | undefined, level: number) => {
+    const l = levelOf(r);
+    return l.level != null && l.level >= level && !(l.stale && settings.excludeStale);
+  };
 
   const cellMemo = new Map<string, Cell>();
   function cell(emp: Employee, skillId: string): Cell {
@@ -388,15 +355,10 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     const target = t?.target ?? null;
     const met = target != null && level != null && level >= target && !(stale && settings.excludeStale);
     const c: Cell = {
-      employeeId: emp.id,
-      skillId,
-      target,
+      employeeId: emp.id, skillId, target,
       mandatory: t?.mandatory ?? false,
       source: t?.source ?? null,
-      level,
-      at,
-      stale,
-      met,
+      level, at, stale, met,
       gap: target != null && level != null ? target - level : null,
       category: gapCategory(target, level),
       selfLevel: r?.selfLevel ?? null,
@@ -411,8 +373,10 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
   // ---- aggregates ----------------------------------------------------------------
 
   function aggregate(emps: Employee[], skillFilter?: (skillId: string) => boolean): Aggregate {
-    let required = 0, met = 0, assessed = 0, stale = 0, critical = 0;
+    let required = 0, met = 0, assessed = 0, stale = 0, critical = 0, people = 0;
     for (const e of emps) {
+      if (!assesses(e)) continue;
+      people += 1;
       for (const sid of requiredSkillIds(e)) {
         if (skillFilter && !skillFilter(sid)) continue;
         const c = cell(e, sid);
@@ -423,110 +387,54 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
         if (c.category === "critical" && c.mandatory) critical += 1;
       }
     }
-    return { people: emps.length, required, met, assessed, stale, critical, pct: pct(met, required) };
-  }
-
-  /** Per skill across a unit, in one pass: the same roll-up as aggregate() for that skill
-   *  alone, plus how many hold it at level 3 or above and how many want it. */
-  const skillSummaryMemo = new Map<string, Map<string, { agg: Aggregate; proficient: number; interested: number }>>();
-  function skillSummaryIn(scopeUnitId: string) {
-    const hit = skillSummaryMemo.get(scopeUnitId);
-    if (hit) return hit;
-    const emps = membersOf(scopeUnitId);
-    const out = new Map<string, { agg: Aggregate; proficient: number; interested: number }>();
-    const at = (sid: string) => {
-      let x = out.get(sid);
-      if (!x) { x = { agg: { people: emps.length, required: 0, met: 0, assessed: 0, stale: 0, critical: 0, pct: null }, proficient: 0, interested: 0 }; out.set(sid, x); }
-      return x;
-    };
-    for (const e of emps) {
-      for (const sid of requiredSkillIds(e)) {
-        const c = cell(e, sid);
-        const a = at(sid).agg;
-        a.required += 1;
-        if (c.met) a.met += 1;
-        if (c.level != null) a.assessed += 1;
-        if (c.stale) a.stale += 1;
-        if (c.category === "critical" && c.mandatory) a.critical += 1;
-      }
-      for (const r of ratingsByEmp.get(e.id) ?? []) {
-        if ((levelOf(r).level ?? -1) >= 3) at(r.skillId).proficient += 1;
-        if (r.interest) at(r.skillId).interested += 1;
-      }
-    }
-    for (const x of out.values()) x.agg.pct = pct(x.agg.met, x.agg.required);
-    skillSummaryMemo.set(scopeUnitId, out);
-    return out;
+    return { people, required, met, assessed, stale, critical, pct: pct(met, required) };
   }
 
   /**
-   * The talent a unit has, in one pass over its people: per skill, how many hold it and how
-   * well, how many need it and how many of those are on target, who has it without their
-   * role asking for it, and who wants it; levels by category; the role and grade mix.
+   * How far a person's self-assessment has got: required skills rated, sent, confirmed,
+   * and whether something still waits for them (not started, drafts, sent back, missing).
    */
-  const talentMemo = new Map<string, Talent>();
-  function talent(scopeUnitId: string): Talent {
-    const hit = talentMemo.get(scopeUnitId);
-    if (hit) return hit;
-    const emps = membersOf(scopeUnitId);
-    const skills = new Map<string, TalentSkill>();
-    const at = (sid: string) => {
-      let x = skills.get(sid);
-      if (!x) { x = { skillId: sid, holders: 0, proficient: 0, expert: 0, levelSum: 0, needed: 0, onTarget: 0, extra: 0, interested: 0 }; skills.set(sid, x); }
-      return x;
+  function progress(emp: Employee) {
+    const req = requiredSkillIds(emp);
+    const rs = ratingsByEmp.get(emp.id) ?? [];
+    const byId = new Map(rs.map((r) => [r.skillId, r]));
+    const rated = req.filter((sid) => byId.get(sid)?.selfLevel != null).length;
+    const confirmed = req.filter((sid) => byId.get(sid)?.validatedLevel != null).length;
+    const drafts = rs.filter((r) => r.status === "draft" && r.selfLevel != null).length;
+    const returned = rs.filter((r) => r.status === "returned").length;
+    const waiting = rs.filter((r) => r.status === "submitted").length;
+    const started = rs.some((r) => r.selfLevel != null);
+    let state: "not_asked" | "not_started" | "in_progress" | "sent_back" | "waiting" | "done";
+    if (!assesses(emp)) state = "not_asked";
+    else if (returned) state = "sent_back";
+    else if (!started) state = "not_started";
+    else if (drafts || rated < req.length) state = "in_progress";
+    else if (waiting) state = "waiting";
+    else state = "done";
+    return {
+      state, required: req.length, rated, confirmed, drafts, returned, waiting,
+      missing: req.filter((sid) => byId.get(sid)?.selfLevel == null),
+      /** something is left for the person to do */
+      needsAction: state === "not_started" || state === "in_progress" || state === "sent_back",
     };
-    const byCategory = new Map<string, number[]>();
-    const roles = new Map<string, number>();
-    const grades = new Map<string, number>();
-    let rated = 0, levelSum = 0, levelN = 0;
-    for (const e of emps) {
-      roles.set(e.roleId ?? "", (roles.get(e.roleId ?? "") ?? 0) + 1);
-      grades.set(e.gradeId ?? "", (grades.get(e.gradeId ?? "") ?? 0) + 1);
-      const req = new Set(requiredSkillIds(e));
-      for (const sid of req) {
-        const x = at(sid);
-        x.needed += 1;
-        if (cell(e, sid).met) x.onTarget += 1;
-      }
-      let any = false;
-      for (const r of ratingsByEmp.get(e.id) ?? []) {
-        if (!isRateable(r.skillId)) continue;
-        const x = at(r.skillId);
-        if (r.interest) x.interested += 1;
-        const lvl = levelOf(r).level;
-        if (lvl == null) continue;
-        any = true;
-        levelSum += lvl; levelN += 1;
-        if (lvl >= 1) { x.holders += 1; x.levelSum += lvl; }
-        if (lvl >= 3) { x.proficient += 1; if (!req.has(r.skillId)) x.extra += 1; }
-        if (lvl >= 4) x.expert += 1;
-        const cat = skillById.get(r.skillId)?.categoryId ?? "";
-        const dist = byCategory.get(cat) ?? [0, 0, 0, 0, 0, 0];
-        dist[Math.max(0, Math.min(5, lvl))] += 1;
-        byCategory.set(cat, dist);
-      }
-      if (any) rated += 1;
-    }
-    const out: Talent = { people: emps.length, rated, avgLevel: levelN ? Math.round((levelSum / levelN) * 10) / 10 : null, skills, byCategory, roles, grades };
-    talentMemo.set(scopeUnitId, out);
-    return out;
   }
 
-  // ---- team demand and coverage ---------------------------------------------------
+  // ---- team needs and coverage ---------------------------------------------------
 
   const demandMemo = new Map<string, Demand[]>();
-  function demands(unitId: string): Demand[] {
-    const hit = demandMemo.get(unitId);
+  /** What a manager's team needs: the manager's own list, plus what the roles imply. */
+  function demands(managerId: string): Demand[] {
+    const hit = demandMemo.get(managerId);
     if (hit) return hit;
     const out = new Map<string, Demand>();
-    for (const r of unitReqs.get(unitId) ?? []) {
-      if (!isRateable(r.skillId)) continue;
-      out.set(r.skillId, { unitId, skillId: r.skillId, level: r.minLevel, headcount: Math.max(1, r.headcount), explicit: true });
+    for (const n of needsByManager.get(managerId) ?? []) {
+      if (!isRateable(n.skillId)) continue;
+      out.set(n.skillId, { managerId, skillId: n.skillId, level: n.minLevel, headcount: Math.max(1, n.headcount), explicit: true });
     }
     const implicit = new Map<string, { level: number; requirers: number }>();
-    for (const e of directMembers.get(unitId) ?? []) {
+    for (const e of directReports.get(managerId) ?? []) {
       for (const sid of requiredSkillIds(e)) {
-        if (out.get(sid)?.explicit) continue;
+        if (out.has(sid)) continue;
         const t = targetFor(e, sid);
         if (!t || !t.mandatory) continue;
         const prev = implicit.get(sid);
@@ -534,57 +442,86 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       }
     }
     for (const [sid, d] of implicit) {
-      if (d.requirers >= MIN_REQUIRERS) out.set(sid, { unitId, skillId: sid, level: d.level, headcount: 1, explicit: false });
+      if (d.requirers >= MIN_REQUIRERS) out.set(sid, { managerId, skillId: sid, level: d.level, headcount: 1, explicit: false });
     }
     const list = [...out.values()];
-    demandMemo.set(unitId, list);
+    demandMemo.set(managerId, list);
     return list;
   }
 
   function holdersOf(emps: Employee[], skillId: string, level: number): Employee[] {
-    return emps.filter((e) => {
-      const { level: l, stale } = levelOf(ratingByKey.get(`${e.id}|${skillId}`));
-      return l != null && l >= level && !(stale && settings.excludeStale);
-    });
+    return emps.filter((e) => counts(ratingByKey.get(`${e.id}|${skillId}`), level));
   }
 
   const coverageMemo = new Map<string, Coverage>();
   function coverage(d: Demand): Coverage {
-    const key = `${d.unitId}|${d.skillId}|${d.level}|${d.headcount}|${d.explicit}`;
+    const key = `${d.managerId}|${d.skillId}|${d.level}|${d.headcount}|${d.explicit}`;
     const hit = coverageMemo.get(key);
     if (hit) return hit;
-    const c = computeCoverage(d);
+    const holders = holdersOf(membersOf(d.managerId), d.skillId, d.level);
+    const count = holders.length;
+    const c: Coverage = { ...d, holders: holders.map((h) => h.id), count, shortfall: Math.max(0, d.headcount - count), spof: count === 1 && d.headcount <= 1, critical: count === 0 };
     coverageMemo.set(key, c);
     return c;
   }
-  function computeCoverage(d: Demand): Coverage {
-    const holders = holdersOf(membersOf(d.unitId), d.skillId, d.level);
-    const count = holders.length;
-    return {
-      ...d,
-      holders: holders.map((h) => h.id),
-      count,
-      shortfall: Math.max(0, d.headcount - count),
-      spof: count === 1,
-      critical: count === 0,
-    };
-  }
 
   const coverageInMemo = new Map<string, Coverage[]>();
-  function coverageIn(scopeUnitId: string): Coverage[] {
-    let hit = coverageInMemo.get(scopeUnitId);
-    if (!hit) { hit = subtreeUnitIds(scopeUnitId).flatMap((uid) => demands(uid).map(coverage)); coverageInMemo.set(scopeUnitId, hit); }
+  /** Every team need inside a scope (the leader's own team and every team below). */
+  function coverageIn(leaderId: string): Coverage[] {
+    let hit = coverageInMemo.get(leaderId);
+    if (!hit) { hit = managersIn(leaderId).flatMap((m) => demands(m.id).map(coverage)); coverageInMemo.set(leaderId, hit); }
     return hit;
   }
 
-  /** Team needs that are short or rest on one person, worst first: nobody holds it,
-   *  then by how many people are missing, then a single holder. Capability only. */
-  function shortNeeds(scopeUnitId: string): Coverage[] {
+  /** Team needs that are short or rest on one person, worst first: nobody holds it, then
+   *  by how many people are missing, then a single holder. */
+  function shortNeeds(leaderId: string): Coverage[] {
     const rank = (c: Coverage) => (c.critical ? 1000 : 0) + c.shortfall * 10 + (c.spof ? 1 : 0);
-    return coverageIn(scopeUnitId)
+    return coverageIn(leaderId)
       .filter((c) => c.shortfall > 0 || c.spof)
-      .sort((a, b) => rank(b) - rank(a)
-        || (skillById.get(a.skillId)?.name ?? "").localeCompare(skillById.get(b.skillId)?.name ?? ""));
+      .sort((a, b) => rank(b) - rank(a) || skillLabel(a.skillId).localeCompare(skillLabel(b.skillId)));
+  }
+
+  /** People outside a team who hold a skill at a level (to strengthen it from elsewhere). */
+  function holdersOutside(managerId: string, skillId: string, level: number): Employee[] {
+    const inside = new Set(membersOf(managerId).map((e) => e.id));
+    const out: Employee[] = [];
+    for (const r of ratingsBySkill.get(skillId) ?? []) {
+      const e = empById.get(r.employeeId);
+      if (!e?.active || inside.has(e.id) || !counts(r, level)) continue;
+      out.push(e);
+    }
+    return out.sort((a, b) => (levelOf(ratingByKey.get(`${b.id}|${skillId}`)).level ?? 0) - (levelOf(ratingByKey.get(`${a.id}|${skillId}`)).level ?? 0) || a.name.localeCompare(b.name));
+  }
+
+  /**
+   * The other teams a person could strengthen: teams they are not in whose short needs
+   * they already meet, the teams where they meet the most first.
+   */
+  // every short need in the organisation, by skill: built once, so "who could strengthen
+  // another team" costs one look per rating a person has, not one per team
+  let shortBySkill: Map<string, Coverage[]> | null = null;
+  function shortIndex() {
+    if (shortBySkill) return shortBySkill;
+    shortBySkill = new Map();
+    for (const c of coverageIn(ALL)) {
+      if (!(c.shortfall > 0 || c.spof)) continue;
+      shortBySkill.set(c.skillId, [...(shortBySkill.get(c.skillId) ?? []), c]);
+    }
+    return shortBySkill;
+  }
+  function fitsFor(emp: Employee, limit = 5): Fit[] {
+    const idx = shortIndex();
+    const mine = new Set([...chainOf(emp.id).map((m) => m.id), emp.id]);
+    const byTeam = new Map<string, Fit["skills"]>();
+    for (const r of ratingsByEmp.get(emp.id) ?? []) {
+      for (const c of idx.get(r.skillId) ?? []) {
+        if (mine.has(c.managerId) || !counts(r, c.level)) continue;
+        byTeam.set(c.managerId, [...(byTeam.get(c.managerId) ?? []), { skillId: c.skillId, level: c.level, has: levelOf(r).level ?? 0 }]);
+      }
+    }
+    return [...byTeam].map(([managerId, skills]) => ({ managerId, skills }))
+      .sort((a, b) => b.skills.length - a.skills.length || teamLabel(a.managerId).localeCompare(teamLabel(b.managerId))).slice(0, limit);
   }
 
   /** Individual gaps: each person below their own target, or not assessed yet. */
@@ -594,58 +531,41 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       for (const sid of requiredSkillIds(e)) {
         const c = cell(e, sid);
         if (c.target == null || c.met) continue;
-        if (c.level == null) {
-          out.push({ employeeId: e.id, skillId: sid, target: c.target, level: null, gap: c.target, category: c.category, interest: c.interest, mandatory: c.mandatory });
-        } else if (c.gap! > 0) {
-          out.push({ employeeId: e.id, skillId: sid, target: c.target, level: c.level, gap: c.gap!, category: c.category, interest: c.interest, mandatory: c.mandatory });
-        }
+        out.push({ employeeId: e.id, skillId: sid, target: c.target, level: c.level, gap: c.level == null ? c.target : c.gap!, category: c.category, interest: c.interest, mandatory: c.mandatory });
       }
     }
     const rank: Record<string, number> = { critical: 4, significant: 3, minor: 2, unassessed: 1 };
-    return out.sort((a, b) => (rank[b.category] ?? 0) - (rank[a.category] ?? 0) || Number(b.mandatory) - Number(a.mandatory) || b.gap - a.gap);
+    return out.filter((g) => g.gap > 0 || g.level == null)
+      .sort((a, b) => (rank[b.category] ?? 0) - (rank[a.category] ?? 0) || Number(b.mandatory) - Number(a.mandatory) || b.gap - a.gap);
   }
 
-  /** Self minus validated, per team: a delta above 1 means the scale is read two ways.
-   *  Only units with two or more people of their own: one person is not a team average. */
-  function calibration(scopeUnitId: string) {
-    const out: { unitId: string; n: number; delta: number }[] = [];
-    for (const uid of subtreeUnitIds(scopeUnitId)) {
-      if ((directMembers.get(uid) ?? []).length < 2) continue;
-      let n = 0, sum = 0;
-      for (const e of directMembers.get(uid) ?? []) {
-        for (const r of ratingsByEmp.get(e.id) ?? []) {
-          if (r.selfLevel == null || r.validatedLevel == null) continue;
-          n += 1;
-          sum += r.selfLevel - r.validatedLevel;
-        }
-      }
-      if (n >= 3) out.push({ unitId: uid, n, delta: Math.round((sum / n) * 100) / 100 });
-    }
-    return out.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  }
-
-  function kpis(scopeUnitId: string, emps: Employee[] = membersOf(scopeUnitId)) {
+  function kpis(leaderId: string) {
+    const emps = membersOf(leaderId);
     const agg = aggregate(emps);
-    const cov = coverageIn(scopeUnitId);
-    const empIds = new Set(emps.map((e) => e.id));
-    let validated = 0, staleValidated = 0, pending = 0;
-    for (const r of ds.ratings) {
-      if (!empIds.has(r.employeeId)) continue;
-      if (r.status === "submitted") pending += 1;
-      if (r.validatedLevel != null && r.validatedAt) {
-        validated += 1;
-        if (r.validatedAt.getTime() < staleBefore) staleValidated += 1;
-      }
+    const cov = coverageIn(leaderId);
+    let pending = 0, notStarted = 0, done = 0, asked = 0;
+    for (const e of emps) {
+      for (const r of ratingsByEmp.get(e.id) ?? []) if (r.status === "submitted") pending += 1;
+      if (!assesses(e)) continue;
+      asked += 1;
+      const p = progress(e);
+      if (p.state === "not_started") notStarted += 1;
+      if (p.state === "done" || p.state === "waiting") done += 1;
     }
     return {
       people: emps.length,
+      asked,
+      done,
+      notStarted,
       required: agg.required,
       assessedPct: pct(agg.assessed, agg.required),
       onTargetPct: agg.pct,
-      criticalGaps: cov.filter((c) => c.critical).length,
+      donePct: pct(done, asked),
+      needs: cov.length,
+      short: cov.filter((c) => c.shortfall > 0).length,
+      nobody: cov.filter((c) => c.critical).length,
       spof: cov.filter((c) => c.spof).length,
-      stalePct: pct(staleValidated, validated),
-      pendingValidation: pending,
+      pendingConfirmation: pending,
     };
   }
 
@@ -663,46 +583,45 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       .map((s) => ({ id: s.id, name: skillLabel(s.id), categoryId }));
   }
 
-  /** Rows = child units (plus the scope's own direct members as one row), columns = categories or skills. */
-  function unitHeatmap(scopeUnitId: string, o: { categoryId?: string | null; roleId?: string | null } = {}) {
+  /** Rows = the teams directly below a leader (plus their own direct reports who lead
+   *  nobody, as one row); columns = categories, or the skills of one category. */
+  function teamHeatmap(leaderId: string, o: { categoryId?: string | null } = {}) {
     const cols = columnsFor(o.categoryId);
-    const keep = (e: Employee) => !o.roleId || e.roleId === o.roleId;
-    const colFilter = (col: Column) => (sid: string) =>
-      o.categoryId ? sid === col.id : skillById.get(sid)?.categoryId === col.id;
-    const rowDefs: { id: string; name: string; kind: string; emps: Employee[]; drill: string | null }[] = [];
-    for (const u of children.get(scopeUnitId) ?? []) {
-      rowDefs.push({ id: u.id, name: u.name, kind: u.kind, emps: membersOf(u.id).filter(keep), drill: u.id });
+    const colFilter = (col: Column) => (sid: string) => (o.categoryId ? sid === col.id : skillById.get(sid)?.categoryId === col.id);
+    const inCat = o.categoryId ? (sid: string) => skillById.get(sid)?.categoryId === o.categoryId : undefined;
+    // the whole organisation under one head opens one level down: one row saying "everyone" says nothing
+    const below = leaderId === ALL ? (tops.length === 1 ? directReports.get(tops[0].id) ?? [] : tops) : (directReports.get(leaderId) ?? []);
+    const rowDefs: { id: string; name: string; emps: Employee[]; drill: string | null }[] = [];
+    const individuals: Employee[] = [];
+    for (const d of below) {
+      if (isManager(d)) rowDefs.push({ id: d.id, name: teamLabel(d.id), emps: membersOf(d.id), drill: d.id });
+      else individuals.push(d);
     }
-    const direct = (directMembers.get(scopeUnitId) ?? []).filter(keep);
-    if (direct.length) rowDefs.push({ id: `${scopeUnitId}:direct`, name: "Direct members", kind: "direct", emps: direct, drill: null });
-    const rows = rowDefs.filter((r) => r.emps.length > 0).map((r) => ({
-      id: r.id, name: r.name, kind: r.kind, drill: r.drill, people: r.emps.length,
-      total: aggregate(r.emps, o.categoryId ? (sid) => skillById.get(sid)?.categoryId === o.categoryId : undefined),
+    if (leaderId === ALL) individuals.push(...activeEmployees.filter((e) => !isManager(e) && !(e.managerId && empById.get(e.managerId)?.active)));
+    if (individuals.length) rowDefs.push({ id: `${leaderId}:direct`, name: leaderId === ALL ? "Not in a team" : `Reporting to ${empById.get(leaderId)?.name ?? ""} directly`, emps: individuals, drill: null });
+    const rows = rowDefs.map((r) => ({
+      id: r.id, name: r.name, drill: r.drill, people: r.emps.length,
+      total: aggregate(r.emps, inCat),
       cells: Object.fromEntries(cols.map((c) => [c.id, aggregate(r.emps, colFilter(c))])) as Record<string, Aggregate>,
-    }));
+    })).filter((r) => r.people > 0);
     const all = rowDefs.flatMap((r) => r.emps);
-    const columns = cols.map((c) => ({ ...c, total: aggregate(all, colFilter(c)) }));
-    return { rows, columns, total: aggregate(all, o.categoryId ? (sid) => skillById.get(sid)?.categoryId === o.categoryId : undefined) };
+    return { rows, columns: cols.map((c) => ({ ...c, total: aggregate(all, colFilter(c)) })), total: aggregate(all, inCat) };
   }
 
-  /** Rows = people in the unit's subtree, columns = skills they are expected to have. */
-  function peopleHeatmap(unitId: string, o: { categoryId?: string | null; roleId?: string | null; hideMet?: boolean; includeRated?: boolean } = {}) {
-    const emps = membersOf(unitId).filter((e) => !o.roleId || e.roleId === o.roleId);
+  /** Rows = people (a manager's direct reports, or everyone below), columns = skills. */
+  function peopleHeatmap(leaderId: string, o: { everyone?: boolean; categoryId?: string | null; hideMet?: boolean; includeRated?: boolean } = {}) {
+    const emps = o.everyone ? reportsOf(leaderId) : (directReports.get(leaderId) ?? []);
     const skillIds = new Set<string>();
     for (const e of emps) {
       for (const sid of requiredSkillIds(e)) skillIds.add(sid);
-      if (o.includeRated) for (const r of ratingsByEmp.get(e.id) ?? []) if (isRateable(r.skillId)) skillIds.add(r.skillId);
+      if (o.includeRated) for (const r of ratingsByEmp.get(e.id) ?? []) if (isRateable(r.skillId) && levelOf(r).level != null) skillIds.add(r.skillId);
     }
-    for (const d of demands(unitId)) skillIds.add(d.skillId);
-    let skills = [...skillIds].map((id) => skillById.get(id)!).filter(Boolean)
-      .filter((s) => !o.categoryId || s.categoryId === o.categoryId);
-    const covByUnitSkill = new Map<string, Coverage>();
-    for (const d of demands(unitId)) covByUnitSkill.set(d.skillId, coverage(d));
+    const covBySkill = new Map<string, Coverage>();
+    if (leaderId !== ALL) for (const d of demands(leaderId)) { skillIds.add(d.skillId); covBySkill.set(d.skillId, coverage(d)); }
+    let skills = [...skillIds].map((id) => skillById.get(id)!).filter(Boolean).filter((s) => !o.categoryId || s.categoryId === o.categoryId);
     if (o.hideMet) {
-      skills = skills.filter((s) => emps.some((e) => {
-        const c = cell(e, s.id);
-        return c.target != null && !c.met;
-      }) || (covByUnitSkill.get(s.id)?.shortfall ?? 0) > 0 || covByUnitSkill.get(s.id)?.spof);
+      skills = skills.filter((s) => emps.some((e) => { const c = cell(e, s.id); return c.target != null && !c.met; })
+        || (covBySkill.get(s.id)?.shortfall ?? 0) > 0 || covBySkill.get(s.id)?.spof);
     }
     const catSort = new Map(ds.categories.map((c) => [c.id, c.sort]));
     skills.sort((a, b) => (catSort.get(a.categoryId) ?? 0) - (catSort.get(b.categoryId) ?? 0)
@@ -710,15 +629,12 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       || (a.sort ?? 0) - (b.sort ?? 0) || skillLabel(a.id).localeCompare(skillLabel(b.id)));
     const rows = emps.map((e) => {
       const cells = Object.fromEntries(skills.map((s) => [s.id, cell(e, s.id)])) as Record<string, Cell>;
-      const agg = aggregate([e]);
-      return { employee: e, cells, onTargetPct: agg.pct, worst: Object.values(cells).filter((c) => c.target != null && !c.met).length };
+      return { employee: e, cells, onTargetPct: aggregate([e]).pct, worst: Object.values(cells).filter((c) => c.target != null && !c.met).length };
     }).sort((a, b) => b.worst - a.worst || a.employee.name.localeCompare(b.employee.name));
     const columns = skills.map((s) => ({
-      id: s.id,
-      name: skillLabel(s.id),
-      categoryId: s.categoryId,
+      id: s.id, name: skillLabel(s.id), categoryId: s.categoryId,
       category: categoryById.get(s.categoryId)?.name ?? "",
-      coverage: covByUnitSkill.get(s.id) ?? null,
+      coverage: covBySkill.get(s.id) ?? null,
     }));
     return { rows, columns };
   }
@@ -737,13 +653,12 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
   function buildProfile(emp: Employee) {
     const req = requiredSkillIds(emp);
     const rated = (ratingsByEmp.get(emp.id) ?? []).map((r) => r.skillId).filter(isRateable);
-    const ids = [...new Set([...req, ...rated])];
-    const cells = ids.map((sid) => cell(emp, sid));
+    const cells = [...new Set([...req, ...rated])].map((sid) => cell(emp, sid));
     const agg = aggregate([emp]);
     const grade = emp.gradeId ? gradeById.get(emp.gradeId) : undefined;
     const next = grade ? [...ds.grades].filter((g) => g.rank > grade.rank).sort((a, b) => a.rank - b.rank)[0] : undefined;
     let nextGrade: { grade: Grade; missing: { skillId: string; target: number; level: number | null }[] } | null = null;
-    if (next && emp.roleId) {
+    if (next && emp.roleId && assesses(emp)) {
       const probe: Employee = { ...emp, id: `${emp.id}#next`, gradeId: next.id };
       const missing: { skillId: string; target: number; level: number | null }[] = [];
       const byGrade = roleIndex.get(emp.roleId);
@@ -757,28 +672,59 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       }
       nextGrade = { grade: next, missing };
     }
-    const byCategory = ds.categories.map((c) => {
-      const inCat = cells.filter((x) => x.target != null && skillById.get(x.skillId)?.categoryId === c.id);
-      if (!inCat.length) return null;
-      const avg = (f: (x: Cell) => number | null) => {
-        const v = inCat.map(f).filter((n): n is number => n != null);
-        return v.length ? Math.round((v.reduce((s, n) => s + n, 0) / v.length) * 10) / 10 : 0;
-      };
-      return { categoryId: c.id, name: c.name, target: avg((x) => x.target), level: avg((x) => x.level ?? 0), self: avg((x) => x.selfLevel ?? 0) };
-    }).filter((x): x is NonNullable<typeof x> => !!x);
-    return {
-      cells,
-      roleFitPct: agg.pct,
-      required: agg.required,
-      met: agg.met,
-      nextGrade,
-      byCategory,
-      overqualified: cells.filter((c) => c.target != null && c.level != null && c.level - c.target >= 2),
-    };
+    return { cells, fitPct: agg.pct, required: agg.required, met: agg.met, nextGrade };
   }
 
-  function skillStats(skillId: string, scopeUnitId: string) {
-    const emps = membersOf(scopeUnitId);
+  /**
+   * The talent a scope has, in one pass over its people: per skill, how many hold it and
+   * how well, how many need it and how many of those are on target, who has it without
+   * their role asking for it, and who wants it; levels by category.
+   */
+  const talentMemo = new Map<string, Talent>();
+  function talent(leaderId: string): Talent {
+    const hit = talentMemo.get(leaderId);
+    if (hit) return hit;
+    const emps = membersOf(leaderId);
+    const skills = new Map<string, TalentSkill>();
+    const at = (sid: string) => {
+      let x = skills.get(sid);
+      if (!x) { x = { skillId: sid, holders: 0, proficient: 0, expert: 0, needed: 0, onTarget: 0, extra: 0, interested: 0 }; skills.set(sid, x); }
+      return x;
+    };
+    const byCategory = new Map<string, number[]>();
+    let rated = 0;
+    for (const e of emps) {
+      const req = new Set(requiredSkillIds(e));
+      for (const sid of req) {
+        const x = at(sid);
+        x.needed += 1;
+        if (cell(e, sid).met) x.onTarget += 1;
+      }
+      let any = false;
+      for (const r of ratingsByEmp.get(e.id) ?? []) {
+        if (!isRateable(r.skillId)) continue;
+        const x = at(r.skillId);
+        if (r.interest) x.interested += 1;
+        const lvl = levelOf(r).level;
+        if (lvl == null) continue;
+        any = true;
+        if (lvl >= 1) x.holders += 1;
+        if (lvl >= 3) { x.proficient += 1; if (!req.has(r.skillId)) x.extra += 1; }
+        if (lvl >= 4) x.expert += 1;
+        const cat = skillById.get(r.skillId)?.categoryId ?? "";
+        const dist = byCategory.get(cat) ?? [0, 0, 0, 0, 0, 0];
+        dist[Math.max(0, Math.min(5, lvl))] += 1;
+        byCategory.set(cat, dist);
+      }
+      if (any) rated += 1;
+    }
+    const out: Talent = { people: emps.length, rated, skills, byCategory };
+    talentMemo.set(leaderId, out);
+    return out;
+  }
+
+  function skillStats(skillId: string, leaderId: string) {
+    const emps = membersOf(leaderId);
     const distribution = [0, 0, 0, 0, 0, 0];
     let unassessed = 0;
     const people: Cell[] = [];
@@ -789,13 +735,12 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       else distribution[Math.max(0, Math.min(5, c.level))] += 1;
       people.push(c);
     }
-    const cov = coverageIn(scopeUnitId).filter((c) => c.skillId === skillId);
-    return { distribution, unassessed, people, coverage: cov };
+    return { distribution, unassessed, people, coverage: coverageIn(leaderId).filter((c) => c.skillId === skillId) };
   }
 
-  /** People finder: everyone in scope at or above a level in a skill. */
-  function find(scopeUnitId: string, skillId: string, minLevel: number) {
-    return membersOf(scopeUnitId)
+  /** People finder: everyone in scope at or above a level in a skill, best first. */
+  function find(leaderId: string, skillId: string, minLevel: number) {
+    return membersOf(leaderId)
       .map((e) => ({ e, c: cell(e, skillId) }))
       .filter(({ c }) => c.level != null && c.level >= minLevel)
       .sort((a, b) => (b.c.level ?? 0) - (a.c.level ?? 0) || a.e.name.localeCompare(b.e.name));
@@ -808,48 +753,37 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     return p ? `${p.name} › ${s.name}` : s.name;
   }
 
-  /** Monthly roll-up rows for every unit (written to the snapshot table). */
-  function snapshotRows() {
-    return ds.units.map((u) => {
-      const emps = membersOf(u.id);
-      const agg = aggregate(emps);
-      let sum = 0, n = 0;
-      for (const e of emps) for (const sid of requiredSkillIds(e)) {
-        const { level } = levelOf(ratingByKey.get(`${e.id}|${sid}`), "validated");
-        if (level != null) { sum += level; n += 1; }
-      }
-      return { unitId: u.id, required: agg.required, met: agg.met, assessed: agg.assessed, people: emps.length, avgLevel: n ? Math.round((sum / n) * 100) / 100 : null };
-    });
-  }
-
   /** Precompute what most pages read, once per data version (see warmEngine). */
   function warm() {
-    for (const u of ds.units) membersOf(u.id);
-    for (const id of directReports.keys()) reportsOf(id);
-    for (const id of unitsByManager.keys()) reportsOf(id);
-    for (const r of roots) { coverageIn(r.id); talent(r.id); }
+    for (const id of directReports.keys()) membersOf(id);
+    coverageIn(ALL);
+    shortIndex();
+    talent(ALL);
   }
 
   return {
     basis,
     settings,
     warm,
-    roots,
-    unitById,
+    tops,
     empById,
     skillById,
     categoryById,
     gradeById,
+    roleById,
     roles: ds.roles,
-    children: (id: string) => children.get(id) ?? [],
-    directMembers: (id: string) => directMembers.get(id) ?? [],
-    subtreeUnitIds,
-    membersOf,
-    ancestors,
-    reportsOf,
+    grades: ds.grades,
+    categories: ds.categories,
+    activeEmployees,
     directReportsOf: (employeeId: string) => directReports.get(employeeId) ?? [],
-    managedUnitIds,
+    reportsOf,
+    membersOf,
+    managersIn,
+    chainOf,
+    isManager,
     isTop,
+    assesses,
+    teamLabel,
     submittedCount,
     ratingsOf: (employeeId: string) => ratingsByEmp.get(employeeId) ?? [],
     isRateable,
@@ -859,22 +793,22 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     rating: (employeeId: string, skillId: string) => ratingByKey.get(`${employeeId}|${skillId}`),
     cell,
     aggregate,
+    progress,
     demands,
     coverage,
     coverageIn,
     shortNeeds,
+    holdersOutside,
+    fitsFor,
     individualGaps,
-    calibration,
     kpis,
-    unitHeatmap,
+    teamHeatmap,
     peopleHeatmap,
     personProfile,
-    skillStats,
-    skillSummaryIn,
     talent,
+    skillStats,
     find,
     skillLabel,
-    snapshotRows,
   };
 }
 

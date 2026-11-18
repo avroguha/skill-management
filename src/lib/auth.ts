@@ -1,6 +1,6 @@
 // Authentication: better-auth with
 //   - local accounts (username + password), seeded with admin / admin
-//   - SAML 2.0 single sign-on (@better-auth/sso), providers configured in Admin > Single sign-on
+//   - SAML 2.0 single sign-on (@better-auth/sso), providers configured in Settings › Single sign-on
 // Both land in the same user table, so switching to SSO later changes nothing else.
 // Self-registration is off: local accounts are created by an administrator.
 import fs from "node:fs";
@@ -72,7 +72,7 @@ async function gate(input: Parameters<NonNullable<Parameters<typeof sso>[0]>["re
     return { action: "reject" as const, code: "NOT_ALLOWED", message: "Your e-mail is in use by the local administrator account. Ask the people who run this app." };
   }
   recordAttempt({ ...base, outcome: "allowed", reason: `Matched ${settings.matchField} "${value}"; ${access.reason}.`, matchedPerson: person.name });
-  // the account fields the mapping takes from the sign-in (Admin › Single sign-on)
+  // the account fields the mapping takes from the sign-in (Settings › Single sign-on)
   const profile = profileFrom(settings.profile, base.nameId, attributes);
   if (person.userId) {
     applyProfileLater(person.userId, profile);
@@ -122,6 +122,6 @@ const g = globalThis as unknown as { __skillsAuth?: Promise<Auth> };
 /** The auth instance, created once the database is ready. */
 export function getAuth(): Promise<Auth> {
   // the SSO gate needs its snapshot before the first sign-in
-  g.__skillsAuth ??= getDb().then(async (db) => { await refreshGate(db); return makeAuth(db); });
+  g.__skillsAuth ??= getDb("live").then(async (db) => { await refreshGate(db); return makeAuth(db); });
   return g.__skillsAuth;
 }

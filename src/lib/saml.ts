@@ -1,4 +1,4 @@
-// The SAML provider registration body, in one place: Admin › Single sign-on sends it,
+// The SAML provider registration body, in one place: Settings › Single sign-on sends it,
 // and test/saml.test.ts signs in through exactly this configuration.
 export interface SamlInput {
   /** internal name, part of the Reply URL; nobody has to choose it */

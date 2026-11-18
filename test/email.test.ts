@@ -7,7 +7,6 @@ import net from "node:net";
 import { and, eq } from "drizzle-orm";
 
 process.env.PGLITE_DIR = "memory://";
-process.env.SEED_DEMO = "true";
 process.env.APP_URL = "https://skills.example.test";
 delete process.env.DATABASE_URL;
 
@@ -18,6 +17,7 @@ const { sendSmtp } = await import("../src/lib/mail/smtp.ts");
 const { buildMessage } = await import("../src/lib/mail/message.ts");
 const { safeNext } = await import("../src/lib/safe-next.ts");
 const mail = await import("../src/lib/mail/notify.ts");
+const { previewEmails, PREVIEW_KINDS } = await import("../src/lib/mail/preview.ts");
 
 test.after(() => closeDb());
 
@@ -115,30 +115,43 @@ test("SMTP: the relay's refusal, a missing STARTTLS and a closed port come back 
 });
 
 test("after sign-in only a path inside the app is followed", () => {
-  assert.equal(safeNext("/validate?person=abc"), "/validate?person=abc");
+  assert.equal(safeNext("/team?tab=confirm&person=abc"), "/team?tab=confirm&person=abc");
   for (const bad of [undefined, "", "https://evil.example", "//evil.example", "/\\evil.example", "javascript:alert(1)", "/login?next=/x", "/a\r\nSet-Cookie: x"]) {
     assert.equal(safeNext(bad), "/", String(bad));
   }
 });
 
-test("e-mails end to end: approval to the manager, sent back as one e-mail, reminders on the day, Remind once a day", async () => {
+test("every e-mail renders: a subject, a full HTML page with its button, and a plain-text twin", () => {
+  const all = previewEmails({ appUrl: "https://skills.example.test", levelName: (n) => ["No Exposure", "Awareness", "Working", "Proficient", "Advanced", "Expert"][n] ?? String(n), orgName: "Avro" });
+  assert.equal(all.length, PREVIEW_KINDS.length);
+  for (const m of all) {
+    assert.ok(m.subject.length > 5, m.kind);
+    assert.match(m.html, /^<!DOCTYPE html>/, m.kind);
+    assert.match(m.html, /href="https:\/\/skills\.example\.test\/login\?next=/, `${m.kind}: the button goes through sign-in`);
+    assert.doesNotMatch(m.html + m.text + m.subject, /undefined|NaN|\[object Object\]/, m.kind);
+    assert.doesNotMatch(m.text, /<[a-z/]/i, `${m.kind}: no markup in the plain text`);
+    assert.equal((m.html.match(/<table/g) ?? []).length, (m.html.match(/<\/table>/g) ?? []).length, `${m.kind}: tables closed`);
+  }
+});
+
+test("e-mails end to end: to the manager, sent back as one e-mail, weekly reminders and digests, Remind once a day", async () => {
   const relay = await fakeRelay();
-  const db = await getDb();
+  const db = await getDb("demo"); // the made-up organisation: people, managers and ratings to write about
   try {
     await mail.writeEmailSettings(db, { ...mail.DEFAULT_EMAIL, enabled: true, host: "127.0.0.1", port: relay.port, security: "none", fromAddress: "skills@example.test" });
     let engine = createEngine(await loadDatasetFrom(db));
-    const emp = [...engine.empById.values()].find((e) => e.active && engine.ratingsOf(e.id).length >= 2 && mail.approverOf(engine, e) && !engine.isTop(e))!;
+    const emp = [...engine.empById.values()].find((e) => e.active && engine.assesses(e) && engine.ratingsOf(e.id).length >= 2 && mail.approverOf(engine, e))!;
     const mgr = mail.approverOf(engine, emp)!;
     const skills = engine.ratingsOf(emp.id).slice(0, 2).map((r) => r.skillId);
 
-    // 1. sent for validation: the manager gets the skills and a link through sign-in to this person's queue
+    // 1. sent to confirm: the manager gets the skills and a link through sign-in to this person's ratings
     await mail.notifySubmitted(db, engine, emp.id, skills);
     await until(() => relay.received.length === 1);
     const approval = relay.received[0];
     assert.deepEqual(approval.to, [mgr.email]);
-    assert.match(decodeSubject(approval.data), new RegExp(`^${emp.name} sent 2 skill ratings for your validation$`));
+    assert.match(decodeSubject(approval.data), new RegExp(`^${emp.name} sent 2 skill ratings for you to confirm$`));
     const html = part(approval.data, "text/html");
-    assert.ok(html.includes(`https://skills.example.test/login?next=${encodeURIComponent(`/validate?person=${emp.id}`)}`), "deep link to the validation page");
+    assert.ok(html.includes(`https://skills.example.test/login?next=${encodeURIComponent(`/team?tab=confirm&person=${emp.id}`)}`), "deep link to confirming");
     for (const sid of skills) assert.ok(html.includes(engine.skillLabel(sid).replace(/&/g, "&amp;")), "each skill is listed");
     await until(async () => (await db.select().from(s.emailMessage).where(eq(s.emailMessage.kind, "submitted")))[0]?.status === "sent");
 
@@ -154,28 +167,31 @@ test("e-mails end to end: approval to the manager, sent back as one e-mail, remi
     assert.deepEqual(back.to, [emp.email]);
     const backHtml = part(back.data, "text/html");
     assert.ok(backHtml.includes("Which project was this?") && backHtml.includes("Add the certificate, please."));
-    assert.ok(backHtml.includes(`login?next=${encodeURIComponent("/assess")}`));
+    assert.ok(backHtml.includes(`login?next=${encodeURIComponent("/my-skills")}`));
 
-    // 3. reminders: someone has to look at a rating again, so they still need to send it
+    // 3. weekly: a reminder to everyone with something left to do, a digest to every manager
+    //    with something waiting - on the weekly day, from the hour, once
     await db.update(s.rating).set({ status: "returned" }).where(and(eq(s.rating.employeeId, emp.id), eq(s.rating.skillId, skills[0])));
     engine = createEngine(await loadDatasetFrom(db));
-    const expected = [...engine.empById.values()].filter((e) => e.active && mail.assessmentState(engine, e).needsUpdate && /@/.test(e.email)).length;
-    assert.ok(expected >= 1);
+    const people = engine.activeEmployees.filter((e) => /@/.test(e.email));
+    const reminders = people.filter((e) => mail.assessmentState(engine, e).needsUpdate).length;
+    const digests = people.filter((e) => engine.isManager(e)).filter((e) => { const d = mail.digestFor(engine, e); return d.waitingRatings > 0 || d.notStarted.length > 0; }).length;
+    assert.ok(reminders >= 1 && digests >= 1, `${reminders} reminders, ${digests} digests`);
     // Monday 16 Nov 2026: 09:30 in New York is too early; 10:30 is the time
     assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-11-16T14:30:00Z")), 0);
-    assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-11-16T15:30:00Z")), expected);
+    assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-11-16T15:30:00Z")), reminders + digests);
     assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-11-16T18:00:00Z")), 0, "once a day");
-    assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-11-17T15:30:00Z")), 0, "Tuesday: not the weekly day, not 3 days before");
-    // three days before 15 December, whatever the weekday
-    assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-12-12T15:30:00Z")), expected);
-    const dueSoon = await db.select().from(s.emailMessage).where(and(eq(s.emailMessage.kind, "reminder"), eq(s.emailMessage.employeeId, emp.id)));
-    assert.equal(dueSoon.length, 2);
-    assert.ok(dueSoon.some((m) => (m.payload as { dueSoon: boolean }).dueSoon));
+    assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-11-17T15:30:00Z")), 0, "Tuesday: not the weekly day");
+    assert.equal(await mail.remindersIfDue(db, engine, new Date("2026-11-23T15:30:00Z")), reminders + digests, "the next Monday, again");
     const pending = async () => (await db.select().from(s.emailMessage).where(eq(s.emailMessage.status, "pending"))).length;
-    await until(async () => { await mail.processOutbox(db); return (await pending()) === 0; }, 15000);
-    const reminder = relay.received.find((r) => r.to[0] === emp.email && /^Reminder: your skills self-assessment is due/.test(decodeSubject(r.data)))!;
-    const remindHtml = part(reminder.data, "text/html");
-    assert.ok(remindHtml.includes("2026 H2 assessment") && remindHtml.includes("December 15, 2026"));
+    await until(async () => { await mail.processOutbox(db); return (await pending()) === 0; }, 30000);
+    const reminder = relay.received.find((r) => r.to[0] === emp.email && /^Reminder: your manager sent back/.test(decodeSubject(r.data)))!;
+    assert.ok(reminder, "the person with a rating sent back is told so");
+    assert.ok(part(reminder.data, "text/html").includes(`login?next=${encodeURIComponent("/my-skills")}`));
+    const digest = relay.received.find((r) => r.to[0] === mgr.email && /^Your team's skills: /.test(decodeSubject(r.data)));
+    assert.ok(digest, "their manager gets the weekly digest");
+    const dHtml = part(digest!.data, "text/html");
+    assert.ok(dHtml.includes(`login?next=${encodeURIComponent("/team?tab=confirm")}`) || dHtml.includes(`login?next=${encodeURIComponent("/team")}`));
 
     // 4. a manager's Remind: once per person per day
     const first = await mail.nudgePeople(db, engine, [emp], mgr.name, "By Friday, please.");

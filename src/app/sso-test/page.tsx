@@ -1,4 +1,4 @@
-// Opened as a pop-up from Admin › Single sign-on: starts an SSO sign-in that comes back
+// Opened as a pop-up from Settings › Single sign-on: starts an SSO sign-in that comes back
 // to /sso-test/done. While SSO is not active, the sign-in is captured and refused.
 import { redirect } from "next/navigation";
 import { getDb, schema } from "@/db";

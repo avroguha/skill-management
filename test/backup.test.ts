@@ -8,7 +8,7 @@ import path from "node:path";
 import { sql } from "drizzle-orm";
 
 process.env.PGLITE_DIR = "memory://";
-process.env.SEED_DEMO = "true";
+// the demo database holds a full made-up organisation: something in every table
 process.env.BETTER_AUTH_SECRET = "test-secret-for-backups";
 process.env.BACKUP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "skills-backups-"));
 delete process.env.DATABASE_URL;
@@ -16,13 +16,13 @@ delete process.env.DATABASE_URL;
 const { getDb, closeDb } = await import("../src/db/index.ts");
 const B = await import("../src/lib/backup.ts");
 
-const rows = async (q: ReturnType<typeof sql>) => ((await (await getDb()).execute(q)) as unknown as { rows: Record<string, unknown>[] }).rows;
+const rows = async (q: ReturnType<typeof sql>) => ((await (await getDb("demo")).execute(q)) as unknown as { rows: Record<string, unknown>[] }).rows;
 const count = async (t: string) => Number((await rows(sql`select count(*)::int as n from ${sql.identifier(t)}`))[0].n);
 
 test.after(async () => { await closeDb(); fs.rmSync(process.env.BACKUP_DIR!, { recursive: true, force: true }); });
 
 test("a backup holds every table; restoring it after a wipe gives back exactly the same", async () => {
-  const db = await getDb();
+  const db = await getDb("demo");
   await db.execute(sql`insert into app_setting (key, value) values ('directory', ${JSON.stringify({ instanceUrl: "https://x.service-now.com", rootUserName: "boss" })}::jsonb)
     on conflict (key) do update set value = excluded.value`);
   const before = Object.fromEntries(await Promise.all(B.backupTables().map(async (t) => [t, await count(t)] as const)));
@@ -50,7 +50,7 @@ test("a backup holds every table; restoring it after a wipe gives back exactly t
 });
 
 test("an older backup (a column added since) restores with defaults; a column since dropped is ignored", async () => {
-  const db = await getDb();
+  const db = await getDb("demo");
   const b = await B.exportBackup(db, "tester", "manual");
   b.tables.employee = b.tables.employee.map((r) => { const { location, ...rest } = r; return { ...rest, shoe_size: 44 }; });
   await B.restoreBackup(db, b);
@@ -59,16 +59,18 @@ test("an older backup (a column added since) restores with defaults; a column si
 });
 
 test("a backup from a newer version, or a file that is not a backup, is refused", async () => {
-  const db = await getDb();
+  const db = await getDb("demo");
   const b = await B.exportBackup(db, "tester", "manual");
   await assert.rejects(B.restoreBackup(db, { ...b, migrations: b.migrations + 1 }), /newer version/);
   assert.throws(() => B.decodeBackup(Buffer.from("hello")), /not a backup/);
   assert.throws(() => B.decodeBackup(Buffer.from(JSON.stringify({ format: "other", version: 1, tables: {} }))), /not a backup/);
   assert.throws(() => B.decodeBackup(Buffer.from([0x1f, 0x8b, 1, 2, 3])), /damaged/);
+  // a version-1 backup belongs to the version-1 database, which v2 imported and left alone
+  assert.throws(() => B.decodeBackup(Buffer.from(JSON.stringify({ ...b, version: 1 }))), /version 1 of the app/);
 });
 
 test("stored backups: listed newest first, no path tricks, pruning keeps hand-made ones", async () => {
-  const db = await getDb();
+  const db = await getDb("demo");
   const m = await B.saveBackup(db, "tester", "manual");
   const s1 = await B.saveBackup(db, "schedule", "scheduled");
   const s2 = await B.saveBackup(db, "schedule", "scheduled");
@@ -84,7 +86,7 @@ test("stored backups: listed newest first, no path tricks, pruning keeps hand-ma
 });
 
 test("the automatic backup runs when due and not again until the interval has passed", async () => {
-  const db = await getDb();
+  const db = await getDb("demo");
   await B.writeBackupSettings(db, { enabled: true, everyHours: 24, keep: 5 });
   for (const x of B.listBackups()) if (x.reason === "scheduled") B.deleteBackup(x.name);
   const first = await B.backupIfDue(db);
@@ -96,13 +98,13 @@ test("the automatic backup runs when due and not again until the interval has pa
 });
 
 test("the backup before an upgrade runs on the old schema, where newer tables do not exist yet", async () => {
-  const db = await getDb();
-  await db.execute(sql`alter table api_client rename to api_client_later`);
+  const db = await getDb("demo");
+  await db.execute(sql`alter table email_message rename to email_message_later`);
   try {
     const b = await B.exportBackup(db, "tester", "before-upgrade");
-    assert.ok(!("api_client" in b.tables), "a table the database lacks is left out, not an error");
+    assert.ok(!("email_message" in b.tables), "a table the database lacks is left out, not an error");
     assert.ok(b.tables.employee.length > 0);
   } finally {
-    await db.execute(sql`alter table api_client_later rename to api_client`);
+    await db.execute(sql`alter table email_message_later rename to api_client`);
   }
 });

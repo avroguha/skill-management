@@ -2,15 +2,20 @@
 // most CSS) and the same content as plain text. Every button goes through /login?next=...,
 // so after single sign-on the person lands on the page the e-mail is about.
 
-export type MailKind = "test" | "submitted" | "returned" | "validated" | "reminder" | "nudge";
+export type MailKind = "test" | "submitted" | "returned" | "validated" | "reminder" | "nudge" | "digest";
 export interface MailItem { skill: string; self?: number | null; validated?: number | null; target?: number | null; note?: string }
+export interface DigestPerson { name: string; waiting: number; state: string }
 export interface Payloads {
   test: { byName: string };
   submitted: { personName: string; personTitle: string; personId: string; items: MailItem[] };
   returned: { byName: string; items: MailItem[] };
   validated: { byName: string; personId: string; items: MailItem[] };
-  reminder: { cycleName: string; dueOn: string; rated: number; required: number; missing: string[]; dueSoon: boolean };
+  /** weekly, to a person who still has something to do on their own skills */
+  reminder: { rated: number; required: number; missing: string[]; sentBack: number };
+  /** a manager pressed Remind */
   nudge: { byName: string; note: string; rated: number; required: number; missing: string[] };
+  /** weekly, to a manager: what waits for them and who has not started */
+  digest: { waitingRatings: number; waitingPeople: DigestPerson[]; notStarted: DigestPerson[]; teamSize: number };
 }
 export interface Rendered { subject: string; html: string; text: string }
 export interface RenderContext { appUrl: string; toName: string; levelName: (n: number) => string; orgName: string }
@@ -19,10 +24,6 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const first = (name: string) => name.trim().split(/\s+/)[0] || name;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export const deepLink = (appUrl: string, path: string) => `${appUrl}/login?next=${encodeURIComponent(path)}`;
-const fmtDate = (iso: string) => {
-  const d = new Date(`${iso}T12:00:00Z`);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-};
 
 const C = { text: "#1f2937", muted: "#6b7280", line: "#e5e7eb", soft: "#f9fafb", brand: "#2563eb", warn: "#b45309" };
 
@@ -60,13 +61,14 @@ function layout(ctx: RenderContext, o: { preheader: string; heading: string; bod
 
 const p = (html: string) => `<p style="margin:12px 0 0;font-size:14px;line-height:1.5">${html}</p>`;
 const quote = (s: string) => `<div style="margin:12px 0 0;padding:10px 14px;border-left:3px solid ${C.brand};background:${C.soft};font-size:14px;white-space:pre-wrap">${esc(s)}</div>`;
-const progress = (rated: number, required: number) => required
-  ? `You have rated <b>${rated} of ${required}</b> skills your role requires.`
-  : "Your role has no required skills yet; rate the skills you have.";
-const missingList = (missing: string[]) => missing.length
-  ? `<ul style="margin:8px 0 0;padding-left:20px;font-size:14px;line-height:1.6">${missing.slice(0, 10).map((m) => `<li>${esc(m)}</li>`).join("")}${missing.length > 10 ? `<li style="color:${C.muted}">and ${missing.length - 10} more</li>` : ""}</ul>`
+const progressLine = (rated: number, required: number) => required
+  ? `You have rated <b>${rated} of ${required}</b> skills your role asks for.`
+  : "Your role asks for no particular skills yet; add the skills you have.";
+const plainText = (html: string) => html.replace(/<[^>]+>/g, "");
+const list = (items: string[]) => items.length
+  ? `<ul style="margin:8px 0 0;padding-left:20px;font-size:14px;line-height:1.6">${items.slice(0, 10).map((m) => `<li>${m}</li>`).join("")}${items.length > 10 ? `<li style="color:${C.muted}">and ${items.length - 10} more</li>` : ""}</ul>`
   : "";
-const textList = (missing: string[]) => missing.slice(0, 10).map((m) => `  - ${m}`).join("\n") + (missing.length > 10 ? `\n  - and ${missing.length - 10} more` : "");
+const textList = (items: string[]) => items.slice(0, 10).map((m) => `  - ${m}`).join("\n") + (items.length > 10 ? `\n  - and ${items.length - 10} more` : "");
 const textFooter = (link: string) => `\n\nOpen: ${link}\n\nSign-in is with your company account (single sign-on). This is an automatic message: replies are not read.`;
 
 export function render<K extends MailKind>(kind: K, data: Payloads[K], ctx: RenderContext): Rendered {
@@ -74,43 +76,43 @@ export function render<K extends MailKind>(kind: K, data: Payloads[K], ctx: Rend
   switch (kind) {
     case "test": {
       const x = d as Payloads["test"];
-      const link = deepLink(ctx.appUrl, "/admin/email");
+      const link = deepLink(ctx.appUrl, "/settings?s=email");
       return {
         subject: "Skill Management: test e-mail",
-        html: layout(ctx, { preheader: "The mail relay works.", heading: "The mail relay works", why: `${x.byName} sent this test from Admin › Email.`,
-          body: p("This test came through the mail relay set in Admin › Email, so the app can send approvals and reminders.") + button(link, "Open e-mail settings") }),
-        text: `Hello ${first(ctx.toName)},\n\nThis test came through the mail relay set in Admin › Email, so the app can send approvals and reminders.${textFooter(link)}`,
+        html: layout(ctx, { preheader: "The mail relay works.", heading: "The mail relay works", why: `${x.byName} sent this test from Settings › E-mail.`,
+          body: p("This test came through the mail relay set in Settings › E-mail, so the app can tell managers what waits for them and remind people.") + button(link, "Open e-mail settings") }),
+        text: `Hello ${first(ctx.toName)},\n\nThis test came through the mail relay set in Settings › E-mail, so the app can tell managers what waits for them and remind people.${textFooter(link)}`,
       };
     }
     case "submitted": {
       const x = d as Payloads["submitted"];
-      const link = deepLink(ctx.appUrl, `/validate?person=${encodeURIComponent(x.personId)}`);
+      const link = deepLink(ctx.appUrl, `/team?tab=confirm&person=${encodeURIComponent(x.personId)}`);
       const n = plural(x.items.length, "skill rating");
       return {
-        subject: `${x.personName} sent ${n} for your validation`,
+        subject: `${x.personName} sent ${n} for you to confirm`,
         html: layout(ctx, {
-          preheader: `${x.personName} is waiting for you to validate ${n}.`, heading: `${x.personName} sent ${n} to validate`,
+          preheader: `${x.personName} is waiting for you to confirm ${n}.`, heading: `${x.personName} sent ${n} to confirm`,
           why: `You get this because ${x.personName} reports to you.`,
-          body: p(`<b>${esc(x.personName)}</b>${x.personTitle ? ` (${esc(x.personTitle)})` : ""} rated these skills and sent them to you. Accept each level, change it, or send it back with a note.`)
+          body: p(`<b>${esc(x.personName)}</b>${x.personTitle ? ` (${esc(x.personTitle)})` : ""} rated these skills and sent them to you. Agree with each level, change it, or send it back with a note.`)
             + table(["Skill", "Their level", "Role target", "Their comment"], x.items.map((i) => [esc(i.skill), levelCell(ctx, i.self), levelCell(ctx, i.target), i.note ? esc(i.note) : `<span style="color:${C.muted}">–</span>`]))
-            + button(link, "Review and validate"),
+            + button(link, "Review and confirm"),
         }),
-        text: `Hello ${first(ctx.toName)},\n\n${x.personName}${x.personTitle ? ` (${x.personTitle})` : ""} rated these skills and sent them to you to validate:\n\n`
+        text: `Hello ${first(ctx.toName)},\n\n${x.personName}${x.personTitle ? ` (${x.personTitle})` : ""} rated these skills and sent them to you to confirm:\n\n`
           + x.items.map((i) => `  - ${i.skill}: ${levelText(ctx, i.self)} (role target ${levelText(ctx, i.target)})${i.note ? ` - "${i.note}"` : ""}`).join("\n") + textFooter(link),
       };
     }
     case "returned": {
       const x = d as Payloads["returned"];
-      const link = deepLink(ctx.appUrl, "/assess");
+      const link = deepLink(ctx.appUrl, "/my-skills");
       const n = plural(x.items.length, "skill rating");
       return {
         subject: `${x.byName} sent back ${n} for you to look at again`,
         html: layout(ctx, {
           preheader: `${x.byName} asks you to look at ${n} again.`, heading: `${x.byName} sent back ${n}`,
-          why: `You get this because ${x.byName} reviewed your self-assessment.`,
-          body: p(`Your manager looked at these ratings and asks you to look at them again. Read the note, update the level or your comment, and send them again.`)
+          why: `You get this because ${x.byName} reviewed your skills.`,
+          body: p("Your manager looked at these ratings and asks you to look at them again. Read the note, change the level or your comment, and send them again.")
             + table(["Skill", "Your level", "Note from your manager"], x.items.map((i) => [esc(i.skill), levelCell(ctx, i.self), esc(i.note ?? "")]))
-            + button(link, "Update my self-assessment"),
+            + button(link, "Open my skills"),
         }),
         text: `Hello ${first(ctx.toName)},\n\n${x.byName} sent back these ratings for you to look at again:\n\n`
           + x.items.map((i) => `  - ${i.skill} (your level ${levelText(ctx, i.self)}): "${i.note ?? ""}"`).join("\n") + textFooter(link),
@@ -118,55 +120,79 @@ export function render<K extends MailKind>(kind: K, data: Payloads[K], ctx: Rend
     }
     case "validated": {
       const x = d as Payloads["validated"];
-      const link = deepLink(ctx.appUrl, `/people/${encodeURIComponent(x.personId)}`);
+      const link = deepLink(ctx.appUrl, "/my-skills");
       const n = plural(x.items.length, "skill rating");
       const changed = x.items.filter((i) => i.self != null && i.validated != null && i.self !== i.validated).length;
       return {
-        subject: `${x.byName} validated ${n}`,
+        subject: `${x.byName} confirmed ${n}`,
         html: layout(ctx, {
-          preheader: `${x.byName} validated ${n}${changed ? `, ${changed} at another level` : ""}.`, heading: `${x.byName} validated ${n}`,
-          why: `You get this because ${x.byName} validated your self-assessment.`,
-          body: p(changed ? `${plural(changed, "level")} differ from yours: the validated level is the one that counts. Talk to your manager if you see it differently.` : "Your manager agreed with your levels.")
-            + table(["Skill", "Your level", "Validated", "Comment"], x.items.map((i) => [esc(i.skill), levelCell(ctx, i.self),
+          preheader: `${x.byName} confirmed ${n}${changed ? `, ${changed} at another level` : ""}.`, heading: `${x.byName} confirmed ${n}`,
+          why: `You get this because ${x.byName} confirmed your skills.`,
+          body: p(changed ? `${plural(changed, "level")} differ from yours: the confirmed level is the one that counts. Talk to your manager if you see it differently.` : "Your manager agreed with your levels.")
+            + table(["Skill", "Your level", "Confirmed", "Comment"], x.items.map((i) => [esc(i.skill), levelCell(ctx, i.self),
               i.self != null && i.validated != null && i.validated !== i.self ? `<span style="color:${C.warn}">${levelCell(ctx, i.validated)}</span>` : levelCell(ctx, i.validated),
               i.note ? esc(i.note) : `<span style="color:${C.muted}">–</span>`]))
-            + button(link, "See my profile"),
+            + button(link, "Open my skills"),
         }),
-        text: `Hello ${first(ctx.toName)},\n\n${x.byName} validated these ratings:\n\n`
-          + x.items.map((i) => `  - ${i.skill}: yours ${levelText(ctx, i.self)}, validated ${levelText(ctx, i.validated)}${i.note ? ` - "${i.note}"` : ""}`).join("\n") + textFooter(link),
+        text: `Hello ${first(ctx.toName)},\n\n${x.byName} confirmed these ratings:\n\n`
+          + x.items.map((i) => `  - ${i.skill}: yours ${levelText(ctx, i.self)}, confirmed ${levelText(ctx, i.validated)}${i.note ? ` - "${i.note}"` : ""}`).join("\n") + textFooter(link),
       };
     }
     case "reminder": {
       const x = d as Payloads["reminder"];
-      const link = deepLink(ctx.appUrl, "/assess");
-      const due = fmtDate(x.dueOn);
+      const link = deepLink(ctx.appUrl, "/my-skills");
+      const what = x.sentBack
+        ? `Your manager sent back <b>${plural(x.sentBack, "rating")}</b> with a note. `
+        : "";
       return {
-        subject: x.dueSoon ? `Reminder: your skills self-assessment is due ${due}` : `Reminder: please update your skills for ${x.cycleName}`,
+        subject: x.sentBack ? "Reminder: your manager sent back some of your skill ratings" : "Reminder: please finish rating your skills",
         html: layout(ctx, {
-          preheader: `${x.cycleName} is due ${due}.`, heading: x.dueSoon ? `Your self-assessment is due ${due}` : `Please update your skills for ${x.cycleName}`,
-          why: `You get this because the assessment round “${x.cycleName}” is open and your self-assessment has not been sent yet.`,
-          body: p(`The assessment round <b>${esc(x.cycleName)}</b> is open until <b>${esc(due)}</b>. ${progress(x.rated, x.required)} Rate each skill, then press <b>Submit for validation</b> so your manager can validate it.`)
-            + (x.missing.length ? p("Still to rate:") + missingList(x.missing) : "")
-            + button(link, "Update my skills"),
+          preheader: x.sentBack ? "Some ratings wait for you." : "Your skills self-assessment is not finished yet.",
+          heading: x.sentBack ? "Some of your ratings wait for you" : "Please finish rating your skills",
+          why: "You get this weekly while your own skills still need something from you.",
+          body: p(`${what}${progressLine(x.rated, x.required)} Rate each skill, then press <b>Send to my manager</b>. It takes a few minutes.`)
+            + (x.missing.length ? p("Still to rate:") + list(x.missing.map(esc)) : "")
+            + button(link, "Open my skills"),
         }),
-        text: `Hello ${first(ctx.toName)},\n\nThe assessment round "${x.cycleName}" is open until ${due}. ${progress(x.rated, x.required).replace(/<\/?b>/g, "")} Rate each skill, then press "Submit for validation".`
+        text: `Hello ${first(ctx.toName)},\n\n${plainText(what)}${plainText(progressLine(x.rated, x.required))} Rate each skill, then press "Send to my manager".`
           + (x.missing.length ? `\n\nStill to rate:\n${textList(x.missing)}` : "") + textFooter(link),
       };
     }
     case "nudge": {
       const x = d as Payloads["nudge"];
-      const link = deepLink(ctx.appUrl, "/assess");
+      const link = deepLink(ctx.appUrl, "/my-skills");
       return {
         subject: `${x.byName} asks you to update your skills`,
         html: layout(ctx, {
-          preheader: `${x.byName} asks you to update your skills self-assessment.`, heading: `${x.byName} asks you to update your skills`,
+          preheader: `${x.byName} asks you to update your skills.`, heading: `${x.byName} asks you to update your skills`,
           why: `You get this because ${x.byName}, your manager, sent a reminder.`,
-          body: (x.note ? quote(x.note) : "") + p(`${progress(x.rated, x.required)} Rate each skill, then press <b>Submit for validation</b>.`)
-            + (x.missing.length ? p("Still to rate:") + missingList(x.missing) : "")
-            + button(link, "Update my skills"),
+          body: (x.note ? quote(x.note) : "") + p(`${progressLine(x.rated, x.required)} Rate each skill, then press <b>Send to my manager</b>.`)
+            + (x.missing.length ? p("Still to rate:") + list(x.missing.map(esc)) : "")
+            + button(link, "Open my skills"),
         }),
-        text: `Hello ${first(ctx.toName)},\n\n${x.byName} asks you to update your skills.${x.note ? `\n\n"${x.note}"` : ""}\n\n${progress(x.rated, x.required).replace(/<\/?b>/g, "")}`
+        text: `Hello ${first(ctx.toName)},\n\n${x.byName} asks you to update your skills.${x.note ? `\n\n"${x.note}"` : ""}\n\n${plainText(progressLine(x.rated, x.required))}`
           + (x.missing.length ? `\n\nStill to rate:\n${textList(x.missing)}` : "") + textFooter(link),
+      };
+    }
+    case "digest": {
+      const x = d as Payloads["digest"];
+      const link = deepLink(ctx.appUrl, x.waitingRatings ? "/team?tab=confirm" : "/team");
+      const heading = x.waitingRatings
+        ? `${plural(x.waitingRatings, "rating")} from ${plural(x.waitingPeople.length, "person", "people")} wait for you`
+        : `${plural(x.notStarted.length, "person", "people")} in your team have not started`;
+      return {
+        subject: `Your team's skills: ${heading}`,
+        html: layout(ctx, {
+          preheader: heading, heading,
+          why: "You get this weekly while something in your team waits for you. It stops when nothing does.",
+          body: (x.waitingRatings ? p("These people sent you their ratings. Agree, change a level, or send one back with a note:")
+            + table(["Person", "Ratings to confirm"], x.waitingPeople.map((w) => [esc(w.name), String(w.waiting)])) : "")
+            + (x.notStarted.length ? p(`Not started yet (${x.notStarted.length} of ${x.teamSize}). You can remind them from My team with one click:`) + list(x.notStarted.map((w) => esc(w.name))) : "")
+            + button(link, x.waitingRatings ? "Review and confirm" : "Open my team"),
+        }),
+        text: `Hello ${first(ctx.toName)},\n\n${heading}.`
+          + (x.waitingRatings ? `\n\nWaiting for you to confirm:\n${textList(x.waitingPeople.map((w) => `${w.name}: ${w.waiting}`))}` : "")
+          + (x.notStarted.length ? `\n\nNot started yet:\n${textList(x.notStarted.map((w) => w.name))}` : "") + textFooter(link),
       };
     }
   }

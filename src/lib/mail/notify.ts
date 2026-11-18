@@ -1,12 +1,13 @@
-// E-mail: settings (Admin › Email), the outbox, and the moments the app writes to people.
+// E-mail: settings (Settings › E-mail), the outbox, and the moments the app writes to people.
 //
-//   submitted  to the person's manager, each time they send ratings for validation
+//   submitted  to the person's manager, each time they send ratings to be confirmed
 //   returned   to the person, when their manager sends ratings back with a note
-//   validated  to the person, when their manager validates ratings
-//   reminder   to the person, while an assessment round is open and they have not sent it:
-//              weekly, and a few days before it is due, at a set hour in a set time zone
+//   validated  to the person, when their manager confirms ratings
+//   reminder   weekly, to a person who still has something to do on their own skills
+//   digest     weekly, to a manager with ratings waiting for them or people not started
 //   nudge      to the person, when their manager presses Remind on My team
 //
+// Weekly mail goes out on a set day from a set hour, in the organisation's time zone.
 // Nothing is sent from inside a user's action: the action writes to the outbox, and the
 // outbox is sent by one worker (a lease), straight away and then every minute. Returns and
 // validations wait two minutes, so a manager's sitting becomes one e-mail, not one per skill.
@@ -28,19 +29,18 @@ export interface EmailSettings {
   fromAddress: string;
   fromName: string;
   replyTo: string;
-  send: { submitted: boolean; returned: boolean; validated: boolean; reminders: boolean; nudge: boolean };
+  send: { submitted: boolean; returned: boolean; validated: boolean; reminders: boolean; nudge: boolean; digest: boolean };
   /** reminders go out at sendHour in this time zone */
   timeZone: string;
   sendHour: number;
   /** 0 Sunday … 6 Saturday */
   weeklyDay: number;
-  daysBeforeDue: number;
 }
 
 export const DEFAULT_EMAIL: EmailSettings = {
   enabled: false, host: "", port: 25, security: "starttls", fromAddress: "", fromName: "Skill Management", replyTo: "",
-  send: { submitted: true, returned: true, validated: true, reminders: true, nudge: true },
-  timeZone: "America/New_York", sendHour: 10, weeklyDay: 1, daysBeforeDue: 3,
+  send: { submitted: true, returned: true, validated: true, reminders: true, nudge: true, digest: true },
+  timeZone: "America/New_York", sendHour: 10, weeklyDay: 1,
 };
 
 const KEY = "email";
@@ -68,7 +68,6 @@ export function localParts(now: Date, timeZone: string): { date: string; hour: n
 export function validTimeZone(tz: string): boolean {
   try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; }
 }
-const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400e3);
 
 // ---- the outbox ------------------------------------------------------------------------------
 
@@ -170,28 +169,19 @@ export async function recentEmails(db: DB, limit = 50) {
 
 // ---- who, and how far they are ------------------------------------------------------------------
 
-/** Whom a person's ratings go to: their manager, else the manager of their unit (never themselves). */
+/** Whom a person's ratings go to: their manager (never themselves). */
 export function approverOf(engine: Engine, emp: Employee): Employee | null {
-  const ok = (e: Employee | undefined): e is Employee => !!e && e.active && e.id !== emp.id && isEmail(e.email);
-  const direct = emp.managerId ? engine.empById.get(emp.managerId) : undefined;
-  if (ok(direct)) return direct;
-  const unitMgr = emp.unitId ? engine.unitById.get(emp.unitId)?.managerId : null;
-  const viaUnit = unitMgr ? engine.empById.get(unitMgr) : undefined;
-  return ok(viaUnit) ? viaUnit : null;
+  const m = emp.managerId ? engine.empById.get(emp.managerId) : undefined;
+  return m && m.active && m.id !== emp.id && isEmail(m.email) ? m : null;
 }
 
 /** How far a person's self-assessment has got, and whether it still needs them. */
 export function assessmentState(engine: Engine, emp: Employee) {
-  const cells = engine.personProfile(emp).cells;
-  const required = cells.filter((c) => c.target != null && c.mandatory);
-  const rated = required.filter((c) => c.selfLevel != null).length;
-  const started = cells.some((c) => c.selfLevel != null);
-  const returned = cells.some((c) => c.status === "returned");
-  const drafts = cells.some((c) => c.status === "draft");
+  const p = engine.progress(emp);
   return {
-    rated, required: required.length,
-    missing: required.filter((c) => c.selfLevel == null).map((c) => engine.skillLabel(c.skillId)).sort(),
-    needsUpdate: !engine.isTop(emp) && (returned || drafts || !started || rated < required.length),
+    rated: p.rated, required: p.required, sentBack: p.returned,
+    missing: p.missing.map((sid) => engine.skillLabel(sid)).sort(),
+    needsUpdate: p.needsAction,
   };
 }
 
@@ -248,7 +238,7 @@ export async function notifyValidated(db: DB, engine: Engine, items: { employeeI
 export async function nudgePeople(db: DB, engine: Engine, people: Employee[], byName: string, note: string, now = new Date()) {
   const settings = await readEmailSettings(db);
   const out = { sent: 0, already: 0, noEmail: 0, upToDate: 0 };
-  if (!settings.enabled || !settings.send.nudge) throw new Error("E-mail reminders are switched off. An administrator can switch them on in Admin › Email.");
+  if (!settings.enabled || !settings.send.nudge) throw new Error("E-mail reminders are switched off. An administrator can switch them on in Settings › E-mail.");
   const day = localParts(now, settings.timeZone).date;
   for (const emp of people) {
     const st = assessmentState(engine, emp);
@@ -265,33 +255,34 @@ export async function nudgePeople(db: DB, engine: Engine, people: Employee[], by
 }
 
 /**
- * While an assessment round is open: from sendHour (organisation time) on the weekly day, and on
- * the day daysBeforeDue before it is due, everyone who still has to send their self-assessment
- * gets a reminder. Runs once a day; the dedupe key makes a second run harmless anyway.
+ * Once a week (on weeklyDay, from sendHour, organisation time): everyone who still has
+ * something to do on their own skills gets a reminder, and every manager with ratings
+ * waiting for them, or people who have not started, gets a digest. Nothing is sent to
+ * someone with nothing to do. The dedupe keys make a second run on the same day harmless.
  */
 export async function remindersIfDue(db: DB, engine: Engine, now = new Date()): Promise<number> {
   const settings = await readEmailSettings(db);
-  if (!settings.enabled || !settings.send.reminders) return 0;
+  if (!settings.enabled || (!settings.send.reminders && !settings.send.digest)) return 0;
   const local = localParts(now, settings.timeZone);
-  if (local.hour < settings.sendHour) return 0;
+  if (local.weekday !== settings.weeklyDay || local.hour < settings.sendHour) return 0;
   const [done] = await db.select().from(s.appSetting).where(eq(s.appSetting.key, "email_reminders"));
   if ((done?.value as { day?: string } | undefined)?.day === local.date) return 0;
   const queued = await withLease(db, "email-reminders", 10 * 60e3, async () => {
-    const [cycle] = await db.select().from(s.assessmentCycle).where(eq(s.assessmentCycle.status, "open"));
     let n = 0;
-    if (cycle) {
-      const untilDue = daysBetween(local.date, cycle.dueOn);
-      const dueSoon = untilDue === settings.daysBeforeDue;
-      if ((local.weekday === settings.weeklyDay && untilDue >= 0) || dueSoon) {
-        for (const emp of engine.empById.values()) {
-          if (!emp.active || !isEmail(emp.email)) continue;
-          const st = assessmentState(engine, emp);
-          if (!st.needsUpdate) continue;
-          if (await enqueue(db, {
-            kind: "reminder", employeeId: emp.id, to: { email: emp.email, name: emp.name }, dedupeKey: `reminder:${cycle.id}:${emp.id}:${local.date}`,
-            payload: { cycleName: cycle.name, dueOn: cycle.dueOn, rated: st.rated, required: st.required, missing: st.missing, dueSoon },
-          })) n++;
-        }
+    for (const emp of engine.activeEmployees) {
+      if (!isEmail(emp.email)) continue;
+      if (settings.send.reminders) {
+        const st = assessmentState(engine, emp);
+        if (st.needsUpdate && await enqueue(db, {
+          kind: "reminder", employeeId: emp.id, to: { email: emp.email, name: emp.name }, dedupeKey: `reminder:${emp.id}:${local.date}`,
+          payload: { rated: st.rated, required: st.required, missing: st.missing, sentBack: st.sentBack },
+        })) n++;
+      }
+      if (settings.send.digest && engine.isManager(emp)) {
+        const d = digestFor(engine, emp);
+        if ((d.waitingRatings || d.notStarted.length) && await enqueue(db, {
+          kind: "digest", employeeId: emp.id, to: { email: emp.email, name: emp.name }, dedupeKey: `digest:${emp.id}:${local.date}`, payload: d,
+        })) n++;
       }
     }
     await db.insert(s.appSetting).values({ key: "email_reminders", value: { day: local.date, queued: n } })
@@ -300,4 +291,13 @@ export async function remindersIfDue(db: DB, engine: Engine, now = new Date()): 
   });
   if (queued) kickOutbox(db);
   return queued ?? 0;
+}
+
+/** What waits for a manager: ratings their direct reports sent, and who has not started. */
+export function digestFor(engine: Engine, mgr: Employee): Payloads["digest"] {
+  const team = engine.directReportsOf(mgr.id);
+  const waitingPeople = team.map((e) => ({ name: e.name, waiting: engine.ratingsOf(e.id).filter((r) => r.status === "submitted").length, state: "" }))
+    .filter((w) => w.waiting > 0);
+  const notStarted = team.filter((e) => engine.progress(e).state === "not_started").map((e) => ({ name: e.name, waiting: 0, state: "not started" }));
+  return { waitingRatings: waitingPeople.reduce((t, w) => t + w.waiting, 0), waitingPeople, notStarted, teamSize: team.filter((e) => engine.assesses(e)).length };
 }

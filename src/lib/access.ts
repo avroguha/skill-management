@@ -1,119 +1,73 @@
 // Who may see what: the access part of a viewer, worked out from the engine alone (no
 // framework or database imports, so test/access.test.ts checks it directly).
 //
-//   admin      everything, including setup
-//   executive  reads the whole organisation; builds charts over any of it
-//   operator   their own hierarchy (if they lead anyone) plus every hierarchy an administrator
-//              assigned them: a leader (that person and everyone below) or a unit (and the
-//              units under it). Reads those and builds charts over them. They validate and set
-//              targets only for their OWN reports, and edit team needs only for units they
-//              manage themselves: an assigned hierarchy is read-only.
-//   manager    anyone who manages a unit or has reports (derived, never needs assigning)
-//   employee   their own profile
+//   admin      everything, including Settings
+//   leader     reads the whole organisation (an executive, HR, a programme lead)
+//   manager    anyone with people reporting to them (derived, never assigned): they see
+//              everyone below them, confirm their direct reports' ratings and set what
+//              their team needs
+//   employee   their own skills, the skills catalogue and people search
 import type { Employee, Engine } from "./engine/engine.ts";
+import { ALL } from "./engine/engine.ts";
 
-export type AccessRole = "admin" | "executive" | "operator" | "manager" | "employee";
+export type AccessRole = "admin" | "leader" | "manager" | "employee";
 export const ACCESS_ROLES: { value: AccessRole; label: string; description: string }[] = [
-  { value: "admin", label: "Administrator", description: "Everything, including setup and users." },
-  { value: "executive", label: "Executive", description: "Reads the whole organisation and builds charts over it." },
-  { value: "operator", label: "Operator", description: "Builds charts over their own hierarchy and any an administrator assigns; reads those, read-only." },
-  { value: "manager", label: "Manager", description: "Their units and reports: view, validate, set targets." },
-  { value: "employee", label: "Employee", description: "Their own profile and self-assessment." },
+  { value: "admin", label: "Administrator", description: "Everything, including Settings." },
+  { value: "leader", label: "Leader", description: "Sees the whole organisation, read-only beyond their own people." },
+  { value: "manager", label: "Manager", description: "Anyone with people reporting to them gets this by themselves: they see everyone below them and confirm their direct reports' ratings." },
+  { value: "employee", label: "Employee", description: "Their own skills, the catalogue and people search." },
 ];
 
+/** v1 names map onto v2's: an executive or operator becomes a leader. */
 export function asRole(r: string | null | undefined): AccessRole {
-  return r === "admin" || r === "executive" || r === "operator" || r === "manager" ? r : "employee";
+  if (r === "admin") return "admin";
+  if (r === "leader" || r === "executive" || r === "operator") return "leader";
+  if (r === "manager") return "manager";
+  return "employee";
 }
-
-/** A hierarchy: a leader and everyone below them, or a unit and the units under it. */
-export interface Scope { kind: "leader" | "unit"; id: string }
 
 export interface Access {
   role: AccessRole;
-  allUnits: boolean;
-  /** units whose data this viewer may read */
-  unitIds: Set<string>;
-  /** people this viewer may read */
+  /** reads every person (admin and leader) */
+  allPeople: boolean;
+  /** the people this viewer may read */
   employeeIds: Set<string>;
-  /** people whose ratings this viewer validates and whose targets they set */
+  /** the people whose ratings this viewer confirms: their direct reports (admins: anyone) */
   reportIds: Set<string>;
-  /** units this viewer manages themselves (and those under them): where they edit team needs */
-  manageUnitIds: Set<string>;
-  homeUnitId: string | null;
-  canSeeOrg: boolean;
-  canBuildCharts: boolean;
-  /** the hierarchies charts may be built over: "all" for executives and administrators */
-  chartScopes: Scope[] | "all";
+  /** the managers whose team needs this viewer may change: themselves and every manager below */
+  manageIds: Set<string>;
+  /** where the team and insight pages open: their own team, or the whole organisation */
+  homeScope: string | null;
+  /** sees team pages and insights (manages people, or reads the whole organisation) */
+  canSeeTeams: boolean;
 }
 
-/** Scopes that still point at something: an active leader, or an existing unit. */
-export function validScopes(engine: Engine, scopes: Scope[]): Scope[] {
-  return scopes.filter((s) => (s.kind === "leader" ? !!engine.empById.get(s.id)?.active : s.kind === "unit" && engine.unitById.has(s.id)));
-}
-
-export function buildAccess(engine: Engine, assignedRole: AccessRole, employee: Employee | null, assigned: Scope[] = []): Access {
-  const reports = employee ? engine.reportsOf(employee.id) : [];
-  const managed = employee ? engine.managedUnitIds(employee.id) : [];
+export function buildAccess(engine: Engine, assignedRole: AccessRole, employee: Employee | null): Access {
+  const below = employee ? engine.reportsOf(employee.id) : [];
   let role = assignedRole;
-  if (role === "employee" && (reports.length || managed.length)) role = "manager";
+  if (role === "employee" && below.length) role = "manager";
+  const allPeople = role === "admin" || role === "leader";
 
-  const allUnits = role === "admin" || role === "executive";
-  const manageUnitIds = new Set<string>();
-  for (const m of managed) for (const id of engine.subtreeUnitIds(m)) manageUnitIds.add(id);
+  const employeeIds = new Set<string>(allPeople ? engine.empById.keys() : below.map((e) => e.id));
+  if (employee) employeeIds.add(employee.id);
 
-  const unitIds = new Set<string>();
-  const employeeIds = new Set<string>(allUnits ? engine.empById.keys() : []);
-  const scopes = role === "operator" ? validScopes(engine, assigned) : [];
-  if (!allUnits) {
-    if (role === "manager" || role === "operator") for (const id of manageUnitIds) unitIds.add(id);
-    for (const s of scopes) {
-      if (s.kind === "unit") {
-        for (const id of engine.subtreeUnitIds(s.id)) unitIds.add(id);
-      } else {
-        employeeIds.add(s.id);
-        for (const e of engine.reportsOf(s.id)) employeeIds.add(e.id);
-        for (const m of engine.managedUnitIds(s.id)) for (const id of engine.subtreeUnitIds(m)) unitIds.add(id);
-      }
-    }
-    for (const r of reports) employeeIds.add(r.id);
-    for (const uid of unitIds) for (const e of engine.directMembers(uid)) employeeIds.add(e.id);
-    if (employee) employeeIds.add(employee.id);
-  }
-  const reportIds = new Set<string>(role === "admin" ? [...engine.empById.keys()] : reports.map((r) => r.id));
-  if (employee && role !== "admin") reportIds.delete(employee.id); // nobody validates themselves
+  // Confirming ratings is the direct manager's job; an administrator may step in for anyone.
+  const reportIds = new Set<string>(role === "admin" ? engine.empById.keys() : employee ? engine.directReportsOf(employee.id).map((e) => e.id) : []);
+  if (employee && role !== "admin") reportIds.delete(employee.id); // nobody confirms their own
 
-  // Home scope: the whole organisation, or the highest unit this person manages, or the first
-  // hierarchy they were given, or their own unit.
-  const top = (ids: string[]) => ids.find((m) => !engine.ancestors(m).some((a) => ids.includes(a.id))) ?? ids[0];
-  let homeUnitId: string | null = null;
-  if (allUnits) homeUnitId = [...engine.roots].sort((a, b) => engine.membersOf(b.id).length - engine.membersOf(a.id).length)[0]?.id ?? null;
-  else if (managed.length) homeUnitId = top(managed);
-  else if (scopes.length) {
-    const s = scopes[0];
-    homeUnitId = s.kind === "unit" ? s.id : (top(engine.managedUnitIds(s.id)) ?? engine.empById.get(s.id)?.unitId ?? null);
-  } else homeUnitId = employee?.unitId ?? null;
-
-  let chartScopes: Scope[] | "all" = [];
-  if (allUnits) chartScopes = "all";
-  else if (role === "operator") {
-    const own: Scope[] = employee && reports.length ? [{ kind: "leader", id: employee.id }] : [];
-    const seen = new Set<string>();
-    chartScopes = [...own, ...scopes].filter((s) => !seen.has(`${s.kind}:${s.id}`) && !!seen.add(`${s.kind}:${s.id}`));
+  const manageIds = new Set<string>();
+  if (role === "admin") {
+    for (const e of engine.activeEmployees) if (engine.isManager(e)) manageIds.add(e.id);
+  } else if (employee && below.length) {
+    for (const m of engine.managersIn(employee.id)) manageIds.add(m.id);
   }
 
-  return {
-    role, allUnits, unitIds, employeeIds, reportIds, manageUnitIds, homeUnitId,
-    canSeeOrg: allUnits || role === "manager" || role === "operator",
-    canBuildCharts: allUnits || role === "operator",
-    chartScopes,
-  };
+  const homeScope = allPeople ? ALL : employee && below.length ? employee.id : null;
+  return { role, allPeople, employeeIds, reportIds, manageIds, homeScope, canSeeTeams: homeScope != null };
 }
 
-/** Whether a viewer may build or see a chart over this hierarchy: one of theirs, or a part of
- *  one (a unit, or a leader, inside what they may read). */
-export function mayChart(a: Pick<Access, "chartScopes" | "canBuildCharts" | "unitIds" | "employeeIds">, s: Scope): boolean {
-  if (!a.canBuildCharts) return false;
-  if (a.chartScopes === "all") return true;
-  if (a.chartScopes.some((x) => x.kind === s.kind && x.id === s.id)) return true;
-  return s.kind === "unit" ? a.unitIds.has(s.id) : a.employeeIds.has(s.id);
+/** Whether a viewer may look at a scope (a manager's team, or the whole organisation). */
+export function maySeeScope(a: Pick<Access, "allPeople" | "employeeIds">, scope: string): boolean {
+  if (scope === ALL) return a.allPeople;
+  return a.allPeople || a.employeeIds.has(scope);
 }

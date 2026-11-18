@@ -22,6 +22,7 @@ import { GAP_CLASS, GAP_LABEL, LEVEL_CLASS } from "@/lib/status";
 import type { GapCategory } from "@/lib/engine/engine";
 import { cn } from "@/lib/utils";
 import { substringFilter } from "@/lib/search";
+import { Info } from "@/components/info";
 
 export type ColKind = "text" | "link" | "number" | "pct" | "date" | "level" | "gap" | "muted" | "badge";
 export interface ColSpec {
@@ -34,6 +35,8 @@ export interface ColSpec {
   facet?: boolean;
   sortable?: boolean;
   className?: string;
+  /** what the column shows: the (i) in its header */
+  info?: string;
 }
 type Row = Record<string, unknown>;
 
@@ -214,6 +217,7 @@ export function DataTable({
                           {sorted === "asc" ? <ArrowUp className="size-3" /> : sorted === "desc" ? <ArrowDown className="size-3" /> : <ChevronsUpDown className="size-3 opacity-30" />}
                         </button>
                       ) : flexRender(h.column.columnDef.header, h.getContext())}
+                      {spec.info && <Info className="ml-1" label={`About ${spec.header}`}>{spec.info}</Info>}
                     </TableHead>
                   );
                 })}

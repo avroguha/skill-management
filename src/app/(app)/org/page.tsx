@@ -4,7 +4,7 @@
 // the details; going inside makes that person the top of the view.
 import { PageHeader } from "@/components/page-header";
 import { Empty } from "@/components/heatmap";
-import { requireOrgViewer, getEngine, param, type SearchParams } from "@/lib/server";
+import { requireTeamViewer, getEngine, param, type SearchParams } from "@/lib/server";
 import { photoUrls } from "@/lib/photos";
 import { orgForest, orgCards } from "@/lib/org-nodes";
 import { OrgTree, type OrgView } from "./org-tree";
@@ -13,7 +13,7 @@ export const metadata = { title: "Org chart" };
 
 export default async function OrgPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
-  const v = await requireOrgViewer();
+  const v = await requireTeamViewer();
   const engine = await getEngine();
   const photos = await photoUrls();
   const f = orgForest(engine, v);
@@ -27,7 +27,7 @@ export default async function OrgPage({ searchParams }: { searchParams: SearchPa
     list: `/org?${rootPart ? `${rootPart}&` : ""}view=list`,
   };
   const tops = requested && f.visible.has(requested) ? [requested] : f.tops;
-  if (!tops.length) return (<><PageHeader title="Org chart" /><Empty>No people yet. Sync them from ServiceNow, import them, or add them in Admin › Organisation.</Empty></>);
+  if (!tops.length) return (<><PageHeader title="Org chart" /><Empty>No people yet. Sync them from ServiceNow, import them, or a people CSV (Settings › Data).</Empty></>);
 
   // the top and one level down; the rest loads as cards are expanded
   const first = tops.flatMap((id) => f.kids.get(id) ?? []);

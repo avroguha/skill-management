@@ -41,17 +41,17 @@ export function UnitPicker({ units, value, paramName = "unit" }: { units: UnitOp
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 max-w-64 justify-between gap-2" aria-label="Organisation unit">
+        <Button variant="outline" size="sm" className="h-8 max-w-64 justify-between gap-2" aria-label="Team">
           <Network className="size-3.5 text-muted-foreground" />
-          <span className="truncate">{current?.name ?? "Choose a unit"}</span>
+          <span className="truncate">{current?.name ?? "Choose a team"}</span>
           <ChevronsUpDown className="size-3.5 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="start">
         <Command filter={substringFilter}>
-          <CommandInput placeholder="Find a unit…" />
+          <CommandInput placeholder="Find a team or manager…" />
           <CommandList>
-            <CommandEmpty>No unit found.</CommandEmpty>
+            <CommandEmpty>No team found.</CommandEmpty>
             <CommandGroup>
               {units.map((u) => (
                 <CommandItem key={u.id} value={`${u.name} ${u.id}`} onSelect={() => { set({ [paramName]: u.id }); setOpen(false); }}>

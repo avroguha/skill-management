@@ -4,14 +4,15 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { getAuth, MIN_PASSWORD_LENGTH } from "@/lib/auth";
-import { getViewer, audit } from "@/lib/server";
+import { getRealViewer, getViewer, audit } from "@/lib/server";
 
 export type FormState = { error?: string; ok?: string } | null;
 
 export async function changePassword(_: FormState, form: FormData): Promise<FormState> {
-  const v = await getViewer();
+  // the real account, also in demo mode: a password is never a demo thing
+  const v = await getRealViewer();
   if (!v) redirect("/login");
-  if (v.viewAs) return { error: `Read-only: you are viewing as ${v.name}. Stop viewing to change a password.` };
+  if ((await getViewer())?.viewAs) return { error: `Read-only: you are viewing as ${v.name}. Stop viewing to change a password.` };
   const current = String(form.get("current") ?? "");
   const next = String(form.get("next") ?? "");
   const confirm = String(form.get("confirm") ?? "");
@@ -28,7 +29,7 @@ export async function changePassword(_: FormState, form: FormData): Promise<Form
     if (/CREDENTIAL_ACCOUNT_NOT_FOUND/i.test(msg)) return { error: "This account signs in with single sign-on and has no password here." };
     return { error: `The password was not changed: ${msg}` };
   }
-  const db = await getDb();
+  const db = await getDb("live");
   await db.update(schema.user).set({ mustChangePassword: false }).where(eq(schema.user.id, v.userId));
   await audit(v, "change_password", "user", v.userId);
   redirect("/");

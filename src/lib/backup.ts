@@ -26,7 +26,8 @@ export type BackupReason = "manual" | "scheduled" | "before-restore" | "before-c
 
 export interface BackupFile {
   format: typeof BACKUP_FORMAT;
-  version: 1;
+  /** 2 since the v2 database (teams are managers); a version-1 backup belongs to the v1 database */
+  version: 2;
   createdAt: string;
   by: string;
   reason: BackupReason;
@@ -63,7 +64,7 @@ export async function exportBackup(db: DB, by: string, reason: BackupReason): Pr
       .map((r) => String((r as { table_name: unknown }).table_name)));
     for (const t of backupTables()) if (present.has(t)) tables[t] = rowsOf(await tx.execute(sql`select * from ${sql.identifier(t)}`));
   });
-  return { format: BACKUP_FORMAT, version: 1, createdAt: new Date().toISOString(), by, reason, migrations, tables };
+  return { format: BACKUP_FORMAT, version: 2, createdAt: new Date().toISOString(), by, reason, migrations, tables };
 }
 
 export const encodeBackup = (b: BackupFile): Buffer => zlib.gzipSync(Buffer.from(JSON.stringify(b)));
@@ -75,14 +76,18 @@ export function decodeBackup(buf: Buffer): BackupFile {
   catch { throw new Error("This file is not a readable backup (the compression is damaged)."); }
   let b: Partial<BackupFile>;
   try { b = JSON.parse(text); } catch { throw new Error("This file is not a backup made by this app."); }
-  if (b.format !== BACKUP_FORMAT || b.version !== 1 || typeof b.tables !== "object" || !b.tables) {
+  if (b.format !== BACKUP_FORMAT || typeof b.tables !== "object" || !b.tables) {
     throw new Error("This file is not a backup made by this app.");
   }
+  if ((b.version as number) === 1) {
+    throw new Error("This backup was made by version 1 of the app. Version 2 keeps its data in a new database and imported version 1 when it first started; the version-1 database itself is unchanged.");
+  }
+  if (b.version !== 2) throw new Error("This backup was made by a newer version of the app. Upgrade first.");
   return b as BackupFile;
 }
 
 export function summarise(b: BackupFile): Record<string, number> {
-  const pick = ["employee", "org_unit", "skill", "job_role", "rating", "user", "training_plan"];
+  const pick = ["employee", "skill", "job_role", "rating", "team_need", "user"];
   return Object.fromEntries(pick.map((t) => [t, b.tables[t]?.length ?? 0]));
 }
 
