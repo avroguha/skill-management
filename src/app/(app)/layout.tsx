@@ -4,6 +4,8 @@ import { AppSidebar, type NavItem } from "@/components/app-sidebar";
 import { ViewAsBanner } from "@/components/view-as";
 import { DemoBanner, DemoSwitch } from "@/components/demo";
 import { requireViewer, getEngine, ACCESS_ROLES, DEMO_PERSONAS } from "@/lib/server";
+import { getNextSteps } from "@/lib/next-steps-server";
+import { NextStepButton } from "@/components/next-step";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const v = await requireViewer();
@@ -30,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       : v.role === "employee" && me?.managerId ? `Team member · ${engine.teamLabel(me.managerId)}`
         : ACCESS_ROLES.find((r) => r.value === v.role)?.label ?? v.role;
   const defaultOpen = (await cookies()).get("sidebar_state")?.value !== "false";
+  const [next] = await getNextSteps();
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <AppSidebar nav={nav}
@@ -37,11 +40,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         canChangePassword={!v.demo} />
       <SidebarInset className="min-w-0">
         <div className="sticky top-0 z-20">
-          {v.demo && <DemoBanner persona={v.demo.persona} personas={DEMO_PERSONAS.map((p) => ({ key: p.key, label: p.label, description: p.description }))} />}
+          {v.demo && <DemoBanner persona={v.demo.persona} canReset={v.demo.canReset} personas={DEMO_PERSONAS.map((p) => ({ key: p.key, label: p.label, description: p.description }))} />}
           {v.viewAs && <ViewAsBanner name={v.name} role={roleLabel} by={v.viewAs.byName} expiresAt={v.viewAs.expiresAt} />}
           <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur">
             <SidebarTrigger className="-ml-1" />
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              <NextStepButton step={next} />
               {v.canDemo && !v.demo && !v.viewAs && <DemoSwitch />}
             </div>
           </header>

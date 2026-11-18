@@ -5,6 +5,9 @@ import { Section } from "@/components/kpi";
 import { AdminCrud } from "@/components/admin-crud";
 import { saveCategory, deleteCategory } from "@/app/actions/admin";
 import { COLUMNS, DESCRIPTIONS } from "@/lib/transfer";
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Info } from "@/components/info";
 import { ImportForm } from "../data/client";
 import { SkillsAdmin } from "./client";
 
@@ -32,13 +35,23 @@ export default async function SkillsSettings() {
       <PageHeader title="Skills"
         description="The catalogue people rate themselves on: category › skill › sub-skill, for example Cloud › AWS › EC2. Upload a CSV, or add and edit skills one by one." />
       <div className="grid gap-5">
-        <Section title="Upload skills from a CSV file"
-          info="Adds and updates categories, skills and sub-skills in bulk. Check the file first: nothing is saved until you press Import. A new skill that looks like one already here (similar wording, or one of its aliases) is listed with a choice: keep both, merge it into the existing one, skip it, or replace the existing one with it.">
+        <Section title="Download and upload skills (CSV)"
+          info="Bulk changes in three steps: download the catalogue, change it in Excel, upload it back. An upload updates and adds; it never deletes (retire a skill with status = retired). Check it first: nothing is saved until you press Import.">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm"><a href="/api/export/skills"><Download />Download the catalogue (skills.csv)</a></Button>
+            <Button asChild variant="outline" size="sm"><a href="/api/export/starter-skills"><Download />Download the starter catalogue</a></Button>
+            <Info label="About the two downloads">
+              <b>The catalogue</b> is every skill here now: the easiest template, and a backup before a big change.
+              <b> The starter catalogue</b> is 96 common IT and professional skills, loaded by itself on a fresh
+              install. Upload it here to add any you do not have yet; skills you already have are updated, nothing is removed.
+            </Info>
+          </div>
           <ImportForm kinds={[{ kind: "skills", columns: COLUMNS.skills, description: DESCRIPTIONS.skills }]} />
-          <p className="mt-3 text-xs text-muted-foreground">
-            Columns: <code>category, skill, sub_skill, aliases, description, status</code>. The easiest template is the current catalogue:{" "}
-            <a href="/api/export/skills" className="underline underline-offset-2">download skills.csv</a>, edit it, and upload it again.
-          </p>
+          <ul className="mt-3 grid list-disc gap-0.5 pl-5 text-xs text-muted-foreground">
+            <li><b>Upsert</b>: a skill (or sub-skill) whose name is already here is <b>updated</b> from the columns the file has: category, aliases, description, status, order. A column the file leaves out keeps what is there.</li>
+            <li>A skill that is not here is <b>added</b>; a new category is created as needed. Nothing is ever deleted.</li>
+            <li>A new skill that only <b>looks like</b> one already here (similar wording, or one of its aliases) is listed first, with a choice: merge, replace, keep both or skip.</li>
+          </ul>
         </Section>
         <Section title={`Skills (${skills.filter((x) => x.status === "active").length} active)`}
           description={drafts ? `${drafts} suggested by people, waiting for you (status: draft). Approve with ✓, or merge into an existing skill.` : undefined}

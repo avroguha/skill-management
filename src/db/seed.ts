@@ -2,6 +2,8 @@
 //
 //   always    the six proficiency levels (0-5) and default settings
 //   always    the local administrator admin / admin when no user exists yet
+//   always    the starter skill catalogue when there are no skills at all (a fresh install;
+//             a site that imported version 1 or uploaded its own keeps what it has)
 //
 // Made-up people live only in the demo database (src/db/demo.ts), never here.
 import { count, eq } from "drizzle-orm";
@@ -28,6 +30,14 @@ export async function seed(db: DB): Promise<void> {
 
   const [{ n: users }] = await db.select({ n: count() }).from(s.user);
   if (users === 0) await createLocalAdmin(db);
+
+  const [{ n: skills }] = await db.select({ n: count() }).from(s.skill);
+  if (skills === 0) {
+    const { importCsv } = await import("../lib/transfer.ts");
+    const { STARTER_SKILLS_CSV } = await import("./starter-skills.ts");
+    const r = await importCsv(db, "skills", STARTER_SKILLS_CSV);
+    console.log(`seed: the starter skill catalogue, ${r.created} skills`);
+  }
 }
 
 /** admin / admin. Sign-in does not check password length, so the short seed password works;

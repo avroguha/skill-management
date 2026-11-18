@@ -30,7 +30,7 @@ function AggCell({ a, thresholds, label }: { a: Agg; thresholds: Thresholds; lab
           {a.pct}%
         </div>
       </TooltipTrigger>
-      <TooltipContent side="top" className="text-xs">
+      <TooltipContent side="top" className="flex-col items-start gap-0.5 text-xs">
         <div className="font-medium">{label}</div>
         <div>{a.met} of {a.required} required skill ratings on target</div>
         <div>{a.assessed} assessed · {a.people} people{a.stale ? ` · ${a.stale} stale` : ""}</div>
@@ -92,7 +92,7 @@ export interface PeopleHeatmapData {
   rows: { id: string; name: string; title: string; href: string; onTargetPct: number | null; cells: Record<string, PeopleCell> }[];
 }
 
-const SOURCE_LABEL: Record<string, string> = { person: "set for this person", grade: "role and grade", role: "role" };
+const SOURCE_LABEL: Record<string, string> = { grade: "their role and grade", role: "their role" };
 
 function PersonCell({ c, levels, label }: { c: PeopleCell; levels: string[]; label: string }) {
   const cls = c.target == null && c.level != null ? "bg-status-none text-foreground/70" : GAP_CLASS[c.category];
@@ -100,18 +100,22 @@ function PersonCell({ c, levels, label }: { c: PeopleCell; levels: string[]; lab
     <Tooltip>
       <TooltipTrigger asChild>
         <div className={cn("relative flex size-8 items-center justify-center rounded-sm text-xs font-medium tabular", cls, c.stale && "opacity-55 ring-1 ring-inset ring-current/40")}>
-          {c.level ?? (c.target != null ? "–" : "")}
-          {c.pending && <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary" />}
+          {c.level != null ? c.level
+            // sent, not confirmed yet: their own level, in grey, with the dot
+            : c.pending && c.selfLevel != null ? <span className="italic opacity-60">{c.selfLevel}</span>
+              : c.target != null ? "–" : ""}
+          {c.pending && <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary" aria-label="waiting for the manager to confirm" />}
         </div>
       </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-64 text-xs">
+      <TooltipContent side="top" className="w-64 max-w-64 flex-col items-start gap-0.5 text-xs">
         <div className="font-medium">{label}</div>
-        <div>{GAP_LABEL[c.target == null ? "not_required" : c.category]}{c.mandatory ? "" : c.target != null ? " (optional)" : ""}</div>
-        {c.target != null && <div>Target {c.target} {levels[c.target]} · {SOURCE_LABEL[c.source ?? ""] ?? ""}</div>}
-        <div>Validated {c.validatedLevel != null ? `${c.validatedLevel} ${levels[c.validatedLevel]}` : "–"} · Self {c.selfLevel ?? "–"}</div>
-        {c.at && <div className={cn(c.stale && "font-medium")}>{c.stale ? "Stale: " : "Assessed "}{new Date(c.at).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}</div>}
-        {c.pending && <div>Awaiting manager validation</div>}
-        {c.interest && <div>Wants to grow this skill</div>}
+        <div>{c.level == null && c.target != null ? "Not confirmed yet" : GAP_LABEL[c.target == null ? "not_required" : c.category]}{c.mandatory ? "" : c.target != null ? " (optional)" : ""}</div>
+        {c.target != null && <div>Target {c.target} {levels[c.target]}, from {SOURCE_LABEL[c.source ?? ""] ?? "their role"}</div>}
+        <div>Confirmed: {c.validatedLevel != null ? `${c.validatedLevel} ${levels[c.validatedLevel]}` : "not yet"}</div>
+        <div>Their own level: {c.selfLevel != null ? `${c.selfLevel} ${levels[c.selfLevel]}` : "not rated"}</div>
+        {c.at && <div className={cn(c.stale && "font-medium")}>{c.stale ? "Stale: confirmed " : "Confirmed "}{new Date(c.at).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}</div>}
+        {c.pending && <div className="font-medium">Waiting for the manager to confirm</div>}
+        {c.interest && <div>Wants to grow in this skill</div>}
       </TooltipContent>
     </Tooltip>
   );
@@ -129,10 +133,10 @@ function CoverageCell({ cov }: { cov: PeopleHeatmapData["columns"][number]["cove
           {cov.count}/{cov.headcount}
         </div>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
+      <TooltipContent side="bottom" className="flex-col items-start gap-0.5 text-xs">
         <div>{cov.count} {cov.count === 1 ? "person" : "people"} at level {cov.level}+ · need {cov.headcount}</div>
-        <div>{cov.explicit ? "Team requirement" : "Implied by the roles in this team"}</div>
-        {cov.spof && <div className="font-medium">Single point of failure</div>}
+        <div>{cov.explicit ? "Set by the manager" : "Implied by the roles in this team"}</div>
+        {cov.spof && <div className="font-medium">Rests on one person</div>}
       </TooltipContent>
     </Tooltip>
   );
@@ -223,9 +227,10 @@ export function HeatLegend({ mode }: { mode: "people" | "units"; }) {
           {item(GAP_CLASS.significant, "2 below", "1")}
           {item(GAP_CLASS.critical, "Critical", "0")}
           {item(GAP_CLASS.not_required, "Not required")}
-          {item(GAP_CLASS.unassessed, "Not assessed", "–")}
-          <span className="flex items-center gap-1.5"><span className="relative inline-flex size-4 rounded-[3px] bg-muted"><span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary" /></span>Awaiting validation</span>
+          {item(GAP_CLASS.unassessed, "Not rated or not confirmed", "–")}
+          <span className="flex items-center gap-1.5"><span className="relative inline-flex size-4 items-center justify-center rounded-[3px] bg-muted text-[9px] italic text-muted-foreground">3<span className="absolute top-0 right-0 size-1.5 rounded-full bg-primary" /></span>Blue dot = sent, waiting for the manager (their own level in grey)</span>
           <span className="flex items-center gap-1.5"><Clock className="size-3.5" />Faded = stale</span>
+          <span>The number is the confirmed level; the colour is how far it is from the person&apos;s target</span>
         </>
       )}
     </div>

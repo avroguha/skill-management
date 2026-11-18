@@ -27,7 +27,7 @@ export default async function DemoSettings() {
             <li>Everything works: rate skills, confirm, set team needs, upload skills. It all stays in the demo database. No e-mail is sent and no sync runs.</li>
             <li>Accounts, single sign-on, ServiceNow, e-mail and backups are real, so they are read-only in demo mode.</li>
             <li><b>Back to real data</b> switches back. <b>Reset demo</b> puts the made-up data back as it was, for the next presentation.</li>
-            <li>Managers, leaders and administrators can use it. It ends by itself after 12 hours.</li>
+            <li>Everyone can use it: it is the easiest way to learn the app, and it cannot change anything real. It ends by itself after 12 hours.</li>
           </ul>
         </Section>
         <Section title={v?.demo ? "You are in demo mode" : "Try it"} info="Opens the demo as the head of the organisation; switch person in the orange bar.">

@@ -25,7 +25,7 @@ export const COLUMNS: Record<Kind, string[]> = {
 };
 
 export const DESCRIPTIONS: Record<Kind, string> = {
-  skills: "The taxonomy. A row with sub_skill adds a sub-skill under skill. Aliases separated by ;. New skills that look like existing ones are listed for a decision first.",
+  skills: "The skill catalogue. A row with sub_skill is a sub-skill under skill. Aliases separated by ;. status: active, draft or retired. Existing skills are updated, new ones added, nothing deleted; new skills that look like existing ones are listed for a decision first.",
   grades: "Grades in order: a higher rank is the next grade up.",
   roles: "Job roles and what they are for.",
   "role-skills": "Required level per role, skill and (optionally) grade. A blank grade means every grade.",
@@ -309,6 +309,11 @@ async function importSkills(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err
     const status = data.status ? lc(data.status) : "active";
     if (!["active", "draft", "retired"].includes(status)) { err(line, `status must be active, draft or retired (was "${data.status}")`); continue; }
     const aliases = (data.aliases ?? "").split(/;/).map((x) => x.trim()).filter(Boolean);
+    // upsert: a skill that exists is updated from the columns the file has; a column the file
+    // leaves out (or a blank status) keeps what is there, so a short file never wipes aliases
+    // or brings a retired skill back
+    const keep = <T,>(given: boolean, value: T, current: T) => (given ? value : current);
+    const hasAliases = "aliases" in data, hasStatus = !!data.status?.trim(), hasDescription = "description" in data;
 
     // the top-level skill: its exact name, a decision about a near-identical one, or new
     let parent = L.skills.find((k) => !k.parentId && lc(k.name) === lc(top));
@@ -346,7 +351,10 @@ async function importSkills(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err
       if (!sub) { r.created++; continue; }
     } else if (!sub) {
       const cat = await ensureCat(catName);
-      await tx.update(s.skill).set({ categoryId: cat.id, aliases, description: data.description ?? parent.description, status, sort: order }).where(eq(s.skill.id, parent.id));
+      await tx.update(s.skill).set({
+        categoryId: cat.id, aliases: keep(hasAliases, aliases, parent.aliases), description: keep(hasDescription, data.description ?? "", parent.description),
+        status: keep(hasStatus, status, parent.status), sort: order,
+      }).where(eq(s.skill.id, parent.id));
       r.updated++;
       continue;
     }
@@ -356,7 +364,10 @@ async function importSkills(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err
     if (parent.categoryId !== cat.id) { err(line, `"${top}" is in another category; a sub-skill must share its parent's category`); continue; }
     const existing = L.skills.find((k) => k.parentId === parent!.id && lc(k.name) === lc(sub));
     if (existing) {
-      await tx.update(s.skill).set({ aliases, description: data.description ?? existing.description, status, sort: order }).where(eq(s.skill.id, existing.id));
+      await tx.update(s.skill).set({
+        aliases: keep(hasAliases, aliases, existing.aliases), description: keep(hasDescription, data.description ?? "", existing.description),
+        status: keep(hasStatus, status, existing.status), sort: order,
+      }).where(eq(s.skill.id, existing.id));
       r.updated++;
       continue;
     }

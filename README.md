@@ -30,13 +30,26 @@ The menu has seven entries, and each person sees only those that apply to them:
 
 | | Who | What |
 |---|---|---|
-| **Home** | everyone | What needs you first (your skills, ratings waiting for you, who has not started), then the headline numbers of your team or the organisation |
+| **Home** | everyone | **Your next step** (below), then the headline numbers of your team or the organisation |
 | **My skills** | everyone with a person record | Rate your skills and send them to your manager |
 | **My team** | managers, leaders, administrators | Confirm ratings, see your people, remind them, say what the team needs, the skills grid |
 | **Insights** | managers, leaders, administrators | Capability by team, where teams are short, strengths, who could strengthen another team |
 | **People** · **Org chart** | managers, leaders, administrators | Find anyone, or everyone with a skill at a level; who reports to whom |
 | **Skills** | everyone | The catalogue and the 0-5 scale; for managers, who has each skill |
 | **Settings** | administrators | Everything the app needs, one section per item, always listed on the left |
+
+### The next step, for everyone
+
+A **Next: ...** button at the top of every page says the one thing that matters most for you to do now, one click away; Home shows it in full with what comes after it. It is worked out from who you are and what is waiting (`src/lib/next-steps.ts`, `test/next-steps.test.ts`):
+
+| Who | Steps, in order |
+|---|---|
+| Rating your own skills | look at ratings sent back; rate your skills; rate the ones still missing; send them to your manager |
+| Managers | confirm the ratings waiting (always first); remind who has not started; say what the team needs, or look at needs that are short |
+| Leaders | how many people have finished rating; team needs short across the organisation |
+| Administrators | bring people in; load the catalogue; give people a role; approve suggested skills; switch on single sign-on and e-mail |
+
+With nothing to do the button disappears and Home says so: waiting for your manager, or up to date.
 
 ### For people (rating your own skills)
 
@@ -59,7 +72,7 @@ The menu has seven entries, and each person sees only those that apply to them:
 - **To confirm**: what your direct reports sent. Each level starts at what they chose; tap another level to change it, or write a note and **Send back**. **Confirm all** does everyone at once. The person gets one e-mail with the result.
 - **People**: your direct reports (or everyone below you), how far each has got (not started, in progress, sent back, waiting, done), with **Remind** to e-mail those who still have something to do.
 - **Needs**: what the team needs, as in "2 people at Proficient in Kubernetes": how many it has, who, and how many people **elsewhere in the organisation** already have it. Needs are also implied when two or more of your people have a role that asks for a skill.
-- **Skills grid**: people × skills, each cell the confirmed level coloured by the gap to that person's own target.
+- **Skills grid**: people × skills, each cell the confirmed level coloured by the gap to that person's own target. A **blue dot** marks a rating sent and waiting for the manager: the cell shows the person's own level in grey italics until it is confirmed. Hover a cell for the details.
 
 Managers of managers, leaders and administrators can open any team they may see, and rename a team (it is called after its manager until then).
 
@@ -87,7 +100,7 @@ Capability only: the app never judges a person and never suggests hiring.
 |---|---|
 | Overview | A checklist of what the app needs (people, single sign-on, the catalogue, roles with targets, e-mail), each one click away; what came across from version 1 |
 | People & access | Everyone with their role, grade, manager and team name, editable; the accounts that sign in (Administrator, Leader, local passwords) |
-| Skills | **Upload a CSV** of skills (checked first, near-identical skills listed with a choice: merge, replace, keep both, skip), then the catalogue and its categories; approve suggested skills, merge duplicates |
+| Skills | **Download** the catalogue (or the starter catalogue), **upload** it back to add and update in bulk (checked first, near-identical skills listed with a choice: merge, replace, keep both, skip), then the catalogue and its categories; approve suggested skills, merge duplicates |
 | Roles & targets | What each role needs, for all grades or per grade |
 | Levels & rules | The wording of 0-5; whether managers rate themselves; when a rating goes stale; colour thresholds |
 | ServiceNow | Where people and managers come from (below) |
@@ -106,11 +119,11 @@ Every page works from a 320-pixel phone to a wide desktop without sideways scrol
 
 ## Demo mode
 
-Like a phone's store mode. The **Demo** button at the top (for managers, leaders and administrators) switches **this browser** to a made-up organisation of about 130 people, **Avro Corp**, kept in a database of its own:
+Like a phone's store mode. The **Demo** button at the top (for everyone: it is the easiest way to learn the app) switches **this browser** to a made-up organisation of about 130 people, **Avro Corp**, kept in a database of its own:
 
 - An **orange bar** stays at the top while it is on. In it you choose who you are: the **head of the organisation**, a **director**, a **team manager** (with ratings waiting to be confirmed), a **team member** (who has not started) or an **administrator**. Each sees the app exactly as that person would.
 - Everything works: rate, send, confirm, send back, set team needs, upload skills. It all stays in the demo database. **No e-mail is sent and no sync runs.** Accounts, single sign-on, ServiceNow, e-mail settings and backups are real, so they are read-only there.
-- **Reset demo** puts the made-up data back as it was, for the next presentation. **Back to real data** switches back. It also ends by itself after 12 hours, and the audit log records each switch.
+- **Reset demo** (managers, leaders and administrators) puts the made-up data back as it was, for the next presentation. **Back to real data** switches back. It also ends by itself after 12 hours, and the audit log records each switch.
 - The demo is built in so it always tells a story: a team short of a skill nobody in it has, needs resting on one person, people elsewhere who already have what is missing, ratings waiting, people who have not started.
 
 The switch is a signed cookie that counts only for the account that set it; every database call follows it, so nothing done in demo mode can reach the real data (`src/db/index.ts`, `src/lib/server.ts`, `test/db.test.ts`).
@@ -292,7 +305,9 @@ Settings › Data & backups (and the skill upload on Settings › Skills), or `G
 
 Load in this order the first time: `skills`, `grades`, `roles`, `role-skills`, `people` (with `manager_email`, which builds the teams, and `team_name`), `team-needs` (by `manager_email`), `ratings`.
 
-**Skills** (`category, skill, sub_skill, aliases, description, status`): before anything is imported, each **new** skill is compared with the catalogue. One that looks like an existing skill (the same name apart from case and punctuation, almost the same wording, the same words in another order, one name containing the other, or one of its aliases) is listed with the skill it resembles, and nothing is imported until each has a choice: **merge** into the existing one (its name becomes an alias), **replace** the existing one (renamed in place, keeping its ratings), **keep both**, or **skip**. A skill that already exists by exactly that name is updated without asking. A site's own catalogue can be kept in `docs/skills-catalogue.csv`, which is gitignored; its test runs when the file is there.
+**Skills** (`category, skill, sub_skill, aliases, description, status`): before anything is imported, each **new** skill is compared with the catalogue. One that looks like an existing skill (the same name apart from case and punctuation, almost the same wording, the same words in another order, one name containing the other, or one of its aliases) is listed with the skill it resembles, and nothing is imported until each has a choice: **merge** into the existing one (its name becomes an alias), **replace** the existing one (renamed in place, keeping its ratings), **keep both**, or **skip**. A skill that already exists by exactly that name is **updated without asking** (an upsert): download the catalogue, change it in a spreadsheet, upload it again. Columns the file leaves out (no `aliases`, `description` or `status` column, or an empty status) keep what is there, and nothing missing from the file is deleted; retire a skill with `status` = `retired`.
+
+**The starter catalogue.** An empty database gets about a hundred common IT and professional skills on its first start (cloud, software engineering, DevOps, data, databases, AI, security, IT service management, monitoring, infrastructure, networking, end-user computing, ways of working; `src/db/starter-skills.ts`). It is only loaded when there are no skills at all, so it never comes back over a site's own catalogue; Settings › Skills downloads it for a starting point. A site's own catalogue can be kept in `docs/skills-catalogue.csv`, which is gitignored; its test runs when the file is there.
 
 ## Develop
 
@@ -322,7 +337,8 @@ npm run typecheck
 | `test/import.test.ts` | Version 1 to version 2 on a real version-1 database: everything with a meaning comes across with its ids, units become teams, version 1 is unchanged, it runs once |
 | `test/email.test.ts` | The SMTP client against a stand-in relay; every e-mail renders (HTML and text); to the manager, sent back as one, weekly reminders and digests, Remind once a day |
 | `test/info.test.ts` | Every settings field, tile and column has its (i); every settings section is in the menu and has a page |
-| `test/transfer.test.ts` | CSV round trip of everything, dry run, line-numbered errors, near-identical skills (each choice), the site catalogue when present |
+| `test/transfer.test.ts` | CSV round trip of everything, dry run, line-numbered errors, near-identical skills (each choice), the skill upsert (columns left out kept), the starter catalogue imports cleanly, the site catalogue when present |
+| `test/next-steps.test.ts` | The next step for someone rating, waiting, up to date; a manager (confirm first); a leader; an administrator, before and after setup |
 | `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, a chosen Entity ID (requests carry it, other audiences refused), tampered and wrongly signed assertions refused |
 | `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs, groups |
 | `test/servicenow.live.test.ts` | The same walk against a real instance; skipped unless `SN_LIVE_INSTANCE`, `SN_LIVE_USER`, `SN_LIVE_PASS` and `SN_LIVE_ROOT` are set |

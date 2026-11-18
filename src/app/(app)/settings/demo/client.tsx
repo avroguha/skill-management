@@ -22,6 +22,6 @@ export function DemoControls({ inDemo }: { inDemo: boolean }) {
       <Button disabled={busy} onClick={() => go(leaveDemo, "/")}><LogOut />Back to real data</Button>
     </div>
   ) : (
-    <Button disabled={busy} onClick={() => go(() => enterDemo("top"), "/")}><Presentation />{busy ? "Opening demo…" : "Open the demo"}</Button>
+    <Button disabled={busy} onClick={() => go(() => enterDemo(), "/")}><Presentation />{busy ? "Opening demo…" : "Open the demo"}</Button>
   );
 }

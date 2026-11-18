@@ -24,7 +24,8 @@ export function Info({ children, label = "What is this?", className, side = "top
         </button>
       </PopoverTrigger>
       <PopoverContent side={side} collisionPadding={12} className="w-72 max-w-[calc(100vw-2rem)] text-sm leading-relaxed">
-        {children}
+        {/* one block, so bold words and links stay in the sentence (the popover lays out its children as flex items) */}
+        <div className="space-y-2">{children}</div>
       </PopoverContent>
     </Popover>
   );

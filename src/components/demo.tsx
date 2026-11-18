@@ -16,7 +16,7 @@ export function DemoSwitch() {
   return (
     <div className="flex items-center gap-1">
       <Button size="sm" variant="outline" disabled={busy} onClick={() => start(async () => {
-        const r = await enterDemo("top");
+        const r = await enterDemo();
         if (!r.ok) { toast.error(r.error); return; }
         router.push("/");
         router.refresh();
@@ -24,15 +24,16 @@ export function DemoSwitch() {
         <Presentation />{busy ? "Opening demo…" : "Demo"}
       </Button>
       <Info label="About demo mode" side="bottom">
-        Switches this browser to a made-up organisation (about 130 people) for presentations, like a phone&apos;s store mode.
-        Your real data is not shown and nothing you do in demo mode reaches it: no e-mail is sent, no sync runs.
-        An orange bar stays at the top while it is on; <b>Back to real data</b> switches back.
+        A made-up organisation (about 130 people) to look around in and try everything, like a phone&apos;s store mode: the
+        easiest way to learn the app. You start as someone like you and can switch to a manager, a director or the head of
+        the organisation in the orange bar. Nothing you do there reaches the real data: no e-mail is sent, no sync runs.
+        <b>Back to real data</b> switches back.
       </Info>
     </div>
   );
 }
 
-export function DemoBanner({ persona, personas }: { persona: string; personas: { key: string; label: string; description: string }[] }) {
+export function DemoBanner({ persona, personas, canReset }: { persona: string; personas: { key: string; label: string; description: string }[]; canReset: boolean }) {
   const router = useRouter();
   const [busy, start] = useTransition();
   const go = (fn: () => Promise<{ ok: boolean; error?: string; message?: string }>, to?: string) => start(async () => {
@@ -60,7 +61,7 @@ export function DemoBanner({ persona, personas }: { persona: string; personas: {
         </Select>
       </div>
       <div className="ml-auto flex items-center gap-1.5">
-        <AlertDialog>
+        {canReset && <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button size="sm" variant="ghost" className="h-7 text-amber-950 hover:bg-amber-400" disabled={busy}><RotateCcw />Reset demo</Button>
           </AlertDialogTrigger>
@@ -74,7 +75,7 @@ export function DemoBanner({ persona, personas }: { persona: string; personas: {
               <AlertDialogAction onClick={() => go(resetDemoData, "/")}>Reset demo</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
-        </AlertDialog>
+        </AlertDialog>}
         <Button size="sm" className="h-7 bg-amber-950 text-amber-50 hover:bg-amber-900" disabled={busy} onClick={() => go(leaveDemo, "/")}><LogOut />Back to real data</Button>
       </div>
     </div>

@@ -1,4 +1,4 @@
-// CSV download of one kind of data. Administrators only.
+// CSV download of one kind of data, or "starter-skills" (the starter catalogue). Administrators only.
 import { getDb } from "@/db";
 import { getViewer, audit } from "@/lib/server";
 import { exportCsv, KINDS, type Kind } from "@/lib/transfer";
@@ -9,8 +9,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ kind: s
   const { kind } = await params;
   const v = await getViewer();
   if (!v || !v.isAdmin || v.mustChangePassword) return new Response("Forbidden", { status: 403 });
-  if (!(KINDS as readonly string[]).includes(kind)) return new Response("Unknown export", { status: 404 });
-  const csv = await exportCsv(await getDb(), kind as Kind);
+  if (kind !== "starter-skills" && !(KINDS as readonly string[]).includes(kind)) return new Response("Unknown export", { status: 404 });
+  const csv = kind === "starter-skills" ? (await import("@/db/starter-skills")).STARTER_SKILLS_CSV : await exportCsv(await getDb(), kind as Kind);
   await audit(v, "export", kind, null);
   const stamp = new Date().toISOString().slice(0, 10);
   return new Response(`﻿${csv}`, {

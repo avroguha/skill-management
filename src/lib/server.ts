@@ -38,7 +38,7 @@ export interface Viewer extends Access {
   /** set while an administrator is viewing the app as this person (read-only) */
   viewAs: { byUserId: string; byName: string; employeeId: string; expiresAt: number } | null;
   /** set in demo mode: the made-up person the presenter is, and the real account behind it */
-  demo: { persona: DemoPersona; label: string; realName: string } | null;
+  demo: { persona: DemoPersona; label: string; realName: string; canReset: boolean } | null;
   /** the signed-in account may switch this browser to demo mode */
   canDemo: boolean;
 }
@@ -148,7 +148,8 @@ function buildViewer(engine: Engine, who: Who, employee: Employee | null): Viewe
     mustChangePassword: who.mustChangePassword,
     viewAs: null,
     demo: null,
-    canDemo: access.role !== "employee",
+    // everyone may look around the demo: the best way to learn the app, and it cannot touch real data
+    canDemo: true,
   };
 }
 
@@ -186,7 +187,7 @@ async function demoViewer(real: Viewer, persona: string): Promise<Viewer> {
     userId: `demo:${p.key}`, name: employee?.name ?? "Demo administrator", email: employee?.email ?? "admin@avro.com",
     username: null, role, mustChangePassword: false,
   }, employee);
-  return { ...v, demo: { persona: p.key, label: p.label, realName: real.name }, canDemo: true };
+  return { ...v, demo: { persona: p.key, label: p.label, realName: real.name, canReset: real.role !== "employee" }, canDemo: true };
 }
 
 // ---- "view as": an administrator sees the app exactly as one person does -----------------

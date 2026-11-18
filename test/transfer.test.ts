@@ -194,3 +194,42 @@ test("the site catalogue in docs/ imports cleanly into an empty database, and ag
     await t.close();
   }
 });
+
+test("the starter catalogue imports cleanly, again without changes, and holds nothing near-identical to itself", async () => {
+  const { STARTER_SKILLS_CSV } = await import("../src/db/starter-skills.ts");
+  const t = await emptyDb();
+  try {
+    const first = await importCsv(t.db, "skills", STARTER_SKILLS_CSV);
+    assert.deepEqual(first.errors, []);
+    assert.deepEqual(first.matches.map((m) => m.incoming), [], "no starter skill looks like another");
+    assert.ok(first.created >= 90, `created ${first.created}`);
+    const again = await importCsv(t.db, "skills", STARTER_SKILLS_CSV);
+    assert.equal(again.created, 0);
+    assert.equal(again.errors.length, 0);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a skills upload is an upsert: existing skills updated from the columns given, new ones added, nothing wiped or deleted", async () => {
+  const t = await emptyDb();
+  try {
+    await importCsv(t.db, "skills", "category,skill,sub_skill,aliases,description,status\nCloud,Kubernetes,,K8s;kube,Containers at scale,active\nCloud,Legacy grid,,,Old,retired\nCloud,AWS,EC2,,Instances,active\n");
+    // a short file: only category and skill (and a new description for one)
+    const r = await importCsv(t.db, "skills", "category,skill,sub_skill,description\nCloud,Kubernetes,,Running workloads on Kubernetes\nCloud,Legacy grid,,Old\nCloud,AWS,EC2,Virtual machines\nCloud,Helm,,Charts\n");
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.created, 1, "Helm is new");
+    const all = await t.db.select().from(schema.skill);
+    const by = (n: string) => all.find((k) => k.name === n)!;
+    assert.deepEqual(by("Kubernetes").aliases, ["K8s", "kube"], "no aliases column: the aliases stay");
+    assert.equal(by("Kubernetes").description, "Running workloads on Kubernetes", "a column given: updated");
+    assert.equal(by("Legacy grid").status, "retired", "no status: a retired skill stays retired");
+    assert.equal(by("EC2").description, "Virtual machines", "sub-skills are updated too");
+    assert.equal(all.length, 5, "nothing deleted");
+    const cleared = await importCsv(t.db, "skills", "category,skill,aliases\nCloud,Kubernetes,\n");
+    assert.deepEqual(cleared.errors, []);
+    assert.deepEqual((await t.db.select().from(schema.skill)).find((k) => k.name === "Kubernetes")!.aliases, [], "an aliases column given empty clears them");
+  } finally {
+    await t.close();
+  }
+});

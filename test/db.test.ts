@@ -26,6 +26,8 @@ test("first start of the live database: migrations, levels 0-5, settings, admin/
   assert.equal(await verifyPassword({ hash: acct.password!, password: "admin" }), true);
   const [{ n: people }] = await db.select({ n: count() }).from(s.employee);
   assert.equal(people, 0, "demo people live only in the demo database");
+  const [{ n: skills }] = await db.select({ n: count() }).from(s.skill);
+  assert.ok(skills >= 90, `the starter skill catalogue is there from the start: ${skills}`);
 });
 
 test("seeding twice changes nothing", async () => {

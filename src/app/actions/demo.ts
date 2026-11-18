@@ -1,8 +1,9 @@
 "use server";
 // Demo mode, like a phone's store mode: this browser switches to the demo database (made-up
-// people and skills) and back. Nothing done in demo mode reaches the live data. Anyone who
-// manages people, leads or administers can switch; the audit log of the live database
-// records each switch.
+// people and skills) and back. Nothing done in demo mode reaches the live data. Everyone can
+// switch (it is the easiest way to learn the app) and starts as the made-up person closest to
+// their own role; resetting the demo is for managers, leaders and administrators, so nobody
+// resets it in the middle of someone else's presentation. The live audit log records each switch.
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/db";
@@ -18,11 +19,17 @@ async function setCookie(userId: string, persona: DemoPersona) {
   (await cookies()).set(DEMO_COOKIE, value, { httpOnly: true, sameSite: "lax", secure: appUrl().startsWith("https://"), path: "/", expires });
 }
 
+/** The demo person closest to someone's own role: a team member sees a team member first. */
+function startingPersona(real: { role: string }): DemoPersona {
+  return real.role === "admin" ? "admin" : real.role === "leader" ? "top" : real.role === "manager" ? "manager" : "member";
+}
+
 /** Into demo mode (or another demo person while in it). */
-export async function enterDemo(persona: string = "top"): Promise<Result> {
+export async function enterDemo(personaKey?: string): Promise<Result> {
   const real = await getRealViewer();
   if (!real) return { ok: false, error: "Not signed in." };
-  if (!real.canDemo) return { ok: false, error: "Demo mode is for managers, leaders and administrators." };
+  const persona = personaKey ?? startingPersona(real);
+  if (!real.canDemo) return { ok: false, error: "Demo mode is not available for this account." };
   if (!isPersona(persona)) return { ok: false, error: "Unknown demo person." };
   await getDb("demo"); // creates and fills the demo database on first use
   const already = (await getViewer())?.demo;
@@ -44,6 +51,7 @@ export async function leaveDemo(): Promise<Result> {
 export async function resetDemoData(): Promise<Result> {
   const v = await getViewer();
   if (!v?.demo) return { ok: false, error: "Switch to demo mode first: this resets the demo data only." };
+  if (!v.demo.canReset) return { ok: false, error: "Resetting the demo is for managers, leaders and administrators: someone may be presenting with it." };
   const { resetDemo } = await import("@/db/demo");
   await resetDemo(await getDb("demo"));
   forgetSharedEngine("demo");

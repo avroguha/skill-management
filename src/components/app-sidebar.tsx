@@ -72,7 +72,6 @@ export function AppSidebar({ nav, user, canChangePassword = true }: {
                 </div>
                 <div className="grid flex-1 text-left leading-tight">
                   <span className="truncate text-sm font-semibold">Skill Management</span>
-                  <span className="truncate text-xs text-muted-foreground">Who knows what</span>
                 </div>
               </Link>
             </SidebarMenuButton>
