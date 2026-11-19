@@ -78,6 +78,14 @@ test("a manager with a team need that nobody meets is pointed at it", () => {
   assert.ok(!keys(steps).includes("needs"));
 });
 
+test("a manager whose people have no role is asked to choose one for the team", () => {
+  const noRole = engine({ employees: [emp("tia", null), emp("ann", "tia"), { ...emp("bob", "ann"), roleId: null }, { ...emp("cat", "ann"), roleId: null }] });
+  const steps = nextSteps(noRole, as("ann", { role: "manager" }));
+  const step = steps.find((s) => s.key === "team-role")!;
+  assert.equal(step.title, "Choose a role for your team");
+  assert.ok(!keys(nextSteps(engine(), as("ann", { role: "manager" }))).includes("team-role"), "not when everyone has one");
+});
+
 test("a leader sees how far the organisation has got", () => {
   const steps = nextSteps(engine(), as(null, { role: "leader", allPeople: true }));
   assert.equal(steps[0].key, "org-done");

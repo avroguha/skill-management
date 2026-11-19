@@ -4,8 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   House, ChartNoAxesColumn, CircleHelp, Users, Shapes, PencilLine, Settings,
-  LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound,
-} from "lucide-react";
+  LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound, BriefcaseBusiness } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarRail,
@@ -21,7 +20,7 @@ import { initials } from "@/lib/format";
 
 const ICONS = {
   home: House, insights: ChartNoAxesColumn, help: CircleHelp, people: Users, skills: Shapes,
-  assess: PencilLine, admin: Settings, team: UsersRound, org: Network,
+  assess: PencilLine, admin: Settings, team: UsersRound, org: Network, roles: BriefcaseBusiness,
 };
 
 export interface NavItem { href: string; label: string; icon: keyof typeof ICONS; badge?: number }

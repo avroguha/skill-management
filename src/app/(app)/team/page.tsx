@@ -21,6 +21,8 @@ import { ConfirmQueue, type ConfirmPerson } from "./confirm";
 import { RemindTeam, type RemindCandidate } from "./remind";
 import { TeamNeeds, type NeedRow } from "./needs";
 import { TeamTitle } from "./rename";
+import { TeamRole, type TeamRoleState } from "./role";
+import { teamRoleReach } from "@/lib/team-roles";
 
 export const metadata = { title: "My team" };
 
@@ -47,6 +49,32 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
   const mine = scope === v.employee?.id;
   const canConfirm = v.isAdmin || mine;
   const canEdit = v.isAdmin || v.manageIds.has(scope);
+
+  // the team's role: what the manager chose, else what reaches the team from above
+  const roleName = (id: string | null | undefined) => (id ? engine.roleById.get(id)?.name ?? null : null);
+  const rolePeople = engine.activeEmployees.map((e) => ({ id: e.id, managerId: e.managerId, roleId: e.ownRoleId ?? null, teamRoleId: e.teamRoleId ?? null, teamRoleCascade: e.teamRoleCascade ?? false }));
+  const reachDirect = teamRoleReach(rolePeople, scope, false);
+  const reachAll = teamRoleReach(rolePeople, scope, true);
+  let inherited: TeamRoleState["inherited"] = null;
+  if (!roleName(manager.teamRoleId)) {
+    const seen = new Set([scope]);
+    for (let up = manager.managerId ? engine.empById.get(manager.managerId) : undefined; up && !seen.has(up.id); up = up.managerId ? engine.empById.get(up.managerId) : undefined) {
+      seen.add(up.id);
+      if (up.teamRoleId && up.teamRoleCascade && roleName(up.teamRoleId)) { inherited = { id: up.teamRoleId, name: roleName(up.teamRoleId)!, from: engine.teamLabel(up.id) }; break; }
+    }
+  }
+  const teamRole: TeamRoleState = {
+    managerId: scope, managerName: manager.name, mine,
+    current: roleName(manager.teamRoleId) ? { id: manager.teamRoleId!, name: roleName(manager.teamRoleId)!, cascade: !!manager.teamRoleCascade } : null,
+    inherited, hasManagersBelow: direct.some((e) => engine.isManager(e)),
+    direct: { follow: reachDirect.follow.length, own: reachDirect.own.length },
+    everyone: { follow: reachAll.follow.length, own: reachAll.own.length },
+    managerOwnRole: roleName(manager.ownRoleId),
+  };
+  const holders = new Map<string, number>();
+  for (const e of engine.activeEmployees) if (e.roleId) holders.set(e.roleId, (holders.get(e.roleId) ?? 0) + 1);
+  const roleItems = [...engine.roles].sort((a, b) => a.name.localeCompare(b.name))
+    .map((r) => ({ id: r.id, name: r.name, hint: `${holders.get(r.id) ?? 0} ${holders.get(r.id) === 1 ? "person" : "people"}` }));
 
   const waitingOf = (e: Employee) => engine.ratingsOf(e.id).filter((r) => r.status === "submitted");
   const toConfirm = direct.filter((e) => waitingOf(e).length > 0);
@@ -83,6 +111,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
       const p = engine.progress(e);
       return {
         name: e.name, href: `/people/${e.id}`, title: e.title, manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? "" : "",
+        role: roleName(e.roleId) ? `${roleName(e.roleId)}${e.roleFrom ? "" : " (own)"}` : "–",
         state: STATE_LABEL[p.state], rated: p.required ? `${p.rated} / ${p.required}` : "–", waiting: waitingOf(e).length || null,
         onTarget: engine.aggregate([e]).pct,
       };
@@ -112,6 +141,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
           columns={[
             { key: "name", header: "Name", kind: "link", hrefKey: "href" },
             { key: "title", header: "Designation", kind: "muted" },
+            { key: "role", header: "Role", facet: true, info: "The role that decides which skills they are asked to rate: the team's, or their own where it says (own). Open the person to give them a role of their own." },
             ...(all ? [{ key: "manager", header: "Manager", kind: "muted" as const, facet: true }] : []),
             { key: "state", header: "Their skills", facet: true, info: "Not started: nothing rated. In progress: some rated, or saved and not sent. Sent back: the manager returned a rating with a note. Waiting: sent, the manager has not confirmed yet. Done: confirmed." },
             { key: "rated", header: "Rated", align: "right", info: "Skills rated, of those their role asks for." },
@@ -167,6 +197,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         description={<span className="inline-flex flex-wrap items-center gap-1.5">Manager {manager.name} · {direct.length} directly, {everyone.length} in all
           <Info label="About the team">A team is a manager and everyone below them, from the reporting lines (ServiceNow or the people CSV).</Info></span>}
         actions={options.length > 1 ? <UnitPicker units={options.map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" /> : undefined} />
+      <div className="-mt-3 mb-4 text-sm text-muted-foreground"><TeamRole state={teamRole} roles={roleItems} canEdit={canEdit} /></div>
       <TabLinks active={tab} tabs={[
         { key: "confirm", label: "To confirm", href: href("confirm"), count: waitingTotal, tone: "attention" },
         { key: "people", label: "People", href: href("people"), count: direct.length },

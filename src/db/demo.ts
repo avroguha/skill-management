@@ -7,6 +7,16 @@
 // a team with one Discovery pattern author (single point of failure), an
 // infrastructure-as-code team that is weak in Terraform, a security operations
 // team short of threat modellers, a data team short of Kafka, and stale ratings.
+//
+// Roles are chosen by managers, the way the app means them to be:
+//  - the head of Operations chose IT Operations for everyone below;
+//  - under them the Batch Operations manager chose Batch Operations for their own team, and
+//    the head of IT Service Management chose ServiceNow for everyone below them, where the
+//    CMDB & Discovery manager chose the more specific ITOM ServiceNow;
+//  - in Technology each department head chose a role for everyone below (Cloud Engineer,
+//    Software Developer, Security Engineer), the Reliability manager chose SRE, and the two
+//    data teams each chose their own;
+//  - a few people have a role of their own (an SRE in a cloud team): nobody is forced.
 import { count, eq, sql } from "drizzle-orm";
 import type { DB } from "./index.ts";
 import * as s from "./schema.ts";
@@ -18,25 +28,25 @@ const TAXONOMY: [string, string, SkillDef[]][] = [
   ["Cloud", "Public cloud platforms and the tooling around them.", [["AWS", ["EC2", "S3", "IAM", "Lambda"]], ["Azure", ["Virtual Machines", "AKS", "Entra ID"]], "Kubernetes", "Terraform"]],
   ["Programming", "Languages and the craft of writing code.", ["Python", "Java", "TypeScript", "Go", "SQL"]],
   ["Data", "Storing, moving and making sense of data.", ["PostgreSQL", "Kafka", "Spark", "Data modelling", "Power BI"]],
-  ["DevOps", "Building, shipping and running software.", ["CI/CD pipelines", "Git", "Ansible", "Observability", "Linux administration"]],
+  ["DevOps", "Building, shipping and running software.", ["CI/CD pipelines", "Git", "Ansible", "Observability", "Linux administration", "Shell scripting", "Batch scheduling"]],
   ["Security", "Keeping systems and data safe.", ["Identity and access management", "Threat modelling", "Vulnerability management", "Network security"]],
-  ["IT Service Management", "Running IT as a service.", ["Incident management", "Change management", "CMDB", ["Discovery", ["Patterns", "Probes and sensors"]]]],
+  ["IT Service Management", "Running IT as a service.", ["Incident management", "Change management", "CMDB", ["Discovery", ["Patterns", "Probes and sensors"]], "ServiceNow administration"]],
   ["Ways of working", "How people work together.", ["Agile delivery", "Stakeholder management", "Technical writing", "Mentoring"]],
 ];
 
 // [skill path, target for all grades, mandatory]
 type Req = [string, number, boolean?];
 const ROLES: Record<string, { description: string; skills: Req[] }> = {
+  "IT Operations": { description: "Keeps the services running day to day: incidents, changes, requests.", skills: [["Incident management", 3], ["Change management", 3], ["CMDB", 2], ["Stakeholder management", 3], ["Linux administration", 2], ["Technical writing", 2, false]] },
+  SRE: { description: "Site reliability engineering: keeps production healthy.", skills: [["Kubernetes", 3], ["Observability", 3], ["Linux administration", 4], ["Incident management", 3], ["Python", 3], ["Ansible", 2], ["AWS/EC2", 2, false]] },
+  "Software Developer": { description: "Builds applications.", skills: [["TypeScript", 3], ["Java", 3], ["Git", 3], ["CI/CD pipelines", 3], ["SQL", 2], ["Agile delivery", 2], ["Go", 2, false]] },
+  "Batch Operations": { description: "Runs and watches the scheduled jobs.", skills: [["Batch scheduling", 3], ["Shell scripting", 3], ["Linux administration", 3], ["SQL", 2], ["Incident management", 2], ["Observability", 2, false]] },
+  ServiceNow: { description: "Runs and configures the ServiceNow platform.", skills: [["ServiceNow administration", 3], ["CMDB", 3], ["Change management", 2], ["Incident management", 2], ["Technical writing", 2, false]] },
+  "ITOM ServiceNow": { description: "ServiceNow IT operations management: the CMDB and discovery.", skills: [["ServiceNow administration", 3], ["CMDB", 3], ["Discovery/Patterns", 3], ["Discovery/Probes and sensors", 3], ["Linux administration", 2], ["Python", 2, false]] },
   "Cloud Engineer": { description: "Builds and runs cloud infrastructure.", skills: [["AWS/EC2", 3], ["AWS/S3", 3], ["AWS/IAM", 3], ["Kubernetes", 3], ["Terraform", 3], ["Linux administration", 3], ["Python", 2], ["Observability", 2, false]] },
-  "Site Reliability Engineer": { description: "Keeps production healthy.", skills: [["Kubernetes", 3], ["Observability", 3], ["Linux administration", 4], ["Incident management", 3], ["Python", 3], ["Ansible", 2], ["AWS/EC2", 2, false]] },
   "Data Engineer": { description: "Builds data pipelines and platforms.", skills: [["Python", 3], ["SQL", 4], ["PostgreSQL", 3], ["Kafka", 3], ["Spark", 3], ["Data modelling", 3], ["Git", 2]] },
   "Data Analyst": { description: "Turns data into decisions.", skills: [["SQL", 3], ["Power BI", 3], ["Data modelling", 2], ["Python", 2, false], ["Stakeholder management", 3]] },
-  "Software Engineer": { description: "Builds applications.", skills: [["TypeScript", 3], ["Java", 3], ["Git", 3], ["CI/CD pipelines", 3], ["SQL", 2], ["Agile delivery", 2], ["Go", 2, false]] },
   "Security Engineer": { description: "Designs and operates security controls.", skills: [["Identity and access management", 3], ["Threat modelling", 3], ["Vulnerability management", 3], ["Network security", 3], ["AWS/IAM", 3], ["Azure/Entra ID", 2], ["Python", 2, false]] },
-  "Service Analyst": { description: "Runs incident and change processes.", skills: [["Incident management", 3], ["Change management", 3], ["CMDB", 2], ["Stakeholder management", 3], ["Technical writing", 2, false]] },
-  "Platform Analyst": { description: "Owns the CMDB and discovery.", skills: [["CMDB", 3], ["Discovery/Patterns", 3], ["Discovery/Probes and sensors", 3], ["Change management", 2], ["Python", 2, false], ["Linux administration", 2]] },
-  "Engineering Manager": { description: "Leads a team.", skills: [["Stakeholder management", 4], ["Mentoring", 4], ["Agile delivery", 3], ["Technical writing", 3]] },
-  Director: { description: "Leads a department or division.", skills: [["Stakeholder management", 5], ["Mentoring", 4], ["Agile delivery", 3]] },
 };
 
 const GRADES: [string, number, number][] = [
@@ -44,38 +54,41 @@ const GRADES: [string, number, number][] = [
   ["Associate", 1, -0.6], ["Engineer", 2, 0], ["Senior", 3, 0.85], ["Lead", 4, 1.1], ["Principal", 5, 1.4],
 ];
 
-interface TeamDef { name: string; team: [string, number][]; weak?: Record<string, number>; needs?: [string, number, number][] }
-interface UnitDef { name: string; kind: string; head: string; children: (UnitDef | TeamDef)[] }
+// role on a team: the role its manager chose for the team. role on a unit: the role its head
+// chose for everyone below. A team without one follows the nearest unit above that has one.
+interface TeamDef { name: string; team: [string, number][]; weak?: Record<string, number>; needs?: [string, number, number][]; role?: string }
+interface UnitDef { name: string; kind: string; role?: string; children: (UnitDef | TeamDef)[] }
 
 const ORG: UnitDef = {
-  name: "Avro Corp", kind: "company", head: "Director", children: [
-    { name: "Technology", kind: "division", head: "Director", children: [
-      { name: "Cloud Platform", kind: "department", head: "Director", children: [
-        { name: "Compute & Containers", team: [["Cloud Engineer", 5], ["Site Reliability Engineer", 2]], needs: [["Kubernetes", 3, 3]] },
+  name: "Avro Corp", kind: "company", children: [
+    { name: "Technology", kind: "division", children: [
+      { name: "Cloud Platform", kind: "department", role: "Cloud Engineer", children: [
+        { name: "Compute & Containers", team: [["Cloud Engineer", 5], ["SRE", 2]], needs: [["Kubernetes", 3, 3]] },
         { name: "Infrastructure as Code", team: [["Cloud Engineer", 4]], weak: { Terraform: -1.6 } },
-        { name: "Reliability", team: [["Site Reliability Engineer", 5]], needs: [["Observability", 4, 2]] },
+        { name: "Reliability", role: "SRE", team: [["SRE", 5]], needs: [["Observability", 4, 2]] },
       ] },
-      { name: "Data & Analytics", kind: "department", head: "Director", children: [
-        { name: "Data Platform", team: [["Data Engineer", 6]], weak: { Kafka: -1.3 }, needs: [["Kafka", 3, 3]] },
-        { name: "Insights", team: [["Data Analyst", 5], ["Data Engineer", 1]] },
+      { name: "Data & Analytics", kind: "department", children: [
+        { name: "Data Platform", role: "Data Engineer", team: [["Data Engineer", 6]], weak: { Kafka: -1.3 }, needs: [["Kafka", 3, 3]] },
+        { name: "Insights", role: "Data Analyst", team: [["Data Analyst", 5], ["Data Engineer", 1]] },
       ] },
-      { name: "Application Engineering", kind: "department", head: "Director", children: [
-        { name: "Customer Apps", team: [["Software Engineer", 7]], needs: [["TypeScript", 4, 2]] },
-        { name: "Internal Tools", team: [["Software Engineer", 4], ["Data Engineer", 1]] },
+      { name: "Application Engineering", kind: "department", role: "Software Developer", children: [
+        { name: "Customer Apps", team: [["Software Developer", 7]], needs: [["TypeScript", 4, 2]] },
+        { name: "Internal Tools", team: [["Software Developer", 4], ["Data Engineer", 1]] },
       ] },
-      { name: "Security", kind: "department", head: "Director", children: [
+      { name: "Security", kind: "department", role: "Security Engineer", children: [
         { name: "Identity", team: [["Security Engineer", 4]] },
-        { name: "Security Operations", team: [["Security Engineer", 4], ["Site Reliability Engineer", 1]], weak: { "Threat modelling": -1.5 }, needs: [["Threat modelling", 4, 2]] },
+        { name: "Security Operations", team: [["Security Engineer", 4], ["SRE", 1]], weak: { "Threat modelling": -1.5 }, needs: [["Threat modelling", 4, 2]] },
       ] },
     ] },
-    { name: "Operations", kind: "division", head: "Director", children: [
-      { name: "Service Operations", kind: "department", head: "Director", children: [
-        { name: "Service Desk", team: [["Service Analyst", 7]] },
-        { name: "Major Incidents", team: [["Service Analyst", 3], ["Site Reliability Engineer", 2]], needs: [["Incident management", 4, 2]] },
+    { name: "Operations", kind: "division", role: "IT Operations", children: [
+      { name: "Service Operations", kind: "department", children: [
+        { name: "Service Desk", team: [["IT Operations", 7]] },
+        { name: "Major Incidents", team: [["IT Operations", 3], ["SRE", 2]], needs: [["Incident management", 4, 2]] },
+        { name: "Batch Operations", role: "Batch Operations", team: [["Batch Operations", 4]], needs: [["Batch scheduling", 3, 2]] },
       ] },
-      { name: "IT Service Management", kind: "department", head: "Director", children: [
-        { name: "CMDB & Discovery", team: [["Platform Analyst", 5]], weak: { "Discovery/Patterns": -1.4 }, needs: [["Discovery/Patterns", 3, 3]] },
-        { name: "Change & Release", team: [["Service Analyst", 4]] },
+      { name: "IT Service Management", kind: "department", role: "ServiceNow", children: [
+        { name: "CMDB & Discovery", role: "ITOM ServiceNow", team: [["ITOM ServiceNow", 5]], weak: { "Discovery/Patterns": -1.4 }, needs: [["Discovery/Patterns", 3, 3]] },
+        { name: "Change & Release", team: [["ServiceNow", 4]] },
       ] },
     ] },
   ],
@@ -106,6 +119,9 @@ async function insertChunks<T>(rows: T[], insert: (chunk: T[]) => Promise<unknow
 /** The people a presenter can be in demo mode, by what they show. */
 export interface DemoPersonas { top: string; director: string; manager: string; member: string }
 export const DEMO_PERSONAS_KEY = "demo_personas";
+/** Raised when the made-up organisation changes, so an existing demo database is rebuilt on the next start. */
+export const DEMO_VERSION = 2;
+const DEMO_VERSION_KEY = "demo_version";
 
 export async function seedDemo(db: DB): Promise<DemoPersonas> {
   const rnd = mulberry32(20261118);
@@ -145,10 +161,9 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
   const gradeByName = new Map(grades.map((g) => [g.name, g]));
   const roleSkills: (typeof s.roleSkill.$inferInsert)[] = [];
   for (const [name, r] of Object.entries(ROLES)) {
-    const leadership = name === "Engineering Manager" || name === "Director";
     for (const [path, target, mandatory = true] of r.skills) {
       roleSkills.push({ roleId: roleId.get(name)!, gradeId: null, skillId: sk(path), target, mandatory });
-      if (leadership || !mandatory || target < 3) continue;
+      if (!mandatory || target < 3) continue;
       roleSkills.push({ roleId: roleId.get(name)!, gradeId: gradeByName.get("Associate")!.id, skillId: sk(path), target: target - 1, mandatory });
       for (const g of ["Senior", "Lead", "Principal"]) {
         roleSkills.push({ roleId: roleId.get(name)!, gradeId: gradeByName.get(g)!.id, skillId: sk(path), target: Math.min(5, target + 1), mandatory });
@@ -157,11 +172,13 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
   }
 
   // ---- people: every team is a manager and the people below them
-  type Person = typeof s.employee.$inferInsert & { id: string; roleName: string; ability: number; weak: Record<string, number>; team: string };
+  // roleName is the role that counts for the person (their team's, or their own); kind says
+  // whether they lead a team, a department or division, or neither
+  type Person = typeof s.employee.$inferInsert & { id: string; roleName: string | null; kind: "member" | "manager" | "head"; ability: number; weak: Record<string, number>; team: string };
   const employees: Person[] = [];
   const needs: (typeof s.teamNeed.$inferInsert)[] = [];
   const usedNames = new Set<string>();
-  const person = (team: string, roleName: string, gradeName: string, managerId: string | null, weak: Record<string, number> = {}): Person => {
+  const person = (team: string, kind: Person["kind"], title: string, roleName: string | null, gradeName: string, managerId: string | null, own: boolean, weak: Record<string, number> = {}): Person => {
     let name = "";
     do name = `${FIRST[Math.floor(rnd() * FIRST.length)]} ${LAST[Math.floor(rnd() * LAST.length)]}`; while (usedNames.has(name));
     usedNames.add(name);
@@ -170,12 +187,13 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
       id: crypto.randomUUID(),
       name,
       email: `${name.toLowerCase().replace(/[^a-z]+/g, ".")}@avro.com`,
-      title: roleName === "Director" ? "Director" : `${gradeName === "Engineer" ? "" : `${gradeName} `}${roleName}`.trim(),
-      roleId: roleId.get(roleName)!,
+      title,
+      // a role of their own only where it differs from the team's: everyone else follows the team
+      roleId: own && roleName ? roleId.get(roleName)! : null,
       gradeId: gradeByName.get(gradeName)!.id,
       managerId,
       location: LOCATIONS[Math.floor(rnd() * LOCATIONS.length)],
-      roleName,
+      roleName, kind,
       ability: gauss() * 0.6 + g[2] + 0.3,
       weak,
       team,
@@ -187,19 +205,27 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
     const x = rnd();
     return x < 0.2 ? "Associate" : x < 0.6 ? "Engineer" : x < 0.85 ? "Senior" : x < 0.95 ? "Lead" : "Principal";
   };
-  const build = (def: UnitDef | TeamDef, parentHead: string | null) => {
+  const build = (def: UnitDef | TeamDef, parentHead: string | null, fromAbove: string | null) => {
     if ("team" in def) {
-      const mgr = person(def.name, "Engineering Manager", "Lead", parentHead);
+      const teamRole = def.role ?? fromAbove;
+      const mgr = person(def.name, "manager", "Engineering Manager", teamRole, "Lead", parentHead, false);
       mgr.teamName = def.name;
-      for (const [roleName, n] of def.team) for (let i = 0; i < n; i++) person(def.name, roleName, pickGrade(), mgr.id, def.weak ?? {});
+      if (def.role) mgr.teamRoleId = roleId.get(def.role)!;
+      for (const [roleName, n] of def.team) for (let i = 0; i < n; i++) {
+        const grade = pickGrade();
+        person(def.name, "member", `${grade === "Engineer" ? "" : `${grade} `}${roleName}`.trim(), roleName, grade, mgr.id, roleName !== teamRole, def.weak ?? {});
+      }
       for (const [path, minLevel, headcount] of def.needs ?? []) needs.push({ managerId: mgr.id, skillId: sk(path), minLevel, headcount, note: "What the team needs to run its services" });
       return;
     }
-    const head = person(def.name, def.head, "Principal", parentHead);
+    const role = def.role ?? fromAbove;
+    const head = person(def.name, "head", "Director", role, "Principal", parentHead, false);
     head.teamName = def.name;
-    for (const c of def.children) build(c, head.id);
+    // a head's choice is for everyone below them
+    if (def.role) { head.teamRoleId = roleId.get(def.role)!; head.teamRoleCascade = true; }
+    for (const c of def.children) build(c, head.id, role);
   };
-  build(ORG, null);
+  build(ORG, null, null);
 
   // ---- ratings
   const roleReqs = new Map<string, Map<string, number>>();
@@ -228,7 +254,7 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
     const state = manager ? "done" : stateOf(e);
     if (state === "not_started") continue;
     // managers do not assess, but a few technical ones list skills of their own
-    const req = manager ? new Map<string, number>() : roleReqs.get(e.roleId!) ?? new Map<string, number>();
+    const req = manager || !e.roleName ? new Map<string, number>() : roleReqs.get(roleId.get(e.roleName)!) ?? new Map<string, number>();
     const extra = rateable.filter((x) => !req.has(x.id)).sort(() => rnd() - 0.5).slice(0, manager ? (rnd() < 0.4 ? 3 : 0) : Math.floor(rnd() * 4));
     const targets: [string, number][] = [...req.entries(), ...extra.map((x) => [x.id, manager ? 3 : 1] as [string, number])];
     targets.forEach(([skillId, target], i) => {
@@ -263,26 +289,34 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
   await db.insert(s.jobRole).values(roles);
   await db.insert(s.grade).values(grades);
   await insertChunks(roleSkills, (c) => db.insert(s.roleSkill).values(c));
-  await insertChunks(employees.map(({ roleName: _r, ability: _a, weak: _w, team: _t, ...e }) => e), (c) => db.insert(s.employee).values(c));
+  await insertChunks(employees.map(({ roleName: _r, kind: _k, ability: _a, weak: _w, team: _t, ...e }) => e), (c) => db.insert(s.employee).values(c));
   await db.insert(s.teamNeed).values(needs);
   await insertChunks(ratings, (c) => db.insert(s.rating).values(c));
   await insertChunks(events, (c) => db.insert(s.ratingEvent).values(c));
 
   const top = employees.find((e) => !e.managerId)!;
-  const director = employees.find((e) => e.roleName === "Director" && e.managerId && employees.find((x) => x.id === e.managerId)?.managerId)!;
-  const manager = employees.find((e) => e.team === focusTeam && e.roleName === "Engineering Manager")!;
+  // the director leads a department whose role reaches everyone below; the manager's team
+  // follows it; the member follows their team
+  const director = employees.find((e) => e.kind === "head" && e.team === "Cloud Platform")!;
+  const manager = employees.find((e) => e.team === focusTeam && e.kind === "manager")!;
   const member = employees.find((e) => e.team === focusTeam && e.managerId === manager.id && e.roleName === "Cloud Engineer")!;
   const personas: DemoPersonas = { top: top.id, director: director.id, manager: manager.id, member: member.id };
   await db.insert(s.appSetting).values({ key: DEMO_PERSONAS_KEY, value: personas as never });
+  await db.insert(s.appSetting).values({ key: DEMO_VERSION_KEY, value: DEMO_VERSION as never });
   await db.insert(s.auditLog).values({ actorName: "system", action: "seed", entity: "demo", detail: { employees: employees.length, ratings: ratings.length } });
   console.log(`demo: ${employees.length} people, ${skills.length} skills, ${ratings.length} ratings`);
   return personas;
 }
 
-/** Fills the demo database the first time it is opened. */
+/** Fills the demo database the first time it is opened, and rebuilds it when the app brings a newer demo organisation. */
 export async function seedDemoIfEmpty(db: DB): Promise<void> {
   const [{ n }] = await db.select({ n: count() }).from(s.employee);
-  if (Number(n) === 0) await seedDemo(db);
+  if (Number(n) === 0) { await seedDemo(db); return; }
+  const [row] = await db.select().from(s.appSetting).where(eq(s.appSetting.key, DEMO_VERSION_KEY));
+  if (Number(row?.value ?? 1) !== DEMO_VERSION) {
+    console.log("demo: a newer demo organisation came with this version; rebuilding the demo database");
+    await resetDemo(db);
+  }
 }
 
 /** Puts the demo back as it was: everything in the demo database is replaced. */

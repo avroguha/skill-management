@@ -5,10 +5,11 @@
 //  - If the skill is missing from the catalogue, a manager adds it (active at once).
 //  - Anyone else may suggest a missing skill; it waits as a draft for an administrator.
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/db";
 import { guardAction, audit, getEngine, type Viewer } from "@/lib/server";
+import { anySkillNamed } from "@/lib/skill-names";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 
@@ -25,10 +26,8 @@ const newSkill = z.object({
 async function findOrCreateSkill(input: z.infer<typeof newSkill>, status: "active" | "draft", by: string) {
   const db = await getDb();
   const name = input.name.trim();
-  const [existing] = await db.select().from(schema.skill).where(
-    sql`(lower(${schema.skill.name}) = lower(${name}) or lower(${name}) = any(select lower(x) from unnest(${schema.skill.aliases}) as x))
-        and ${schema.skill.status} <> 'retired'`,
-  );
+  // names are unique: the same name apart from case, spacing and punctuation is the same skill
+  const existing = await anySkillNamed(db, name);
   if (existing) return { id: existing.id, created: false, status: existing.status };
   const [row] = await db.insert(schema.skill).values({
     name, categoryId: input.categoryId, parentId: input.parentId || null, status,

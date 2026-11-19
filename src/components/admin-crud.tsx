@@ -18,6 +18,7 @@ import {
 import { DataTable, type ColSpec } from "@/components/data-table";
 import { cn } from "@/lib/utils";
 import { Info } from "@/components/info";
+import { SimilarNames, type NameItem } from "@/components/name-search";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 type Data = Record<string, unknown>;
@@ -36,6 +37,8 @@ export interface Field {
   createOnly?: boolean;
   /** "none" choice for an optional select */
   optional?: boolean;
+  /** for a name that must be new: what exists already, listed under the box as it is typed */
+  similar?: { items: NameItem[]; noun: string };
 }
 
 export function RecordDialog({ title, description, fields, initial, save, onClose }: {
@@ -82,7 +85,10 @@ export function RecordDialog({ title, description, fields, initial, save, onClos
                     <Info label={`About ${f.label}`}>{f.info}</Info>
                   </div>
                 ) : (
-                  <Input id={id} type={f.type ?? "text"} value={String(v ?? "")} placeholder={f.placeholder} onChange={(e) => set(f.name, e.target.value)} />
+                  <Input id={id} type={f.type ?? "text"} value={String(v ?? "")} placeholder={f.placeholder} autoComplete="off" onChange={(e) => set(f.name, e.target.value)} />
+                )}
+                {f.similar && String(v ?? "").trim() !== String(initial[f.name] ?? "").trim() && (
+                  <SimilarNames query={String(v ?? "")} items={f.similar.items} noun={f.similar.noun} exceptId={initial.id ? String(initial.id) : undefined} limit={5} />
                 )}
                 {f.help && <p className="text-xs text-muted-foreground">{f.help}</p>}
               </div>

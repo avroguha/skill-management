@@ -71,7 +71,7 @@ export async function orgInfo(id: string): Promise<{ ok: true; info: OrgInfo } |
         userName: row.userName, email: row.email,
         manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? null : null,
         unit: e.managerId ? engine.teamLabel(e.managerId) : null,
-        role: roles.find((r) => r.id === row.roleId)?.name ?? null,
+        role: roles.find((r) => r.id === e.roleId)?.name ?? null,
         grade: grades.find((g) => g.id === row.gradeId)?.name ?? null,
         location: row.location, source: row.source, userType: row.userType,
         syncedAt: row.syncedAt?.toISOString() ?? null,

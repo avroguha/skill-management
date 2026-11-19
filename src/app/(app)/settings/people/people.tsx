@@ -13,7 +13,8 @@ export function PeopleAdmin({ rows, roles, grades, managers, readOnly }: { rows:
       columns={[
         { key: "name", header: "Name" },
         { key: "title", header: "Designation", kind: "muted" },
-        { key: "role", header: "Role", facet: true, info: "Decides which skills the person is expected to have, and at what level. Empty: no targets, so no gaps are shown for them." },
+        { key: "role", header: "Role", facet: true, info: "Decides which skills the person is asked to rate, and at what level: their own role, or the one their manager chose for the team (My team). Empty: no role reaches them, so nothing is asked of them." },
+        { key: "roleFrom", header: "Role from", kind: "muted", facet: true, info: "Own: set for this person (here, by their manager, by CSV or from their designation). Otherwise the team whose role they follow." },
         { key: "grade", header: "Grade", kind: "muted", facet: true, info: "Within a role, a grade can expect higher levels (Roles & targets)." },
         { key: "manager", header: "Manager", kind: "muted", facet: true },
         { key: "teamName", header: "Team name", kind: "muted", info: "For a manager: what their team is called. Empty: called after them." },
@@ -25,7 +26,7 @@ export function PeopleAdmin({ rows, roles, grades, managers, readOnly }: { rows:
         { name: "email", label: "E-mail", type: "email", half: true, info: "How single sign-on and CSV files find the person. Must be unique." },
         { name: "title", label: "Designation", half: true, info: "The job title. Rules in Settings › ServiceNow can give a role from it." },
         { name: "location", label: "Location", half: true, info: "Where they work, shown on their page and in lists." },
-        { name: "roleId", label: "Role", type: "select", optional: true, options: roles, half: true, info: "Which skills they are expected to have, at what level (Settings › Roles & targets)." },
+        { name: "roleId", label: "Own role", type: "select", optional: true, options: roles, half: true, info: "A role of their own, which wins over their team's. Leave it empty (—) and they follow the role their manager chose for the team." },
         { name: "gradeId", label: "Grade", type: "select", optional: true, options: grades, half: true, info: "Their grade within the role; a grade can expect higher levels." },
         { name: "managerId", label: "Manager", type: "select", optional: true, options: managers, info: "Who they report to: that person's team includes them, and that person confirms their ratings. Synced people get it from ServiceNow." },
         { name: "teamName", label: "Team name (if they manage people)", info: "What their team is called everywhere. Leave empty to call it after them." },

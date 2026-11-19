@@ -45,7 +45,15 @@ export const ALL = "*";
 
 export interface Employee {
   id: string; name: string; email: string; title: string; teamName?: string;
+  /** the role that counts for this person: their own, else the one their team follows (src/lib/team-roles.ts) */
   roleId: string | null; gradeId: string | null; managerId: string | null; active: boolean; location?: string;
+  /** the manager whose team role this person follows (themselves for a manager's own choice); null = their own role, or none */
+  roleFrom?: string | null;
+  /** their own role as stored, before the team's is applied */
+  ownRoleId?: string | null;
+  /** the role this person chose for their team, and whether it reaches everyone below */
+  teamRoleId?: string | null;
+  teamRoleCascade?: boolean;
 }
 export interface Category { id: string; name: string; sort: number }
 export interface Skill { id: string; name: string; categoryId: string; parentId: string | null; status: string; sort?: number }

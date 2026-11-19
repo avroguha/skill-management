@@ -1,5 +1,9 @@
-// cmdk's default fuzzy match finds "Helm" inside "staKEHoLder Management". Pickers
-// use a plain case-insensitive substring match instead, so what you see is what you typed.
+// cmdk's default fuzzy match finds "Helm" inside "staKEHoLder Management". Pickers match
+// words instead: every word typed is looked for anywhere in the name, in any order, and the
+// names that hold more of what was typed come first (src/lib/similar.ts).
+import { matchScore } from "./similar.ts";
+
 export function substringFilter(value: string, search: string): number {
-  return value.toLowerCase().includes(search.trim().toLowerCase()) ? 1 : 0;
+  if (value.startsWith("__new__")) return 1; // the "add it" row always shows
+  return matchScore(search, value);
 }

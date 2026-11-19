@@ -1,6 +1,7 @@
 // My skills: rate your own skills (0-5) and send them to your manager. The skills your role
 // asks for first, then the others you have, then the whole catalogue to search and add from,
 // on the same page - nothing hidden behind a pop-up.
+import Link from "next/link";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
@@ -47,13 +48,17 @@ export default async function MySkillsPage() {
   const progress = engine.progress(me);
   const assesses = engine.assesses(me);
   const manager = me.managerId ? engine.empById.get(me.managerId) : undefined;
+  const role = me.roleId ? engine.roleById.get(me.roleId) : undefined;
+  const roleNote = role
+    ? <>Your role is <Link href={`/roles/${role.id}`} className="font-medium text-foreground hover:underline">{role.name}</Link>{me.roleFrom && me.roleFrom !== me.id ? ` (the role of ${engine.teamLabel(me.roleFrom)})` : ""}. </>
+    : assesses ? <>You have no role yet, so no particular skills are asked of you: your manager chooses the team&apos;s role. </> : null;
 
   return (
     <>
       <PageHeader title="My skills"
-        description={assesses
+        description={<>{roleNote}{assesses
           ? `Rate each skill from 0 to 5, then send them to ${manager?.active ? manager.name : "your manager"} to confirm.`
-          : "As a manager you are not asked to rate yourself. You can still add the skills you have: they count in your team's capability."} />
+          : "As a manager you are not asked to rate yourself. You can still add the skills you have: they count in your team's capability."}</>} />
       <MySkillsForm rows={rows} catalogue={catalogue} levels={levels}
         categories={[...engine.categoryById.values()].sort((a, b) => a.sort - b.sort).map((c) => ({ id: c.id, name: c.name }))}
         required={progress.required} managerName={manager?.active ? manager.name : null} />

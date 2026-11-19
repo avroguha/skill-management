@@ -22,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     nav.push({ href: "/people", label: "People", icon: "people" });
     nav.push({ href: "/org", label: "Org chart", icon: "org" });
   }
+  nav.push({ href: "/roles", label: "Roles", icon: "roles" });
   nav.push({ href: "/skills", label: "Skills", icon: "skills" });
   if (v.isAdmin) nav.push({ href: "/settings", label: "Settings", icon: "admin" });
   nav.push({ href: "/help", label: "Help", icon: "help" });

@@ -18,6 +18,7 @@ import { fmtPct, fmtDate } from "@/lib/format";
 import { GAP_CLASS, GAP_LABEL, LEVEL_CLASS } from "@/lib/status";
 import { photoUrls } from "@/lib/photos";
 import { cn } from "@/lib/utils";
+import { PersonRole } from "./role";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -50,6 +51,20 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const cells = [...profile.cells].sort((a, b) => Number(b.target != null) - Number(a.target != null)
     || (engine.categoryById.get(engine.skillById.get(a.skillId)!.categoryId)?.sort ?? 0) - (engine.categoryById.get(engine.skillById.get(b.skillId)!.categoryId)?.sort ?? 0)
     || engine.skillLabel(a.skillId).localeCompare(engine.skillLabel(b.skillId)));
+  // their manager, a manager above them or an administrator may give them a role of their own
+  const canSetRole = e.active && !self && (v.isAdmin || (!!e.managerId && v.manageIds.has(e.managerId)));
+  const teamRoleName = (() => {
+    // what they would follow without a role of their own
+    if (e.teamRoleId) return engine.roleById.get(e.teamRoleId)?.name ?? null;
+    const seen = new Set([e.id]);
+    let direct = true;
+    for (let up = e.managerId ? engine.empById.get(e.managerId) : undefined; up && !seen.has(up.id); up = up.managerId ? engine.empById.get(up.managerId) : undefined) {
+      seen.add(up.id);
+      if (up.teamRoleId && (direct || up.teamRoleCascade)) return engine.roleById.get(up.teamRoleId)?.name ?? null;
+      direct = false;
+    }
+    return null;
+  })();
   const chain = engine.chainOf(id).filter((m) => canSeeEmployee(v, m.id) && engine.isManager(m));
 
   return (
@@ -68,13 +83,20 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         { label: "Their skills", value: progress.state === "not_asked" ? "Optional" : progress.state === "done" ? "Done" : progress.state === "waiting" ? "Waiting" : progress.state === "sent_back" ? "Sent back" : progress.state === "not_started" ? "Not started" : "In progress",
           hint: progress.required ? `${progress.rated} of ${progress.required} rated` : "manages people",
           info: "How far their self-assessment has got. Managers are not asked to rate themselves, but may." },
-        { label: "Role", value: role?.name ?? "–", hint: grade ? `Grade ${grade.name}` : "No grade",
-          info: "The job role and grade decide which skills a person is expected to have and at what level (Settings › Roles & targets)." },
+        { label: "Role", value: role?.name ?? "–", href: role ? `/roles/${role.id}` : "/roles",
+          hint: [role ? (e.roleFrom && e.roleFrom !== e.id ? `follows ${engine.teamLabel(e.roleFrom)}` : e.roleFrom ? "chosen for their team" : "their own role") : "no role yet", grade ? `grade ${grade.name}` : null].filter(Boolean).join(" · "),
+          info: "The role decides which skills a person is asked to rate, and at what level (Roles). It is their own, or the one their manager chose for the team." },
         { label: "Manager", value: manager?.name ?? "–", hint: manager ? engine.teamLabel(manager.id) : "",
           info: "Who confirms this person's ratings: their direct manager.", href: manager && canSeeEmployee(v, manager.id) ? `/people/${manager.id}` : undefined },
         { label: "To confirm", value: String(waiting), hint: canConfirm ? "on My team" : "with their manager",
           info: "Ratings this person sent that wait for their manager.", href: canConfirm && waiting ? withParams("/team", { tab: "confirm", person: id }) : undefined },
       ]} />
+      {canSetRole && (
+        <div className="-mt-1 mb-4">
+          <PersonRole employeeId={e.id} name={e.name.split(/\s+/)[0]} ownRoleId={e.ownRoleId ?? null} teamRole={teamRoleName}
+            roles={[...engine.roles].sort((a, b) => a.name.localeCompare(b.name)).map((r) => ({ id: r.id, name: r.name }))} />
+        </div>
+      )}
       <div className="grid gap-5 xl:grid-cols-3">
         <Section className="xl:col-span-2" title="Skills"
           info="Their own level (Self) and the one their manager confirmed (Confirmed), against the target their role sets. The colour shows how far the confirmed level is from the target. ★ = wants to grow in it.">

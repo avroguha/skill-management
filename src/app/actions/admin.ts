@@ -15,6 +15,7 @@ import { samlProviderBody, DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN } from "@/lib/
 import { saveBackup } from "@/lib/backup";
 import { refreshGate } from "@/lib/sso-gate";
 import { isLocalAdmin, localAdminRefusal } from "@/lib/local-admin";
+import { roleNamed, skillNamed } from "@/lib/skill-names";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 type Data = Record<string, unknown>;
@@ -93,6 +94,10 @@ export async function saveSkill(data: Data): Promise<Result> {
       const [{ n }] = await db.select({ n: count() }).from(schema.skill).where(eq(schema.skill.parentId, d.id));
       if (n) return { ok: false, error: "This skill has sub-skills of its own, so it cannot become a sub-skill." };
     }
+    if (d.status !== "retired") {
+      const taken = await skillNamed(db, d.name, d.parentId, d.id);
+      if (taken) return { ok: false, error: `A skill called “${taken.name}” already exists${d.parentId ? " under that skill" : ""}${taken.name.toLowerCase() === d.name.toLowerCase() ? "" : ` (it also goes by “${d.name}”)`}. Skill names are unique: use it, merge into it, or choose a more specific name.` };
+    }
     const values = { name: d.name, categoryId: d.categoryId, parentId: d.parentId, description: d.description, aliases: d.aliases, status: d.status, sort: d.sort };
     let id = d.id;
     if (id) {
@@ -165,11 +170,13 @@ export async function saveRole(data: Data): Promise<Result> {
     const v = await admin();
     const d = roleIn.parse(data);
     const db = await getDb();
+    const taken = await roleNamed(db, d.name, d.id);
+    if (taken) return { ok: false, error: `A role called “${taken.name}” already exists. Role names are unique: use it, or choose a more specific name.` };
     let id = d.id;
     if (id) await db.update(schema.jobRole).set({ name: d.name, description: d.description }).where(eq(schema.jobRole.id, id));
     else id = (await db.insert(schema.jobRole).values({ name: d.name, description: d.description }).returning())[0].id;
     await audit(v, d.id ? "update_role" : "create_role", "job_role", id, d);
-    return done(["/settings/roles"], "Role saved.", id);
+    return done(["/settings/roles", "/roles"], "Role saved.", id);
   } catch (e) { return fail(e); }
 }
 export async function deleteRole(id: string): Promise<Result> {
@@ -177,10 +184,12 @@ export async function deleteRole(id: string): Promise<Result> {
     const v = await admin();
     const db = await getDb();
     const [{ n }] = await db.select({ n: count() }).from(schema.employee).where(eq(schema.employee.roleId, id));
-    if (n) return { ok: false, error: `${n} people hold this role. Move them to another role first.` };
+    if (n) return { ok: false, error: `${n} ${n === 1 ? "person has" : "people have"} this as their own role. Move them to another role first.` };
+    const [{ t }] = await db.select({ t: count() }).from(schema.employee).where(eq(schema.employee.teamRoleId, id));
+    if (t) return { ok: false, error: `${t} ${t === 1 ? "team has" : "teams have"} this as their role. Their managers choose another first (My team).` };
     await db.delete(schema.jobRole).where(eq(schema.jobRole.id, id));
     await audit(v, "delete_role", "job_role", id);
-    return done(["/settings/roles"], "Role deleted.");
+    return done(["/settings/roles", "/roles"], "Role deleted.");
   } catch (e) { return fail(e); }
 }
 const gradeIn = z.object({ id: z.string().optional(), name: z.string().trim().min(1).max(40), rank: z.coerce.number().int().min(0).max(100) });
@@ -221,7 +230,7 @@ export async function setRoleSkill(input: { roleId: string; gradeId: string | nu
       await db.insert(schema.roleSkill).values({ roleId: input.roleId, gradeId: input.gradeId, skillId: input.skillId, target: t, mandatory: input.mandatory });
     }
     await audit(v, "set_role_skill", "role_skill", input.roleId, input);
-    return done(["/settings/roles"], "Saved.");
+    return done(["/settings/roles", "/roles"], "Saved.");
   } catch (e) { return fail(e); }
 }
 

@@ -42,7 +42,12 @@ export const employee = pgTable("employee", {
   title: text("title").notNull().default(""),
   /** what this person's team is called, when they manage one (default "<name>'s team") */
   teamName: text("team_name").notNull().default(""),
+  /** this person's OWN role, when they have one; empty = they follow their team's role */
   roleId: text("role_id").references(() => jobRole.id, { onDelete: "set null" }),
+  /** the role a manager chose for their team: their direct reports follow it (and they do) */
+  teamRoleId: text("team_role_id").references(() => jobRole.id, { onDelete: "set null" }),
+  /** the team role also reaches everyone further below, until a manager there chooses another */
+  teamRoleCascade: boolean("team_role_cascade").notNull().default(false),
   gradeId: text("grade_id").references(() => grade.id, { onDelete: "set null" }),
   managerId: text("manager_id"),
   userId: text("user_id").references(() => user.id, { onDelete: "set null" }).unique(),

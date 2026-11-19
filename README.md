@@ -2,7 +2,7 @@
 
 Who knows what, and what each team needs. People rate their own skills (0 to 5), their manager confirms them, and managers and leaders see what every team can do, where it is short, and who elsewhere in the organisation already has what is missing.
 
-Kept deliberately simple: people, their managers and skills. A team is a manager and everyone below them, straight from the reporting lines in **ServiceNow `sys_user`**. Seven places to go, none more than a click or two away; every number, column and setting has an **(i)** that says what it is. A **Demo** switch shows a made-up organisation for presentations without touching the real data.
+Kept deliberately simple: people, their managers and skills. A team is a manager and everyone below them, straight from the reporting lines in **ServiceNow `sys_user`**. Eight places to go, none more than a click or two away; every number, column and setting has an **(i)** that says what it is. A **Demo** switch shows a made-up organisation for presentations without touching the real data.
 
 ![Home](docs/screenshots/01-home.png)
 
@@ -26,7 +26,7 @@ Kept deliberately simple: people, their managers and skills. A team is a manager
 
 ## What it does
 
-The menu has seven entries, and each person sees only those that apply to them:
+The menu has eight entries, and each person sees only those that apply to them:
 
 | | Who | What |
 |---|---|---|
@@ -35,6 +35,7 @@ The menu has seven entries, and each person sees only those that apply to them:
 | **My team** | managers, leaders, administrators | Confirm ratings, see your people, remind them, say what the team needs, the skills grid |
 | **Insights** | managers, leaders, administrators | Capability by team, where teams are short, strengths, who could strengthen another team |
 | **People** · **Org chart** | managers, leaders, administrators | Find anyone, or everyone with a skill at a level; who reports to whom |
+| **Roles** | everyone | Every role and the skills it needs; managers add roles and say what each needs |
 | **Skills** | everyone | The catalogue and the 0-5 scale; for managers, who has each skill |
 | **Settings** | administrators | Everything the app needs, one section per item, always listed on the left |
 
@@ -50,6 +51,24 @@ A **Next: ...** button at the top of every page says the one thing that matters 
 | Administrators | bring people in; load the catalogue; give people a role; approve suggested skills; switch on single sign-on and e-mail |
 
 With nothing to do the button disappears and Home says so: waiting for your manager, or up to date.
+
+### Roles: chosen by managers, forced on nobody
+
+A **role** is what people do (IT Operations, SRE, Software Developer, Batch Operations) and the **skills it needs**, each with a level. A person's role decides which skills they are asked to rate.
+
+- **Everyone sees the roles** (Roles): each role, the skills it needs, the teams that chose it. The same skill can be in any number of roles.
+- **A manager chooses a role for their team** (My team, under the team's name). The people reporting to them follow it, and so do they.
+- **A manager with managers below is asked who it is for**: only the people reporting to them, or everyone below. Either way a manager lower down can choose another role for their own team, and their choice wins there.
+- **Nobody is forced.** A person with a role of their own keeps it, unless the manager ticks the box that replaces it. A manager gives one person another role on that person's page.
+- **Managers add roles and say what each needs** (Roles › a role › *Add a skill to this role*); a new skill can be added to the catalogue from the same box. Levels that differ by grade stay in Settings › Roles & targets.
+
+Which role a person has, in order: their own; else, for a manager, the one they chose for their team; else the nearest manager above whose choice reaches them (a direct manager's always does, one further up only when it was made for everyone below); else none (`src/lib/team-roles.ts`, `test/team-roles.test.ts`). People arriving later from ServiceNow follow their team's role without anyone doing anything.
+
+### Adding a role or a skill: the box searches as you type
+
+Wherever a role or a skill is added (Roles, a role's skills, the team role, My skills, team needs, Settings), the name box **lists what already exists while you type**, and keeps listing as you go on: words are found anywhere in a name and in any order, part of a word counts, and so do initials (SRE finds Site Reliability Engineer) and a skill's other names. Typing *ITOM ServiceNow* shows *ServiceNow* first, and **the new one can still be added**: it may be the same kind of thing but more specific.
+
+**Role names and skill names are unique.** Two names are the same when they differ only in case, spacing, accents or punctuation (*Service Now* is *ServiceNow*): that one is refused, with the existing one shown. A sub-skill's name is unique within its skill, so *AWS › IAM* and *Azure › IAM* are two skills (`src/lib/similar.ts`, `src/lib/skill-names.ts`, `test/similar.test.ts`).
 
 ### For people (rating your own skills)
 
@@ -101,7 +120,7 @@ Capability only: the app never judges a person and never suggests hiring.
 | Overview | A checklist of what the app needs (people, single sign-on, the catalogue, roles with targets, e-mail), each one click away; what came across from version 1 |
 | People & access | Everyone with their role, grade, manager and team name, editable; the accounts that sign in (Administrator, Leader, local passwords) |
 | Skills | **Download** the catalogue (or the starter catalogue), **upload** it back to add and update in bulk (checked first, near-identical skills listed with a choice: merge, replace, keep both, skip), then the catalogue and its categories; approve suggested skills, merge duplicates |
-| Roles & targets | What each role needs, for all grades or per grade |
+| Roles & targets | What each role needs, for all grades or per grade; the grades. (Roles themselves are on Roles, where managers add them too) |
 | Levels & rules | The wording of 0-5; whether managers rate themselves; when a rating goes stale; colour thresholds |
 | ServiceNow | Where people and managers come from (below) |
 | Single sign-on | SAML 2.0 with the company identity provider (below) |
@@ -124,6 +143,8 @@ Like a phone's store mode. The **Demo** button at the top (for everyone: it is t
 - An **orange bar** stays at the top while it is on. In it you choose who you are: the **head of the organisation**, a **director**, a **team manager** (with ratings waiting to be confirmed), a **team member** (who has not started) or an **administrator**. Each sees the app exactly as that person would.
 - Everything works: rate, send, confirm, send back, set team needs, upload skills. It all stays in the demo database. **No e-mail is sent and no sync runs.** Accounts, single sign-on, ServiceNow, e-mail settings and backups are real, so they are read-only there.
 - **Reset demo** (managers, leaders and administrators) puts the made-up data back as it was, for the next presentation. **Back to real data** switches back. It also ends by itself after 12 hours, and the audit log records each switch.
+- **Roles in the demo are set the way managers would set them**: the head of Operations chose *IT Operations* for everyone below; under them the Batch Operations manager chose *Batch Operations* for their team, and the head of IT Service Management chose *ServiceNow* for everyone below them, where the CMDB & Discovery manager chose the more specific *ITOM ServiceNow*. In Technology the Reliability manager chose *SRE* inside a department that follows *Cloud Engineer*, application teams follow *Software Developer*, and a few people have a role of their own. As the Director you have managers below, so choosing a role asks who it is for.
+- A newer version of the app brings its own demo organisation: an existing demo database is rebuilt on the next start (the real data is never touched).
 - The demo is built in so it always tells a story: a team short of a skill nobody in it has, needs resting on one person, people elsewhere who already have what is missing, ratings waiting, people who have not started.
 
 The switch is a signed cookie that counts only for the account that set it; every database call follows it, so nothing done in demo mode can reach the real data (`src/db/index.ts`, `src/lib/server.ts`, `test/db.test.ts`).
@@ -146,6 +167,7 @@ All of it is computed in one place (`src/lib/engine/engine.ts`), unit-tested, ne
 - **Only confirmed levels count.** A person's own level and the one their manager confirmed are kept apart; every number uses the confirmed one.
 - **A team is a manager and everyone below them.** Whoever has people reporting to them is a manager; nobody assigns it.
 - **Who is asked**: everyone except managers (unless *Managers rate themselves too* is on) and the head of the organisation. A manager's own skills still count as the team's capability, never as a gap.
+- **A person's role** is their own, else the one their manager chose for the team, else the nearest one above that was chosen for everyone below ([Roles](#roles-chosen-by-managers-forced-on-nobody)).
 - **Targets** come from the person's role: the target for their grade, else for all grades.
 - **Only leaf skills are rated.** A skill with sub-skills is a heading.
 - **Gap = target − level.** 0 or less meets it; 1 is minor; 2 significant; 3 or more critical, and so is a target of Proficient or higher held at Awareness or below.
@@ -303,7 +325,7 @@ Settings › Data & backups.
 
 Settings › Data & backups (and the skill upload on Settings › Skills), or `GET /api/export/<kind>` as an administrator. CSV with names, skill paths (`AWS > EC2`) and e-mail addresses, never internal ids. Every export imports back unchanged (`test/transfer.test.ts` proves it end to end). Bad rows are skipped and reported by line; **Check (dry run)** changes nothing.
 
-Load in this order the first time: `skills`, `grades`, `roles`, `role-skills`, `people` (with `manager_email`, which builds the teams, and `team_name`), `team-needs` (by `manager_email`), `ratings`.
+Load in this order the first time: `skills`, `grades`, `roles`, `role-skills`, `people` (with `manager_email`, which builds the teams, `team_name`, `role` for a person's own role, and for a manager `team_role` with `team_role_for` = `direct` or `all`), `team-needs` (by `manager_email`), `ratings`.
 
 **Skills** (`category, skill, sub_skill, aliases, description, status`): before anything is imported, each **new** skill is compared with the catalogue. One that looks like an existing skill (the same name apart from case and punctuation, almost the same wording, the same words in another order, one name containing the other, or one of its aliases) is listed with the skill it resembles, and nothing is imported until each has a choice: **merge** into the existing one (its name becomes an alias), **replace** the existing one (renamed in place, keeping its ratings), **keep both**, or **skip**. A skill that already exists by exactly that name is **updated without asking** (an upsert): download the catalogue, change it in a spreadsheet, upload it again. Columns the file leaves out (no `aliases`, `description` or `status` column, or an empty status) keep what is there, and nothing missing from the file is deleted; retire a skill with `status` = `retired`.
 
@@ -338,6 +360,8 @@ npm run typecheck
 | `test/email.test.ts` | The SMTP client against a stand-in relay; every e-mail renders (HTML and text); to the manager, sent back as one, weekly reminders and digests, Remind once a day |
 | `test/info.test.ts` | Every settings field, tile and column has its (i); every settings section is in the menu and has a page |
 | `test/transfer.test.ts` | CSV round trip of everything, dry run, line-numbered errors, near-identical skills (each choice), the skill upsert (columns left out kept), the starter catalogue imports cleanly, the site catalogue when present |
+| `test/team-roles.test.ts` | Who has which role: chosen for everyone below, changed by a manager lower down, for direct reports only, a role of one's own, who a choice reaches |
+| `test/similar.test.ts` | The name search: a longer name finds the shorter one in it, words in any order, part of a word, initials, other names; the same name apart from case and punctuation is taken |
 | `test/next-steps.test.ts` | The next step for someone rating, waiting, up to date; a manager (confirm first); a leader; an administrator, before and after setup |
 | `test/saml.test.ts` | SAML sign-in end to end: test capture before activation, synced people only after it, a chosen Entity ID (requests carry it, other audiences refused), tampered and wrongly signed assertions refused |
 | `test/directory.test.ts` | The ServiceNow sync against a stand-in instance: the walk, the type filter, matching, managers, roles from designation rules, deactivation, failed runs, the sealed password, photo URLs, groups |

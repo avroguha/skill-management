@@ -66,6 +66,60 @@ test("the demo database is separate and tells a story worth presenting", async (
   assert.deepEqual(e.teamHeatmap(p.top).rows.map((r) => r.name).sort(), ["Operations", "Technology"]);
 });
 
+test("the demo shows roles the way managers set them: chosen for a team, for everyone below, changed lower down, or one's own", async () => {
+  const demo = await getDb("demo");
+  const e = createEngine(await loadDatasetFrom(demo));
+  const roleNames = e.roles.map((r) => r.name);
+  for (const r of ["IT Operations", "SRE", "Software Developer", "Batch Operations", "ServiceNow", "ITOM ServiceNow"]) assert.ok(roleNames.includes(r), `role ${r}`);
+  const team = (name: string) => e.activeEmployees.find((x) => x.teamName === name)!;
+  const roleOf = (x: { roleId: string | null }) => e.roleById.get(x.roleId ?? "")?.name ?? null;
+  const members = (name: string) => e.directReportsOf(team(name).id);
+
+  // the head of Operations chose IT Operations for everyone below
+  const ops = team("Operations");
+  assert.equal(roleOf({ roleId: ops.teamRoleId ?? null }), "IT Operations");
+  assert.equal(ops.teamRoleCascade, true);
+  const desk = members("Service Desk");
+  assert.ok(desk.length >= 5 && desk.every((x) => roleOf(x) === "IT Operations" && x.roleFrom === ops.id && !x.ownRoleId), "Service Desk follows it, two levels down, with no role of their own");
+
+  // a manager below chose another for their team; a department head chose another for everyone below them
+  assert.ok(members("Batch Operations").every((x) => roleOf(x) === "Batch Operations" && x.roleFrom === team("Batch Operations").id));
+  assert.ok(members("Change & Release").every((x) => roleOf(x) === "ServiceNow" && x.roleFrom === team("IT Service Management").id));
+  // ... and the more specific role, next to the one it was named after
+  assert.ok(members("CMDB & Discovery").every((x) => roleOf(x) === "ITOM ServiceNow"));
+
+  // nobody is forced: a few people keep a role of their own inside a team with another
+  const own = members("Compute & Containers").filter((x) => x.ownRoleId);
+  assert.ok(own.length > 0 && own.every((x) => roleOf(x) === "SRE" && x.roleFrom == null));
+  assert.ok(members("Compute & Containers").some((x) => roleOf(x) === "Cloud Engineer" && x.roleFrom === team("Cloud Platform").id));
+
+  // the same skill is in several roles
+  const [{ id: linux }] = await demo.select({ id: s.skill.id }).from(s.skill).where(eq(s.skill.name, "Linux administration"));
+  const using = new Set((await demo.select({ roleId: s.roleSkill.roleId }).from(s.roleSkill).where(eq(s.roleSkill.skillId, linux))).map((x) => x.roleId));
+  assert.ok(using.size >= 4, `Linux administration is in ${using.size} roles`);
+
+  // everyone who is asked to rate has a role, and so something to rate
+  const asked = e.activeEmployees.filter((x) => e.assesses(x));
+  assert.equal(asked.filter((x) => !x.roleId).length, 0);
+  const p = (await demoPersonas(demo))!;
+  assert.equal(roleOf(e.empById.get(p.member)!), "Cloud Engineer");
+  assert.ok(e.directReportsOf(p.director).some((x) => e.isManager(x)), "the director persona has managers below: the app asks who a role is for");
+});
+
+test("a demo database from an older version is rebuilt on the next start; a current one is left alone", async () => {
+  const demo = await getDb("demo");
+  const { seedDemoIfEmpty, DEMO_VERSION } = await import("../src/db/demo.ts");
+  const version = async () => (await demo.select().from(s.appSetting).where(eq(s.appSetting.key, "demo_version")))[0]?.value;
+  assert.equal(await version(), DEMO_VERSION);
+  await demo.delete(s.rating);
+  await seedDemoIfEmpty(demo);
+  assert.equal((await demo.select({ n: count() }).from(s.rating))[0].n, 0, "current: what a presenter changed stays");
+  await demo.delete(s.appSetting).where(eq(s.appSetting.key, "demo_version")); // as an older version left it
+  await seedDemoIfEmpty(demo);
+  assert.ok((await demo.select({ n: count() }).from(s.rating))[0].n > 300, "rebuilt");
+  assert.equal(await version(), DEMO_VERSION);
+});
+
 test("resetting the demo puts it back as it was and touches nothing live", async () => {
   const demo = await getDb("demo");
   const live = await getDb("live");

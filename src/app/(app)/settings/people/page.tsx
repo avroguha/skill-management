@@ -25,7 +25,9 @@ export default async function PeopleSettings() {
   const personRows = people.map((p) => ({
     id: p.id, name: p.name, email: p.email, title: p.title, location: p.location, roleId: p.roleId ?? "", gradeId: p.gradeId ?? "", managerId: p.managerId ?? "",
     teamName: p.teamName, active: p.active,
-    role: engine.roleById.get(p.roleId ?? "")?.name ?? "", grade: engine.gradeById.get(p.gradeId ?? "")?.name ?? "",
+    role: engine.roleById.get(engine.empById.get(p.id)?.roleId ?? "")?.name ?? "",
+    roleFrom: (() => { const e = engine.empById.get(p.id); return !e?.roleId ? "" : !e.roleFrom ? "Own" : engine.teamLabel(e.roleFrom); })(),
+    grade: engine.gradeById.get(p.gradeId ?? "")?.name ?? "",
     manager: p.managerId ? name.get(p.managerId) ?? "" : "", source: p.source === "directory" ? "ServiceNow" : "Manual",
     status: p.active ? "Active" : "Left",
   }));

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { LevelPicker, type Level } from "@/components/level-picker";
 import { saveMySkills } from "@/app/actions/assessment";
 import { suggestSkill } from "@/app/actions/team";
+import { matchScore, sameName } from "@/lib/similar";
 
 export interface Row {
   skillId: string; skill: string; category: string; categorySort: number; required: boolean; target: number | null;
@@ -194,11 +195,15 @@ function AddSkills({ catalogue, have, categories, levels, onAdd }: {
   const [shown, setShown] = useState(PAGE);
   const [busy, start] = useTransition();
   const [newCat, setNewCat] = useState(categories[0]?.id ?? "");
+  // every word typed is looked for anywhere in the name, its category and its other names, in
+  // any order; the skills that hold more of what was typed come first
   const results = useMemo(() => {
-    const words = norm(q).split(/\s+/).filter(Boolean);
-    return catalogue.filter((c) => !have.has(c.id) && (!cat || c.categoryId === cat)
-      && words.every((w) => norm(`${c.name} ${c.category} ${(c.aliases ?? []).join(" ")}`).includes(w)));
+    const pool = catalogue.filter((c) => !have.has(c.id) && (!cat || c.categoryId === cat));
+    if (!q.trim()) return pool;
+    return pool.map((c) => ({ c, score: Math.max(matchScore(q, c.name, c.aliases ?? []), matchScore(q, `${c.name} ${c.category}`) - 0.01) }))
+      .filter((x) => x.score > 0).sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name)).map((x) => x.c);
   }, [catalogue, have, q, cat]);
+  const exists = useMemo(() => catalogue.some((c) => sameName(c.name, q) || sameName(c.name.split(" › ").pop() ?? "", q) || (c.aliases ?? []).some((a) => sameName(a, q))), [catalogue, q]);
   useEffect(() => setShown(PAGE), [q, cat]);
   const suggest = () => start(async () => {
     const r = await suggestSkill({ name: q.trim(), categoryId: newCat });
@@ -209,7 +214,7 @@ function AddSkills({ catalogue, have, categories, levels, onAdd }: {
   return (
     <section className="min-w-0 rounded-lg border bg-card">
       <h2 className="flex items-center gap-1.5 border-b px-4 py-3 text-sm font-semibold">Add skills you have
-        <Info label="About adding skills">The whole catalogue. Type any part of a name (or a category, or another name it goes by), then press a level to add it. It moves up to “Other skills you have”.</Info>
+        <Info label="About adding skills">The whole catalogue. Type any part of a name (or a category, or another name it goes by): words are found anywhere, in any order, and the list follows as you type. Press a level to add a skill. It moves up to “Other skills you have”.</Info>
       </h2>
       <div className="grid gap-3 p-4">
         <div className="relative">
@@ -232,10 +237,10 @@ function AddSkills({ catalogue, have, categories, levels, onAdd }: {
               <LevelPicker value={null} onChange={(n) => n != null && onAdd(c, n)} levels={levels} label={`Add ${c.name} at level`} />
             </li>
           ))}
-          {!results.length && (
+          {(!results.length || (q.trim().length >= 2 && !exists && shown >= results.length)) && (
             <li className="grid gap-2 px-3 py-3 text-sm">
-              <span>Not in the catalogue.</span>
-              {q.trim().length >= 2 && (
+              <span>{results.length ? "Not one of these?" : "Not in the catalogue."}</span>
+              {q.trim().length >= 2 && !exists && (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-muted-foreground">Add “{q.trim()}” to</span>
                   <Select value={newCat} onValueChange={setNewCat}>
@@ -243,7 +248,7 @@ function AddSkills({ catalogue, have, categories, levels, onAdd }: {
                     <SelectContent>{categories.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent>
                   </Select>
                   <Button size="sm" variant="outline" disabled={busy || !newCat} onClick={suggest}><Plus />Add it</Button>
-                  <Info label="About adding a new skill">A manager&apos;s new skill joins the catalogue at once. Anyone else&apos;s waits for an administrator to approve it, then you can rate it.</Info>
+                  <Info label="About adding a new skill">Skill names are unique: look at what the search lists first. A manager&apos;s new skill joins the catalogue at once. Anyone else&apos;s waits for an administrator to approve it, then you can rate it.</Info>
                 </div>
               )}
             </li>

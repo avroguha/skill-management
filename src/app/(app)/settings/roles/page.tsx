@@ -31,7 +31,7 @@ export default async function RolesSettings() {
             levels={levels.map((l) => ({ level: l.level, name: l.name }))} />
         </Section>
         <div className="grid gap-5 xl:grid-cols-2">
-          <Section title="Roles" info="Job roles. People get one in Settings › People & access, by a people CSV, or from their designation (Settings › ServiceNow › Roles from designation).">
+          <Section title="Roles" info="Everyone sees the roles on Roles, where managers add them too and choose one for their team (My team). A person can also get a role of their own: in Settings › People & access, by a people CSV, or from their designation (Settings › ServiceNow › Roles from designation).">
             <AdminCrud noun="role" pageSize={10}
               rows={roles.map((r) => ({ id: r.id, name: r.name, description: r.description,
                 skills: new Set(roleSkills.filter((x) => x.roleId === r.id).map((x) => x.skillId)).size,
@@ -42,7 +42,8 @@ export default async function RolesSettings() {
                 { key: "people", header: "People", kind: "number", align: "right", info: "People with this role." },
               ]}
               fields={[
-                { name: "name", label: "Name", info: "The role's name, e.g. Cloud Engineer. Unique." },
+                { name: "name", label: "Name", info: "The role's name, e.g. SRE. Unique: roles with a name like it are listed as you type.",
+                  similar: { noun: "role", items: roles.map((r) => ({ id: r.id, name: r.name, href: `/roles/${r.id}` })) } },
                 { name: "description", label: "Description", type: "textarea", info: "What the role is for, in a line." },
               ]}
               save={saveRole} remove={deleteRole} />

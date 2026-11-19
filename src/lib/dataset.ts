@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.ts";
 import * as s from "../db/schema.ts";
 import { DEFAULT_SETTINGS, type Dataset, type Settings } from "./engine/engine.ts";
+import { resolveRoles } from "./team-roles.ts";
 
 export async function readSettings(db: DB): Promise<Settings> {
   const [row] = await db.select().from(s.appSetting).where(eq(s.appSetting.key, "settings"));
@@ -28,11 +29,16 @@ export async function loadDatasetFrom(db: DB): Promise<Dataset> {
       interest: s.rating.interest, status: s.rating.status,
     }).from(s.rating),
   ]);
+  // a role is a person's own, else the one their manager chose for the team (people who have
+  // left neither give nor take one)
+  const roleOf = resolveRoles(employees.filter((e) => e.active));
   return {
     now: Date.now(),
     settings,
     employees: employees.map((e) => ({
-      id: e.id, name: e.name, email: e.email, title: e.title, teamName: e.teamName, roleId: e.roleId,
+      id: e.id, name: e.name, email: e.email, title: e.title, teamName: e.teamName,
+      roleId: roleOf.get(e.id)?.roleId ?? e.roleId, roleFrom: roleOf.get(e.id)?.from ?? null,
+      ownRoleId: e.roleId, teamRoleId: e.teamRoleId, teamRoleCascade: e.teamRoleCascade,
       gradeId: e.gradeId, managerId: e.managerId, active: e.active, location: e.location,
     })),
     categories: categories.map((c) => ({ id: c.id, name: c.name, sort: c.sort })),

@@ -19,7 +19,7 @@ export const COLUMNS: Record<Kind, string[]> = {
   grades: ["grade", "rank"],
   roles: ["role", "description"],
   "role-skills": ["role", "grade", "skill", "target", "mandatory"],
-  people: ["email", "name", "title", "role", "grade", "manager_email", "team_name", "location", "active"],
+  people: ["email", "name", "title", "role", "grade", "manager_email", "team_name", "team_role", "team_role_for", "location", "active"],
   "team-needs": ["manager_email", "skill", "min_level", "headcount", "note"],
   ratings: ["email", "skill", "self_level", "confirmed_level", "status", "self_comment", "manager_comment", "interest", "self_on", "confirmed_on"],
 };
@@ -29,7 +29,7 @@ export const DESCRIPTIONS: Record<Kind, string> = {
   grades: "Grades in order: a higher rank is the next grade up.",
   roles: "Job roles and what they are for.",
   "role-skills": "Required level per role, skill and (optionally) grade. A blank grade means every grade.",
-  people: "One row per person, matched by e-mail. manager_email builds the teams; team_name names the team a manager leads.",
+  people: "One row per person, matched by e-mail. manager_email builds the teams; team_name names the team a manager leads. role is a person's own role (empty: they follow their team's). For a manager, team_role is the role chosen for the team and team_role_for says who follows it: direct (the people reporting to them) or all (everyone below).",
   "team-needs": "What a manager's team needs: N people at a minimum level in a skill.",
   ratings: "Self and confirmed levels per person and skill. status: draft, submitted (waiting for the manager), confirmed or returned; empty = confirmed when there is a confirmed level, else submitted.",
 };
@@ -109,7 +109,9 @@ export async function exportCsv(db: DB, kind: Kind): Promise<string> {
     rows = L.people.map((p) => ({
       email: p.email, name: p.name, title: p.title,
       role: L.roles.find((r) => r.id === p.roleId)?.name ?? "", grade: L.grades.find((g) => g.id === p.gradeId)?.name ?? "",
-      manager_email: email(p.managerId), team_name: p.teamName, location: p.location, active: p.active ? "yes" : "no",
+      manager_email: email(p.managerId), team_name: p.teamName,
+      team_role: L.roles.find((r) => r.id === p.teamRoleId)?.name ?? "", team_role_for: p.teamRoleId ? (p.teamRoleCascade ? "all" : "direct") : "",
+      location: p.location, active: p.active ? "yes" : "no",
     })).sort((a, b) => a.email.localeCompare(b.email));
   } else if (kind === "team-needs") {
     const needs = await db.select().from(s.teamNeed);
@@ -460,6 +462,12 @@ async function importPeople(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err
       if (!role) { err(line, `Unknown role "${data.role}" (add it in Roles, or import roles first)`); continue; }
       values.roleId = role.id;
     } else if ("role" in data) values.roleId = null;
+    if (data.team_role) {
+      const role = L.roles.find((x) => lc(x.name) === lc(data.team_role));
+      if (!role) { err(line, `Unknown team role "${data.team_role}" (add it in Roles, or import roles first)`); continue; }
+      values.teamRoleId = role.id;
+      values.teamRoleCascade = /^(all|everyone|yes|true|1)$/i.test((data.team_role_for ?? "").trim());
+    } else if ("team_role" in data) { values.teamRoleId = null; values.teamRoleCascade = false; }
     if (data.grade) {
       const g = L.grades.find((x) => lc(x.name) === lc(data.grade));
       if (!g) { err(line, `Unknown grade "${data.grade}"`); continue; }

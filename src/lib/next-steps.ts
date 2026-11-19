@@ -59,6 +59,13 @@ export function nextSteps(engine: Engine, v: Pick<Access, "role" | "allPeople" |
       out.push({ key: "remind", kind: "do", href: "/team?tab=people", action: "Remind them",
         title: `Remind ${plural(notStarted.length, "person", "people")} who have not started`, detail: notStarted.slice(0, 3).map((e) => e.name).join(", ") + (notStarted.length > 3 ? ` and ${notStarted.length - 3} more` : "") });
     }
+    // people in the team who are asked to rate but have no role: nothing is asked of them yet
+    const noRole = direct.filter((e) => engine.assesses(e) && !e.roleId);
+    if (noRole.length) {
+      out.push({ key: "team-role", kind: "do", href: "/team?tab=people", action: "Choose a role",
+        title: noRole.length === direct.length ? "Choose a role for your team" : `Give ${plural(noRole.length, "person", "people")} in your team a role`,
+        detail: "The role says which skills they are asked to rate. Pick one under your team's name, or add a new one." });
+    }
     const needs = engine.demands(me.id);
     if (!needs.some((d) => d.explicit)) {
       out.push({ key: "needs", kind: "do", href: "/team?tab=needs", action: "Add a need",
@@ -87,7 +94,7 @@ export function nextSteps(engine: Engine, v: Pick<Access, "role" | "allPeople" |
     if (!people) out.push({ key: "people", kind: "do", href: "/settings/servicenow", action: "Set up ServiceNow", title: "Bring people in", detail: "From ServiceNow (with their managers), or a people CSV in Data & backups." });
     if (setup && !setup.skills) out.push({ key: "skills", kind: "do", href: "/settings/skills", action: "Upload skills", title: "Load the skill catalogue", detail: "Upload a CSV, or download the starter catalogue to begin from." });
     const noRole = engine.activeEmployees.filter((e) => engine.assesses(e) && !e.roleId).length;
-    if (people && noRole) out.push({ key: "roles", kind: "do", href: "/settings/people", action: "Give roles", title: `Give ${plural(noRole, "person", "people")} a role`, detail: "Without a role, nobody knows which skills they are expected to have. Rules in ServiceNow can do it from designations." });
+    if (people && noRole) out.push({ key: "roles", kind: "do", href: "/settings/people", action: "Give roles", title: `${plural(noRole, "person has", "people have")} no role`, detail: "Their manager chooses the team's role on My team; you can also give roles in People & access, or from designations (ServiceNow)." });
     if (setup?.draftSkills) out.push({ key: "drafts", kind: "do", href: "/settings/skills", action: "Review", title: `Approve or merge ${plural(setup.draftSkills, "suggested skill")}`, detail: "People suggested them while rating; they can rate them once approved." });
     if (setup && !setup.ssoActive) out.push({ key: "sso", kind: "do", href: "/settings/sso", action: "Set up", title: "Switch on single sign-on", detail: "So people sign in with their company account." });
     if (setup && !setup.emailOn) out.push({ key: "email", kind: "do", href: "/settings/email", action: "Set up", title: "Switch on e-mail", detail: "So managers hear when ratings wait for them, and people get reminders." });
