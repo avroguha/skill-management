@@ -10,11 +10,13 @@ import type { NextStep } from "@/lib/next-steps";
 export function NextStepButton({ step }: { step: NextStep | undefined }) {
   if (!step || step.kind !== "do") return null;
   return (
-    <Button asChild size="sm" className="h-8 min-w-0 max-w-[22rem]">
+    <Button asChild size="sm" className="h-8 min-w-0 max-w-[22rem] shrink">
       <Link href={step.href} title={`${step.title}. ${step.detail}`}>
         <Footprints />
+        {/* a phone has room for the two words; the step itself is one tap away */}
+        <span className="sm:hidden">Next step</span>
         <span className="hidden sm:inline">Next:</span>
-        <span className="truncate">{step.title}</span>
+        <span className="hidden truncate sm:inline">{step.title}</span>
       </Link>
     </Button>
   );

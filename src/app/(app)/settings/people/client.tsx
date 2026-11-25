@@ -32,7 +32,7 @@ export function UsersAdmin({ rows, roles, employees, readOnly }: {
       <DataTable rows={rows} csvName="users" searchKeys={["name", "username", "email", "person"]}
         toolbar={readOnly ? undefined : <Button size="sm" className="h-8" onClick={() => setAdding(true)}><Plus />Add local account</Button>}
         columns={[
-          { key: "name", header: "Name" },
+          { key: "name", header: "Name", kind: "person" },
           { key: "username", header: "Username", kind: "muted" },
           { key: "email", header: "E-mail", kind: "muted" },
           { key: "access", header: "Access", facet: true, info: "What the account may see and do. Manager comes by itself from having people reporting to you; Administrator and Leader are given here." },

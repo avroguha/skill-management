@@ -58,7 +58,7 @@ export default async function SettingsHome() {
 
   return (
     <>
-      <PageHeader title="Settings" description="Everything the app needs, one section each on the left. Every field has an (i) that says what it does." />
+      <PageHeader title="Settings" description="Everything the app needs, one section each: they are the sub menu under Settings in the menu. Every field has an (i) that says what it does." />
       {v?.demo && <p className="mb-4 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">Demo mode: these are the demo&apos;s settings. Single sign-on, ServiceNow, e-mail, accounts and backups only change for real, so they are read-only here.</p>}
       <div className="grid gap-5">
         <Section title="Setup" info="The five things the app needs to be useful, in order. Each opens its section.">

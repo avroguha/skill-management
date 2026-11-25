@@ -1,18 +1,22 @@
 import { count, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { requireAdmin } from "@/lib/server";
-import { SettingsNav } from "./nav";
+import { SubMenu } from "@/components/sub-menu";
+import { SETTINGS_SECTIONS } from "@/lib/menu";
 
+// The sections of Settings are a sub menu under Settings in the menu. With the menu closed
+// (or on a phone) the same sub menu sits at the top of the page.
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   await requireAdmin();
   const db = await getDb();
   const [{ n: drafts }] = await db.select({ n: count() }).from(schema.skill).where(eq(schema.skill.status, "draft"));
   return (
-    <div className="grid gap-5 lg:grid-cols-[14rem_minmax(0,1fr)]">
-      <aside className="min-w-0 lg:sticky lg:top-16 lg:self-start">
-        <SettingsNav flags={{ "/settings/skills": drafts ? `${drafts} to approve` : undefined }} />
-      </aside>
-      <div className="min-w-0">{children}</div>
-    </div>
+    <>
+      <SubMenu label="Settings" items={SETTINGS_SECTIONS.map((s) => ({
+        key: s.href, label: s.label, href: s.href, hint: s.hint,
+        ...(s.href === "/settings/skills" && Number(drafts) ? { count: Number(drafts), attention: true } : {}),
+      }))} />
+      {children}
+    </>
   );
 }

@@ -11,12 +11,12 @@ export function PeopleAdmin({ rows, roles, grades, managers, readOnly }: { rows:
       searchKeys={["name", "email", "title", "manager", "role"]}
       defaults={{ active: true }}
       columns={[
-        { key: "name", header: "Name" },
+        { key: "name", header: "Name", kind: "person" },
         { key: "title", header: "Designation", kind: "muted" },
         { key: "role", header: "Role", facet: true, info: "Decides which skills the person is asked to rate, and at what level: their own role, or the one their manager chose for the team (My team). Empty: no role reaches them, so nothing is asked of them." },
         { key: "roleFrom", header: "Role from", kind: "muted", facet: true, info: "Own: set for this person (here, by their manager, by CSV or from their designation). Otherwise the team whose role they follow." },
         { key: "grade", header: "Grade", kind: "muted", facet: true, info: "Within a role, a grade can expect higher levels (Roles & targets)." },
-        { key: "manager", header: "Manager", kind: "muted", facet: true },
+        { key: "manager", header: "Manager", kind: "person", facet: true },
         { key: "teamName", header: "Team name", kind: "muted", info: "For a manager: what their team is called. Empty: called after them." },
         { key: "source", header: "From", kind: "muted", facet: true, info: "ServiceNow: kept up to date by the sync (name, e-mail, designation, manager). Manual: added here or by CSV." },
         { key: "status", header: "Status", kind: "badge", facet: true },

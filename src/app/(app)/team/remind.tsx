@@ -1,4 +1,5 @@
 "use client";
+import { Person } from "@/components/person-avatar";
 import { useState, useTransition } from "react";
 import { BellRing, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,12 +39,9 @@ export function RemindTeam({ people }: { people: RemindCandidate[] }) {
             <ul className="grid max-h-64 gap-1 overflow-y-auto rounded-md border p-2">
               {people.map((p) => (
                 <li key={p.id}>
-                  <label className="flex items-start gap-2 rounded px-1 py-1 text-sm hover:bg-muted">
-                    <Checkbox className="mt-0.5" checked={chosen.has(p.id)} onCheckedChange={(c) => setChosen((s) => { const n = new Set(s); if (c) n.add(p.id); else n.delete(p.id); return n; })} />
-                    <span className="grid flex-1 gap-0.5">
-                      <span>{p.name}</span>
-                      <span className="text-xs text-muted-foreground">{p.state}{p.progress ? ` · ${p.progress}` : ""}</span>
-                    </span>
+                  <label className="flex items-center gap-2 rounded px-1 py-1 text-sm hover:bg-muted">
+                    <Checkbox checked={chosen.has(p.id)} onCheckedChange={(c) => setChosen((s) => { const n = new Set(s); if (c) n.add(p.id); else n.delete(p.id); return n; })} />
+                    <Person name={p.name} strong={false} className="flex-1" sub={`${p.state}${p.progress ? ` · ${p.progress}` : ""}`} />
                   </label>
                 </li>
               ))}

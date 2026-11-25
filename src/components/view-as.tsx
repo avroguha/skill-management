@@ -6,6 +6,7 @@ import { Eye, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { startViewAs, stopViewAs } from "@/app/actions/view-as";
+import { PersonAvatar } from "@/components/person-avatar";
 
 export function ViewAsButton({ employeeId, name, variant = "outline", size = "default", iconOnly = false }: {
   employeeId: string; name: string; variant?: "outline" | "ghost"; size?: "default" | "sm" | "icon"; iconOnly?: boolean;
@@ -50,7 +51,7 @@ export function ViewAsBanner({ name, role, by, expiresAt }: { name: string; role
     <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-status-minor bg-status-minor px-4 py-1.5 text-sm text-status-minor-fg">
       <Eye className="size-4 shrink-0" />
       <span className="min-w-0">
-        Viewing as <b>{name}</b> <span className="opacity-80">({role})</span>: exactly what they see, read-only.
+        Viewing as <PersonAvatar name={name} size="xs" className="mx-0.5" /> <b>{name}</b> <span className="opacity-80">({role})</span>: exactly what they see, read-only.
         <span className="opacity-80">{left != null && ` Ends in ${left} min.`} {by} stays signed in.</span>
       </span>
       <Button size="sm" variant="outline" className="ml-auto h-7 border-current/30 bg-transparent text-current hover:bg-black/5" onClick={stop} disabled={pending}>

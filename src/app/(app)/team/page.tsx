@@ -1,5 +1,6 @@
-// My team: a manager's people. Four tabs, each one click: ratings to confirm, the people and
-// how far each has got (with Remind), what the team needs, and the skills grid. Leaders and
+// My team: a manager's people. Four sections, each an entry of the sub menu under My team:
+// ratings to confirm, the people and how far each has got (with Remind), what the team
+// needs, and the skills grid. Leaders and
 // administrators can open any team they may see.
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -8,9 +9,12 @@ import { Section } from "@/components/kpi";
 import { DataTable } from "@/components/data-table";
 import { Empty, PeopleHeatmap, HeatLegend } from "@/components/heatmap";
 import { UnitPicker } from "@/components/filter-bar";
-import { TabLinks } from "@/components/tab-links";
+import { SubMenu } from "@/components/sub-menu";
+import { TEAM_SECTIONS } from "@/lib/menu";
 import { Info } from "@/components/info";
+import { PersonChip } from "@/components/person-avatar";
 import { requireTeamViewer, getEngine, param, canSeeEmployee, type SearchParams } from "@/lib/server";
+import { photoUrls } from "@/lib/photos";
 import { getLevels } from "@/lib/levels";
 import { peopleHeatmapData, scopeOptions, withParams } from "@/lib/views";
 import { readEmailSettings } from "@/lib/mail/notify";
@@ -34,6 +38,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
   const sp = await searchParams;
   const v = await requireTeamViewer();
   const engine = await getEngine();
+  const photos = await photoUrls();
   const options = scopeOptions(engine, v).filter((o) => o.id !== ALL);
   const requested = param(sp, "scope");
   const own = v.employee && engine.isManager(v.employee) ? v.employee.id : null;
@@ -79,8 +84,12 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
   const waitingOf = (e: Employee) => engine.ratingsOf(e.id).filter((r) => r.status === "submitted");
   const toConfirm = direct.filter((e) => waitingOf(e).length > 0);
   const waitingTotal = toConfirm.reduce((t, e) => t + waitingOf(e).length, 0);
-  const tab = (["confirm", "people", "needs", "grid"] as const).find((t) => t === param(sp, "tab")) ?? (canConfirm && waitingTotal ? "confirm" : "people");
   const href = (t: string, extra: Record<string, string | null> = {}) => withParams("/team", { scope: scope === own ? null : scope, tab: t, ...extra });
+  // every section has its own address, so the menu can show which one is open: an address
+  // without one goes to what waits (ratings to confirm), else to the people
+  const asked = TEAM_SECTIONS.find((t) => t.key === param(sp, "tab"))?.key;
+  if (!asked) redirect(href(canConfirm && waitingTotal ? "confirm" : "people", { person: param(sp, "person") ?? null }));
+  const tab = asked;
   const demands = engine.demands(scope);
   const short = demands.map(engine.coverage).filter((c) => c.shortfall > 0 || c.spof).length;
 
@@ -110,7 +119,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     const rows = list.slice(0, 1000).map((e) => {
       const p = engine.progress(e);
       return {
-        name: e.name, href: `/people/${e.id}`, title: e.title, manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? "" : "",
+        name: e.name, href: `/people/${e.id}`, photo: photos.get(e.id) ?? null, title: e.title, manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? "" : "",
         role: roleName(e.roleId) ? `${roleName(e.roleId)}${e.roleFrom ? "" : " (own)"}` : "–",
         state: STATE_LABEL[p.state], rated: p.required ? `${p.rated} / ${p.required}` : "–", waiting: waitingOf(e).length || null,
         onTarget: engine.aggregate([e]).pct,
@@ -139,10 +148,10 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         {list.length > rows.length && <p className="mb-2 text-xs text-muted-foreground">The first {rows.length} of {list.length} by name. Open a manager lower down to see their part in full.</p>}
         <DataTable csvName="my-team" rows={rows} pageSize={25} initialSort={{ key: "name" }} searchPlaceholder="Find a person…"
           columns={[
-            { key: "name", header: "Name", kind: "link", hrefKey: "href" },
+            { key: "name", header: "Name", kind: "person", hrefKey: "href", photoKey: "photo" },
             { key: "title", header: "Designation", kind: "muted" },
             { key: "role", header: "Role", facet: true, info: "The role that decides which skills they are asked to rate: the team's, or their own where it says (own). Open the person to give them a role of their own." },
-            ...(all ? [{ key: "manager", header: "Manager", kind: "muted" as const, facet: true }] : []),
+            ...(all ? [{ key: "manager", header: "Manager", kind: "person" as const, facet: true }] : []),
             { key: "state", header: "Their skills", facet: true, info: "Not started: nothing rated. In progress: some rated, or saved and not sent. Sent back: the manager returned a rating with a note. Waiting: sent, the manager has not confirmed yet. Done: confirmed." },
             { key: "rated", header: "Rated", align: "right", info: "Skills rated, of those their role asks for." },
             { key: "waiting", header: "To confirm", kind: "number", align: "right", info: "Ratings this person sent that wait for their manager." },
@@ -194,16 +203,14 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     <>
       <PageHeader
         title={<TeamTitle managerId={scope} name={engine.teamLabel(scope)} custom={manager.teamName ?? ""} canEdit={canEdit} />}
-        description={<span className="inline-flex flex-wrap items-center gap-1.5">Manager {manager.name} · {direct.length} directly, {everyone.length} in all
+        description={<span className="inline-flex flex-wrap items-center gap-1.5">Manager <PersonChip name={manager.name} href={`/people/${manager.id}`} src={photos.get(manager.id)} /> · {direct.length} directly, {everyone.length} in all
           <Info label="About the team">A team is a manager and everyone below them, from the reporting lines (ServiceNow or the people CSV).</Info></span>}
         actions={options.length > 1 ? <UnitPicker units={options.map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" /> : undefined} />
       <div className="-mt-3 mb-4 text-sm text-muted-foreground"><TeamRole state={teamRole} roles={roleItems} canEdit={canEdit} /></div>
-      <TabLinks active={tab} tabs={[
-        { key: "confirm", label: "To confirm", href: href("confirm"), count: waitingTotal, tone: "attention" },
-        { key: "people", label: "People", href: href("people"), count: direct.length },
-        { key: "needs", label: "Needs", href: href("needs"), count: short || undefined, tone: "attention" },
-        { key: "grid", label: "Skills grid", href: href("grid") },
-      ]} />
+      <SubMenu label={mine ? "My team" : "Team"} active={tab} items={TEAM_SECTIONS.map((t) => ({
+        key: t.key, label: t.label, hint: t.hint, href: href(t.key),
+        ...(t.key === "confirm" ? { count: waitingTotal, attention: true } : t.key === "people" ? { count: direct.length } : t.key === "needs" && short ? { count: short, attention: true } : {}),
+      }))} />
       {body}
     </>
   );

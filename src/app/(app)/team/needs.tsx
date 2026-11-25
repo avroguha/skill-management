@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { saveTeamNeed, removeTeamNeed } from "@/app/actions/team";
 import { cn } from "@/lib/utils";
+import { PersonChip } from "@/components/person-avatar";
 import { substringFilter } from "@/lib/search";
 import { SkillOption, SKILL_PICKER_CLASS, SKILL_LIST_CLASS } from "@/components/skill-option";
 
@@ -48,7 +49,7 @@ export function TeamNeeds({ managerId, needs, skills, categories, parents, level
                   <td className="px-3 py-2 font-medium">{n.skill}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{n.minLevel} {n.levelName}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap"><span className={cn("rounded px-1.5 py-0.5 text-xs font-medium tabular", STATE_CLS[n.state] ?? "bg-status-significant text-status-significant-fg")} title={n.state}>{n.have} / {n.headcount}</span></td>
-                  <td className="px-3 py-2 text-xs">{n.holders.length ? n.holders.slice(0, 4).join(", ") + (n.holders.length > 4 ? ` +${n.holders.length - 4}` : "") : <span className="text-muted-foreground">nobody yet</span>}
+                  <td className="px-3 py-2 text-xs">{n.holders.length ? <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">{n.holders.slice(0, 4).map((h) => <PersonChip key={h} name={h} />)}{n.holders.length > 4 ? <span className="text-muted-foreground">+{n.holders.length - 4}</span> : null}</span> : <span className="text-muted-foreground">nobody yet</span>}
                     {n.elsewhere > 0 && n.have < n.headcount && <div className="text-muted-foreground">{n.elsewhere} elsewhere in the organisation have it</div>}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{n.explicit ? n.note : "implied by roles"}</td>
                   <td className="px-2 py-1 text-right whitespace-nowrap">

@@ -1,7 +1,8 @@
 // The demo organisation: made-up people and skills in the DEMO database only (the header's
 // Demo switch), for presentations. Never written to the live database.
 // Deterministic: a fixed random seed, so every install shows the same picture.
-// The company, people and e-mail addresses are made up (Avro Corp, avro.com).
+// The company, people and e-mail addresses are made up (Avro Corp, avro.com); the people's
+// names and the places are invented words, so they match nobody (./made-up-names.ts).
 //
 // It plants a few weak spots on purpose so the views have something to say:
 // a team with one Discovery pattern author (single point of failure), an
@@ -22,6 +23,7 @@ import type { DB } from "./index.ts";
 import * as s from "./schema.ts";
 import { DEFAULT_SETTINGS } from "../lib/engine/engine.ts";
 import { DEFAULT_LEVELS } from "./seed.ts";
+import { MADE_UP_FIRST, MADE_UP_LAST, MADE_UP_PLACES } from "./made-up-names.ts";
 
 type SkillDef = string | [string, string[]];
 const TAXONOMY: [string, string, SkillDef[]][] = [
@@ -94,9 +96,10 @@ const ORG: UnitDef = {
   ],
 };
 
-const FIRST = ["Aarav", "Priya", "Liam", "Olivia", "Noah", "Emma", "Arjun", "Ananya", "Lucas", "Mia", "Rohan", "Sofia", "Ethan", "Isha", "James", "Ava", "Karthik", "Meera", "Daniel", "Chloe", "Vikram", "Neha", "Samuel", "Grace", "Aditya", "Riya", "Oliver", "Zara", "Rahul", "Nina", "Jacob", "Leah", "Siddharth", "Aisha", "Henry", "Ella", "Manish", "Kavya", "Leo", "Maya"];
-const LAST = ["Sharma", "Patel", "Smith", "Johnson", "Iyer", "Brown", "Reddy", "Williams", "Nair", "Taylor", "Gupta", "Anderson", "Menon", "Thomas", "Rao", "Clark", "Kulkarni", "Lewis", "Das", "Walker", "Joshi", "Hall", "Bose", "Young", "Pillai", "King", "Mehta", "Wright", "Chopra", "Green"];
-const LOCATIONS = ["Bengaluru", "Pune", "London", "Boston"];
+// invented names and places (./made-up-names.ts): nobody finds a colleague in the demo
+const FIRST = MADE_UP_FIRST;
+const LAST = MADE_UP_LAST;
+const LOCATIONS = MADE_UP_PLACES;
 
 function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -120,7 +123,7 @@ async function insertChunks<T>(rows: T[], insert: (chunk: T[]) => Promise<unknow
 export interface DemoPersonas { top: string; director: string; manager: string; member: string }
 export const DEMO_PERSONAS_KEY = "demo_personas";
 /** Raised when the made-up organisation changes, so an existing demo database is rebuilt on the next start. */
-export const DEMO_VERSION = 2;
+export const DEMO_VERSION = 3;
 const DEMO_VERSION_KEY = "demo_version";
 
 export async function seedDemo(db: DB): Promise<DemoPersonas> {

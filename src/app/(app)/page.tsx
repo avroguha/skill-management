@@ -1,5 +1,6 @@
 // Home: the viewer's next step first (rating their own skills; for a manager, ratings to
-// confirm and who has not started; for an administrator, what the app still needs), then for
+// confirm and who has not started; for an administrator, what the app still needs), then
+// everything they can do in their own words ("What do you want to do?"), then for
 // managers and leaders the headline numbers of their team or the organisation, each one link
 // away from the detail.
 import Link from "next/link";
@@ -12,6 +13,9 @@ import { Info } from "@/components/info";
 import { requireViewer, getEngine } from "@/lib/server";
 import { getNextSteps } from "@/lib/next-steps-server";
 import { NextSteps } from "@/components/next-step";
+import { TaskList } from "@/components/task-list";
+import { tasksFor } from "@/lib/menu";
+import { getMenuFor } from "@/lib/menu-server";
 import { getLevels, levelNamer } from "@/lib/levels";
 import { needView, scopeName, withParams } from "@/lib/views";
 import { fmtPct } from "@/lib/format";
@@ -50,6 +54,7 @@ export default async function Home() {
       <PageHeader title={`Hello ${first}`} description={v.demo ? "Demo mode: made-up people. Switch who you are in the orange bar." : "Your next step, then how things stand."} />
 
       <NextSteps steps={steps} />
+      <TaskList tasks={tasksFor(await getMenuFor())} />
 
       {k && scope && (
         <>

@@ -26,8 +26,7 @@ const q = async <T>(s: ReturnType<typeof sql>) => ((await db.execute(s)) as unkn
 let seed = 42;
 const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 const pick = <T>(a: T[]) => a[Math.floor(rnd() * a.length)];
-const FIRST = ["Aarav", "Maya", "Liam", "Noor", "Ravi", "Sara", "Omar", "Lena", "Kiran", "Zoe", "Ivan", "Asha", "Mateo", "Yuki", "Elena", "Dev", "Priya", "Tom", "Aisha", "Ben"];
-const LAST = ["Shah", "Patel", "Kim", "Garcia", "Singh", "Brown", "Ito", "Khan", "Rossi", "Nair", "Lopez", "Chen", "Iyer", "Smith", "Das", "Mehta", "Walker", "Bose", "Gupta", "Rao"];
+const { MADE_UP_FIRST: FIRST, MADE_UP_LAST: LAST, MADE_UP_PLACES } = await import("../../src/db/made-up-names.ts");
 
 const [top] = await q<{ id: string }>(sql`select id from employee where manager_id is null and active order by name limit 1`);
 const roles = await q<{ id: string; name: string }>(sql`select id, name from job_role`);
@@ -46,7 +45,7 @@ const person = (managerId: string, teamName: string, roleId: string, gradeId: st
   n += 1;
   const id = crypto.randomUUID();
   const first = pick(FIRST), last = pick(LAST);
-  emps.push({ id, name: `${first} ${last}`, email: `syn${n}@synthetic.avro.test`, title, team_name: teamName, role_id: roleId, grade_id: gradeId, manager_id: managerId, active: true, location: pick(["London", "Bengaluru", "Boston", "Dublin"]), source: "manual" });
+  emps.push({ id, name: `${first} ${last}`, email: `syn${n}@synthetic.avro.test`, title, team_name: teamName, role_id: roleId, grade_id: gradeId, manager_id: managerId, active: true, location: pick(MADE_UP_PLACES), source: "manual" });
   return id;
 };
 const g = (rank: number) => grades.find((x) => x.rank === rank)?.id ?? grades[grades.length - 1].id;

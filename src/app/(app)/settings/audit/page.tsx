@@ -20,7 +20,7 @@ export default async function AuditAdmin() {
         searchKeys={["who", "action", "entity", "detail"]}
         columns={[
           { key: "when", header: "When", kind: "muted", sortable: false },
-          { key: "who", header: "Who", facet: true },
+          { key: "who", header: "Who", kind: "person", facet: true },
           { key: "action", header: "Action", facet: true },
           { key: "entity", header: "On", kind: "muted", facet: true },
           { key: "detail", header: "Detail", kind: "muted", sortable: false, className: "max-w-96 truncate font-mono text-xs" },

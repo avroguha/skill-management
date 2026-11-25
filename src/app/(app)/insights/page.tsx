@@ -13,6 +13,7 @@ import { DataTable } from "@/components/data-table";
 import { UnitPicker } from "@/components/filter-bar";
 import { Button } from "@/components/ui/button";
 import { requireTeamViewer, getEngine, param, type SearchParams } from "@/lib/server";
+import { photoUrls } from "@/lib/photos";
 import { maySeeScope } from "@/lib/access";
 import { getLevels, levelNamer } from "@/lib/levels";
 import { needView, scopeName, scopeOptions, teamHeatmapData, withParams } from "@/lib/views";
@@ -25,6 +26,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
   const sp = await searchParams;
   const v = await requireTeamViewer();
   const engine = await getEngine();
+  const photos = await photoUrls();
   const requested = param(sp, "scope");
   const scope = requested && maySeeScope(v, requested) && (requested === "*" || engine.empById.get(requested)) ? requested : v.homeScope!;
   const categoryId = param(sp, "category") ?? null;
@@ -71,7 +73,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
     const f = engine.fitsFor(e, 3);
     if (!f.length) return [];
     return [{
-      name: e.name, href: `/people/${e.id}`, team: e.managerId ? engine.teamLabel(e.managerId) : "",
+      name: e.name, href: `/people/${e.id}`, photo: photos.get(e.id) ?? null, team: e.managerId ? engine.teamLabel(e.managerId) : "",
       fits: f.map((x) => `${engine.teamLabel(x.managerId)}: ${x.skills.map((s) => `${engine.skillLabel(s.skillId)} ${s.has}`).join(", ")}`).join(" · "),
       count: f.reduce((n, x) => n + x.skills.length, 0),
     }];
@@ -114,7 +116,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
           {fits.length ? (
             <DataTable csvName="could-strengthen" rows={fits} pageSize={15} initialSort={{ key: "count", desc: true }} searchPlaceholder="Find a person or team…"
               columns={[
-                { key: "name", header: "Person", kind: "link", hrefKey: "href" },
+                { key: "name", header: "Person", kind: "person", hrefKey: "href", photoKey: "photo" },
                 { key: "team", header: "Their team", kind: "muted", facet: true },
                 { key: "fits", header: "Could strengthen", className: "min-w-72 whitespace-normal", info: "Other teams, and the skills they are short of that this person has (with their level)." },
                 { key: "count", header: "Needs met", kind: "number", align: "right", info: "How many short needs, across those teams, this person meets." },

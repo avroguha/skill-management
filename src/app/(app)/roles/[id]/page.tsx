@@ -7,6 +7,8 @@ import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { KpiTiles, Section } from "@/components/kpi";
 import { requireViewer, getEngine, canSeeEmployee } from "@/lib/server";
+import { Person, PersonChip } from "@/components/person-avatar";
+import { photoUrls } from "@/lib/photos";
 import { getLevels } from "@/lib/levels";
 import { withParams } from "@/lib/views";
 import { RoleEditor, RoleTitle, type RoleNeedRow } from "./editor";
@@ -21,6 +23,7 @@ export default async function RolePage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const v = await requireViewer();
   const engine = await getEngine();
+  const photos = await photoUrls();
   const db = await getDb();
   const [role] = await db.select().from(schema.jobRole).where(eq(schema.jobRole.id, id));
   if (!role) notFound();
@@ -88,7 +91,7 @@ export default async function RolePage({ params }: { params: Promise<{ id: strin
                 {teams.sort((a, b) => engine.teamLabel(a.id).localeCompare(engine.teamLabel(b.id))).map((m) => (
                   <li key={m.id} className="flex flex-wrap items-baseline gap-x-2">
                     {v.canSeeTeams && canSeeEmployee(v, m.id) ? <Link href={withParams("/team", { scope: m.id })} className="font-medium hover:underline">{engine.teamLabel(m.id)}</Link> : <span className="font-medium">{engine.teamLabel(m.id)}</span>}
-                    <span className="text-xs text-muted-foreground">{m.name}{m.teamRoleCascade ? " · everyone below" : ""}</span>
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><PersonChip name={m.name} src={photos.get(m.id)} />{m.teamRoleCascade ? " · everyone below" : ""}</span>
                   </li>
                 ))}
               </ul>
@@ -99,8 +102,8 @@ export default async function RolePage({ params }: { params: Promise<{ id: strin
               <div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">People ({visible.length}{visible.length < holders.length ? ` of ${holders.length}` : ""})</div>
               <ul className="grid gap-1 text-sm">
                 {visible.slice(0, 40).map((e) => (
-                  <li key={e.id} className="flex flex-wrap items-baseline gap-x-2">
-                    <Link href={`/people/${e.id}`} className="hover:underline">{e.name}</Link>
+                  <li key={e.id} className="flex flex-wrap items-center gap-x-2">
+                    <Person name={e.name} href={`/people/${e.id}`} src={photos.get(e.id)} strong={false} />
                     <span className="text-xs text-muted-foreground">{e.roleFrom ? `with ${engine.teamLabel(e.roleFrom)}` : "their own role"}</span>
                   </li>
                 ))}

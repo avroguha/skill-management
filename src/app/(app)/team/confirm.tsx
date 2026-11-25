@@ -1,4 +1,5 @@
 "use client";
+import { Person } from "@/components/person-avatar";
 // My team › To confirm: the ratings the manager's direct reports sent. Agree (one, a person's
 // all, or everyone's at once), change a level, or send one back with a note.
 import { useEffect, useState, useTransition } from "react";
@@ -52,7 +53,7 @@ export function ConfirmQueue({ people: initial, levels, focus }: { people: Confi
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <p className="flex-1 text-sm text-muted-foreground">
+        <p className="flex-1 basis-72 text-sm text-muted-foreground">
           Each level starts at what the person chose (dashed outline). Tap another level to change it. To send one back, write what to look at again, then <b>Send back</b>.
         </p>
         <Button disabled={pending} onClick={() => accept(people.flatMap((p) => p.items.map((it) => ({ p, it }))))}>
@@ -63,10 +64,7 @@ export function ConfirmQueue({ people: initial, levels, focus }: { people: Confi
       {ordered.map((p) => (
         <section key={p.id} className="rounded-lg border bg-card">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
-            <div>
-              <Link href={`/people/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
-              <div className="text-xs text-muted-foreground">{p.title} · {p.items.length} to confirm</div>
-            </div>
+            <Person name={p.name} href={`/people/${p.id}`} size="md" sub={`${p.title ? `${p.title} · ` : ""}${p.items.length} to confirm`} />
             <Button size="sm" variant="outline" disabled={pending} onClick={() => accept(p.items.map((it) => ({ p, it })))}><CheckCheck />Confirm {p.name.split(" ")[0]}&apos;s {p.items.length}</Button>
           </div>
           <ul className="divide-y">

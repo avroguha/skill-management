@@ -27,7 +27,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
         <DataTable csvName={`group-${g.name}`} searchPlaceholder="Find a person…" emptyText="None of the synced people is in this group."
           rows={members.map((m) => ({ name: m.name, href: `/people/${m.id}`, title: m.title, email: m.email, status: m.active ? "" : "Left" }))}
           columns={[
-            { key: "name", header: "Name", kind: "link", hrefKey: "href" },
+            { key: "name", header: "Name", kind: "person", hrefKey: "href" },
             { key: "title", header: "Designation", kind: "muted" },
             { key: "email", header: "E-mail", kind: "muted" },
             { key: "status", header: "", kind: "muted" },

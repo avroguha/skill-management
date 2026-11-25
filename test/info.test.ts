@@ -39,9 +39,9 @@ test("every number tile says what it shows", () => {
   assert.match(src, /\n {2}info: string;/, "Kpi.info is required");
 });
 
-test("settings: every section is in the menu that is always on screen, and has a page", () => {
-  const nav = fs.readFileSync(path.join(root, "src", "app", "(app)", "settings", "nav.tsx"), "utf8");
-  const hrefs = [...nav.matchAll(/href: "(\/settings[^"]*)"/g)].map((m) => m[1]);
+test("settings: every section is in the menu (the sub menu under Settings), and has a page", async () => {
+  const { SETTINGS_SECTIONS } = await import("../src/lib/menu.ts");
+  const hrefs = SETTINGS_SECTIONS.map((x) => x.href as string);
   assert.ok(hrefs.length >= 10);
   for (const h of hrefs) {
     const page = path.join(root, "src", "app", "(app)", ...h.split("/").filter(Boolean), "page.tsx");

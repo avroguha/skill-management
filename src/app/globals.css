@@ -185,6 +185,46 @@
 }
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* A page's own copy of its sub menu (components/sub-menu.tsx): shown where the menu's sub
+   menu is out of sight - on a phone, where the menu is a drawer, and when the menu is
+   closed to icons - and hidden while the menu shows it. */
+.sub-menu-page { display: flex; }
+@media (min-width: 48rem) {
+  .sub-menu-page { display: none; }
+  [data-slot="sidebar-wrapper"]:has([data-slot="sidebar"][data-state="collapsed"]) .sub-menu-page { display: flex; }
+}
+
+/* A person's picture (components/person-avatar.tsx): a round SVG whose width follows the
+   screen width, between a floor and a ceiling per size. The drawing inside is in a 40-unit
+   box, so the initials scale with it. In the components layer so a size-* utility on one
+   avatar (the org chart, whose cards are laid out in fixed sizes) still wins. */
+@layer components {
+  .avatar {
+    --avatar-size: clamp(1.75rem, 1.45rem + 0.6vw, 2.25rem);
+    width: var(--avatar-size);
+    height: var(--avatar-size);
+    flex: none;
+    display: inline-block;
+    border-radius: 9999px;
+    vertical-align: middle;
+    user-select: none;
+  }
+  .avatar[data-size="xs"] { --avatar-size: clamp(1.25rem, 1.05rem + 0.3vw, 1.5rem); }
+  .avatar[data-size="sm"] { --avatar-size: clamp(1.5rem, 1.25rem + 0.45vw, 1.875rem); }
+  .avatar[data-size="lg"] { --avatar-size: clamp(2.25rem, 1.8rem + 1vw, 3rem); }
+  .avatar[data-size="xl"] { --avatar-size: clamp(3rem, 2.3rem + 1.8vw, 4.5rem); }
+}
+.avatar-bg { fill: oklch(0.91 0.055 var(--avatar-hue, 268)); }
+.avatar-text {
+  fill: oklch(0.36 0.11 var(--avatar-hue, 268));
+  font-family: inherit;
+  font-size: 15px; /* in the drawing's own 40 units, so it scales with the circle */
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.dark .avatar-bg { fill: oklch(0.4 0.075 var(--avatar-hue, 268)); }
+.dark .avatar-text { fill: oklch(0.95 0.035 var(--avatar-hue, 268)); }
+
 /* React Flow (the org chart canvas) in the app's own colours, both themes */
 .react-flow,
 .react-flow.dark {

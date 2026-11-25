@@ -3,19 +3,19 @@
 import { render, type MailKind, type Payloads, type RenderContext } from "./templates.ts";
 
 export const PREVIEW_KINDS: { kind: MailKind; label: string; to: string }[] = [
-  { kind: "submitted", label: "Ratings sent to the manager", to: "Priya Nair" },
-  { kind: "digest", label: "Weekly: what waits for a manager", to: "Priya Nair" },
-  { kind: "validated", label: "Ratings confirmed", to: "Arjun Mehta" },
-  { kind: "returned", label: "A rating sent back", to: "Arjun Mehta" },
-  { kind: "reminder", label: "Weekly: finish your skills", to: "Arjun Mehta" },
-  { kind: "nudge", label: "A manager's reminder", to: "Arjun Mehta" },
+  { kind: "submitted", label: "Ratings sent to the manager", to: "Thessia Quellis" },
+  { kind: "digest", label: "Weekly: what waits for a manager", to: "Thessia Quellis" },
+  { kind: "validated", label: "Ratings confirmed", to: "Zorvan Vantor" },
+  { kind: "returned", label: "A rating sent back", to: "Zorvan Vantor" },
+  { kind: "reminder", label: "Weekly: finish your skills", to: "Zorvan Vantor" },
+  { kind: "nudge", label: "A manager's reminder", to: "Zorvan Vantor" },
   { kind: "test", label: "The test e-mail", to: "Administrator" },
 ];
 
 const SAMPLE: { [K in MailKind]: Payloads[K] } = {
   test: { byName: "Administrator" },
   submitted: {
-    personName: "Arjun Mehta", personTitle: "Senior Cloud Engineer", personId: "sample",
+    personName: "Zorvan Vantor", personTitle: "Senior Cloud Engineer", personId: "sample",
     items: [
       { skill: "AWS › EC2", self: 4, target: 3, note: "Ran the migration of the billing service" },
       { skill: "Kubernetes", self: 3, target: 3, note: "" },
@@ -24,21 +24,21 @@ const SAMPLE: { [K in MailKind]: Payloads[K] } = {
   },
   digest: {
     waitingRatings: 9,
-    waitingPeople: [{ name: "Arjun Mehta", waiting: 3, state: "" }, { name: "Sofia Iyer", waiting: 6, state: "" }],
-    notStarted: [{ name: "Daniel Rao", waiting: 0, state: "not started" }, { name: "Mia Clark", waiting: 0, state: "not started" }],
+    waitingPeople: [{ name: "Zorvan Vantor", waiting: 3, state: "" }, { name: "Ixara Belqar", waiting: 6, state: "" }],
+    notStarted: [{ name: "Okrin Tavrin", waiting: 0, state: "not started" }, { name: "Nuuma Skarn", waiting: 0, state: "not started" }],
     teamSize: 8,
   },
   validated: {
-    byName: "Priya Nair", personId: "sample",
+    byName: "Thessia Quellis", personId: "sample",
     items: [
       { skill: "AWS › EC2", self: 4, validated: 4, note: "" },
       { skill: "Kubernetes", self: 3, validated: 3, note: "" },
       { skill: "Python", self: 4, validated: 3, note: "Strong, but not yet the person others come to" },
     ],
   },
-  returned: { byName: "Priya Nair", items: [{ skill: "Terraform", self: 4, note: "Can you add an example? This is higher than what I have seen." }] },
+  returned: { byName: "Thessia Quellis", items: [{ skill: "Terraform", self: 4, note: "Can you add an example? This is higher than what I have seen." }] },
   reminder: { rated: 4, required: 7, missing: ["Linux administration", "Observability", "Terraform"], sentBack: 0 },
-  nudge: { byName: "Priya Nair", note: "Please finish by Friday: we plan next quarter's training from it.", rated: 2, required: 7, missing: ["AWS › IAM", "Kubernetes", "Linux administration", "Python", "Terraform"] },
+  nudge: { byName: "Thessia Quellis", note: "Please finish by Friday: we plan next quarter's training from it.", rated: 2, required: 7, missing: ["AWS › IAM", "Kubernetes", "Linux administration", "Python", "Terraform"] },
 };
 
 export function previewEmails(ctx: Omit<RenderContext, "toName">) {

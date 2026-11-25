@@ -23,14 +23,17 @@ import type { GapCategory } from "@/lib/engine/engine";
 import { cn } from "@/lib/utils";
 import { substringFilter } from "@/lib/search";
 import { Info } from "@/components/info";
+import { Person } from "@/components/person-avatar";
 
-export type ColKind = "text" | "link" | "number" | "pct" | "date" | "level" | "gap" | "muted" | "badge";
+export type ColKind = "text" | "link" | "person" | "number" | "pct" | "date" | "level" | "gap" | "muted" | "badge";
 export interface ColSpec {
   key: string;
   header: string;
   kind?: ColKind;
-  /** for kind=link: the row field holding the href */
+  /** for kind=link and kind=person: the row field holding the href */
   hrefKey?: string;
+  /** for kind=person: the row field holding the photo URL (initials without one) */
+  photoKey?: string;
   align?: "left" | "right" | "center";
   facet?: boolean;
   sortable?: boolean;
@@ -45,6 +48,12 @@ const multiFilter: FilterFn<Row> = (row, id, value: string[]) => !value?.length 
 function renderCell(c: ColSpec, row: Row) {
   const v = row[c.key];
   switch (c.kind) {
+    case "person": {
+      // a name always comes with its picture
+      const name = String(v ?? "");
+      if (!name) return <span className="text-muted-foreground">–</span>;
+      return <Person name={name} href={c.hrefKey ? (row[c.hrefKey] as string | undefined) : undefined} src={c.photoKey ? (row[c.photoKey] as string | null | undefined) : undefined} />;
+    }
     case "link": {
       const href = c.hrefKey ? (row[c.hrefKey] as string | undefined) : undefined;
       return href ? <Link href={href} className="font-medium hover:underline">{String(v ?? "")}</Link> : <span>{String(v ?? "")}</span>;
@@ -155,7 +164,7 @@ export function DataTable({
     cell: (ctx) => renderCell(c, ctx.row.original),
   })), [columns]);
 
-  const keys = searchKeys ?? columns.filter((c) => !c.kind || c.kind === "text" || c.kind === "link" || c.kind === "muted").map((c) => c.key);
+  const keys = searchKeys ?? columns.filter((c) => !c.kind || c.kind === "text" || c.kind === "link" || c.kind === "person" || c.kind === "muted").map((c) => c.key);
   const table = useReactTable({
     data: rows,
     columns: defs,

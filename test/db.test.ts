@@ -66,6 +66,24 @@ test("the demo database is separate and tells a story worth presenting", async (
   assert.deepEqual(e.teamHeatmap(p.top).rows.map((r) => r.name).sort(), ["Operations", "Technology"]);
 });
 
+test("demo people have invented names and work in invented places: nobody finds a colleague in the demo", async () => {
+  const { MADE_UP_FIRST, MADE_UP_LAST, MADE_UP_PLACES } = await import("../src/db/made-up-names.ts");
+  const demo = await getDb("demo");
+  const people = await demo.select({ name: s.employee.name, email: s.employee.email, location: s.employee.location }).from(s.employee);
+  assert.equal(new Set(people.map((p) => p.name)).size, people.length, "no two people share a name");
+  for (const p of people) {
+    const [first, last, ...more] = p.name.split(" ");
+    assert.ok(MADE_UP_FIRST.includes(first) && MADE_UP_LAST.includes(last) && !more.length, `an invented name: ${p.name}`);
+    assert.ok(MADE_UP_PLACES.includes(p.location ?? ""), `an invented place: ${p.location}`);
+    assert.match(p.email, /@avro\.com$/);
+  }
+  // the lists themselves: no word twice, and none of the everyday names the demo used to have
+  const all = [...MADE_UP_FIRST, ...MADE_UP_LAST];
+  assert.equal(new Set(all.map((n) => n.toLowerCase())).size, all.length);
+  const everyday = ["james", "emma", "liam", "olivia", "noah", "daniel", "grace", "henry", "smith", "brown", "taylor", "clark", "walker", "young", "king", "green", "london"];
+  for (const n of [...all, ...MADE_UP_PLACES]) assert.ok(!everyday.includes(n.toLowerCase()), n);
+});
+
 test("the demo shows roles the way managers set them: chosen for a team, for everyone below, changed lower down, or one's own", async () => {
   const demo = await getDb("demo");
   const e = createEngine(await loadDatasetFrom(demo));

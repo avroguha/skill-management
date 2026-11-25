@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Info } from "@/components/info";
+import { PersonAvatar } from "@/components/person-avatar";
 
 export interface Kpi {
   label: string;
@@ -12,6 +13,8 @@ export interface Kpi {
   info: string;
   tone?: "default" | "good" | "warn" | "bad";
   href?: string;
+  /** the value is a person's name: their picture goes with it */
+  person?: { name: string; src?: string | null };
 }
 
 const TONE: Record<NonNullable<Kpi["tone"]>, string> = {
@@ -28,7 +31,7 @@ export function KpiTiles({ items, className }: { items: Kpi[]; className?: strin
         const body = (
           <>
             <div className="text-xs text-muted-foreground">{k.label}</div>
-            <div className={cn("mt-1 text-2xl font-semibold tracking-tight tabular", TONE[k.tone ?? "default"])}>{k.value}</div>
+            <div className={cn("mt-1 text-2xl font-semibold tracking-tight tabular", TONE[k.tone ?? "default"], k.person && "flex items-center gap-2 text-lg leading-8")}>{k.person && <PersonAvatar name={k.person.name} src={k.person.src} size="sm" />}<span className="min-w-0 truncate">{k.value}</span></div>
             <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{k.hint}</div>
           </>
         );

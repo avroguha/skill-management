@@ -7,6 +7,7 @@ import { KpiTiles, Section } from "@/components/kpi";
 import { DistributionChart } from "@/components/charts";
 import { DataTable } from "@/components/data-table";
 import { requireViewer, getEngine, param, type SearchParams } from "@/lib/server";
+import { photoUrls } from "@/lib/photos";
 import { maySeeScope } from "@/lib/access";
 import { scopeOptions, withParams } from "@/lib/views";
 
@@ -21,6 +22,7 @@ export default async function SkillPage({ params, searchParams }: { params: Prom
   const sp = await searchParams;
   const v = await requireViewer();
   const engine = await getEngine();
+  const photos = await photoUrls();
   const db = await getDb();
   const [skill] = await db.select().from(schema.skill).where(eq(schema.skill.id, id));
   if (!skill) notFound();
@@ -65,7 +67,7 @@ export default async function SkillPage({ params, searchParams }: { params: Prom
     .map((c) => {
       const e = engine.empById.get(c.employeeId)!;
       return {
-        name: e.name, href: `/people/${e.id}`, team: e.managerId ? engine.teamLabel(e.managerId) : "",
+        name: e.name, href: `/people/${e.id}`, photo: photos.get(e.id) ?? null, team: e.managerId ? engine.teamLabel(e.managerId) : "",
         level: c.level, self: c.selfLevel, target: c.target, gap: c.target != null ? c.category : null,
         assessed: c.at?.toISOString() ?? null, interest: c.interest ? "Yes" : "",
       };
@@ -106,7 +108,7 @@ export default async function SkillPage({ params, searchParams }: { params: Prom
         <Section className="lg:col-span-3" title="People" info="Everyone here who holds this skill or whose role asks for it.">
           <DataTable csvName="skill-people" rows={people} initialSort={{ key: "level", desc: true }}
             columns={[
-              { key: "name", header: "Name", kind: "link", hrefKey: "href" },
+              { key: "name", header: "Name", kind: "person", hrefKey: "href", photoKey: "photo" },
               { key: "team", header: "Team", facet: true },
               { key: "level", header: "Confirmed", kind: "level", align: "center" },
               { key: "self", header: "Self", kind: "level", align: "center" },

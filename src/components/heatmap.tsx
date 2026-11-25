@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Clock, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { Person } from "@/components/person-avatar";
 import { BAND_CLASS, GAP_CLASS, GAP_LABEL, pctBand } from "@/lib/status";
 import type { GapCategory } from "@/lib/engine/engine";
 
@@ -179,10 +180,7 @@ export function PeopleHeatmap({ data, levels }: { data: PeopleHeatmapData; level
             <tr key={r.id}>
               <th scope="row" className="sticky left-0 z-10 bg-card pr-3 text-left font-normal">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link href={r.href} className="block truncate text-sm font-medium hover:underline">{r.name}</Link>
-                    <div className="truncate text-xs text-muted-foreground">{r.title}</div>
-                  </div>
+                  <Person name={r.name} href={r.href} sub={r.title} className="text-sm" />
                   <span className="shrink-0 text-xs text-muted-foreground tabular">{r.onTargetPct == null ? "" : `${r.onTargetPct}%`}</span>
                 </div>
               </th>

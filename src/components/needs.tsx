@@ -2,6 +2,7 @@
 // already has what is missing. Capability only: no suggestion of what to do about it.
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { PersonChip } from "@/components/person-avatar";
 
 export interface NeedView {
   key: string;
@@ -43,15 +44,16 @@ export function NeedList({ items, empty = "Every team need here is covered by tw
             <div className="text-xs text-muted-foreground">
               {showTeam && <><Link href={n.unitHref} className="hover:underline">{n.unit}</Link>{" · "}</>}
               {n.critical ? <span className="font-medium text-status-critical dark:text-[color:oklch(0.75_0.15_27)]">nobody in the team at this level</span>
-                : n.spof ? <span>only {n.holders[0]}</span>
-                  : <span>{n.holders.slice(0, 3).join(", ")}{n.holders.length > 3 ? ` +${n.holders.length - 3}` : ""}</span>}
+                : n.spof ? <span className="inline-flex items-center gap-1 align-middle">only <PersonChip name={n.holders[0] ?? ""} /></span>
+                  : <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 align-middle">{n.holders.slice(0, 3).map((h) => <PersonChip key={h} name={h} />)}{n.holders.length > 3 ? ` +${n.holders.length - 3}` : ""}</span>}
               {!n.explicit && " · implied by the team's roles"}
             </div>
             {n.elsewhereCount > 0 && (
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                Elsewhere: {n.elsewhere.map((e, i) => (
-                  <span key={e.id}>{i > 0 && ", "}<Link href={`/people/${e.id}`} className="text-foreground hover:underline">{e.name}</Link>{e.team ? ` (${e.team})` : ""}</span>
-                ))}{n.elsewhereCount > n.elsewhere.length ? ` +${n.elsewhereCount - n.elsewhere.length} more` : ""}
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>Elsewhere:</span>
+                {n.elsewhere.map((e) => (
+                  <span key={e.id} className="inline-flex items-center gap-1"><PersonChip name={e.name} href={`/people/${e.id}`} />{e.team ? <span>({e.team})</span> : null}</span>
+                ))}{n.elsewhereCount > n.elsewhere.length ? <span>+{n.elsewhereCount - n.elsewhere.length} more</span> : null}
               </div>
             )}
           </div>

@@ -70,7 +70,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   return (
     <>
       <PageHeader
-        title={<span className="flex items-center gap-3"><PersonAvatar name={e.name} src={(await photoUrls()).get(id) ?? null} className="size-10" />{e.name}</span>}
+        title={<span className="flex items-center gap-3"><PersonAvatar name={e.name} src={(await photoUrls()).get(id) ?? null} size="lg" />{e.name}</span>}
         description={[e.title, e.location, e.active ? null : "has left"].filter(Boolean).join(" · ")}
         crumbs={v.canSeeTeams && chain.length ? [...chain.map((m) => ({ label: engine.teamLabel(m.id), href: withParams("/team", { scope: m.id }) })), { label: e.name }] : undefined}
         actions={self ? <Button asChild><Link href="/my-skills"><PencilLine />Update my skills</Link></Button>
@@ -86,7 +86,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         { label: "Role", value: role?.name ?? "–", href: role ? `/roles/${role.id}` : "/roles",
           hint: [role ? (e.roleFrom && e.roleFrom !== e.id ? `follows ${engine.teamLabel(e.roleFrom)}` : e.roleFrom ? "chosen for their team" : "their own role") : "no role yet", grade ? `grade ${grade.name}` : null].filter(Boolean).join(" · "),
           info: "The role decides which skills a person is asked to rate, and at what level (Roles). It is their own, or the one their manager chose for the team." },
-        { label: "Manager", value: manager?.name ?? "–", hint: manager ? engine.teamLabel(manager.id) : "",
+        { label: "Manager", value: manager?.name ?? "–", person: manager ? { name: manager.name, src: (await photoUrls()).get(manager.id) ?? null } : undefined, hint: manager ? engine.teamLabel(manager.id) : "",
           info: "Who confirms this person's ratings: their direct manager.", href: manager && canSeeEmployee(v, manager.id) ? `/people/${manager.id}` : undefined },
         { label: "To confirm", value: String(waiting), hint: canConfirm ? "on My team" : "with their manager",
           info: "Ratings this person sent that wait for their manager.", href: canConfirm && waiting ? withParams("/team", { tab: "confirm", person: id }) : undefined },

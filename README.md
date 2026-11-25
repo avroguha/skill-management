@@ -2,9 +2,15 @@
 
 Who knows what, and what each team needs. People rate their own skills (0 to 5), their manager confirms them, and managers and leaders see what every team can do, where it is short, and who elsewhere in the organisation already has what is missing.
 
-Kept deliberately simple: people, their managers and skills. A team is a manager and everyone below them, straight from the reporting lines in **ServiceNow `sys_user`**. Eight places to go, none more than a click or two away; every number, column and setting has an **(i)** that says what it is. A **Demo** switch shows a made-up organisation for presentations without touching the real data.
+Kept deliberately simple: people, their managers and skills. A team is a manager and everyone below them, straight from the reporting lines in **ServiceNow `sys_user`**. Finding things is meant to need no asking: one **Menu** with a heading per group and a line under every entry saying what is behind it; a page's sections (a team's *To confirm / People / Team needs / Skills grid*, the sections of Settings) are a **sub menu** under its entry; Home lists everything you can do in your own words (*What do you want to do?*), and the box at the top of every page finds it by a word (Ctrl+K). Every number, column and setting has an **(i)** that says what it is, and every name comes with its picture. A **Demo** switch shows a made-up organisation for presentations without touching the real data.
 
 ![Home](docs/screenshots/01-home.png)
+
+A team's page, with its sections as the sub menu under *My team*; the same sub menu moves to the top of the page when the menu is closed or on a phone:
+
+![A team's people](docs/screenshots/06-team-people.png)
+
+![The menu closed: the sub menu on the page](docs/screenshots/09-menu-closed.png)
 
 ## Contents
 
