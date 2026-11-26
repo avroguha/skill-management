@@ -9,7 +9,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   House, ChartNoAxesColumn, CircleHelp, Users, Shapes, PencilLine, Settings,
-  LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound, BriefcaseBusiness, ChevronRight } from "lucide-react";
+  LogOut, KeyRound, Sun, Moon, Monitor, ChevronsUpDown, Network, UsersRound, BriefcaseBusiness, ChevronRight, Inbox } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarHeader, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub,
@@ -21,13 +21,14 @@ import {
   DropdownMenuSubTrigger, DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import { PersonAvatar } from "@/components/person-avatar";
+import { MenuButton } from "@/components/menu-button";
 import { authClient } from "@/lib/auth-client";
 import { locate, type MenuGroup, type MenuIcon, type MenuItem, type SubItem } from "@/lib/menu";
 import { cn } from "@/lib/utils";
 
 export const MENU_ICONS: Record<MenuIcon, typeof House> = {
   home: House, insights: ChartNoAxesColumn, help: CircleHelp, people: Users, skills: Shapes,
-  assess: PencilLine, admin: Settings, team: UsersRound, org: Network, roles: BriefcaseBusiness,
+  assess: PencilLine, admin: Settings, team: UsersRound, org: Network, roles: BriefcaseBusiness, requests: Inbox,
 };
 
 function Count({ value, attention, className }: { value: number | string; attention?: boolean; className?: string }) {
@@ -109,10 +110,11 @@ export function AppSidebar({ groups, user, canChangePassword = true }: {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <SidebarMenu>
+      {/* the app's name, and the Menu button next to it; folded down to icons, the button is under the logo */}
+      <SidebarHeader className="flex-row items-center gap-0.5 group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-2">
+        <SidebarMenu className="flex-1 group-data-[collapsible=icon]:flex-none">
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
+            <SidebarMenuButton size="lg" asChild className="pr-0">
               <Link href="/" onClick={close}>
                 <div className="flex aspect-square size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
                   <Shapes className="size-4" />
@@ -124,12 +126,13 @@ export function AppSidebar({ groups, user, canChangePassword = true }: {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <MenuButton className="gap-1 px-1.5 has-[>svg]:px-1.5 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-0" labelClassName="group-data-[collapsible=icon]:hidden" />
       </SidebarHeader>
       <SidebarContent>
         <nav aria-label="Menu">
           {groups.map((g, i) => (
             <Fragment key={g.key}>
-              {i > 0 && <SidebarSeparator className="mx-3 w-auto" />}
+              {i > 0 && <SidebarSeparator className="mx-3 w-auto data-horizontal:w-auto" />}
               <SidebarGroup className="py-1.5">
                 <SidebarGroupLabel className={cn("h-7 text-[11px] font-semibold tracking-wider uppercase", i === 0 && "text-sidebar-foreground")}>{g.label}</SidebarGroupLabel>
                 <SidebarGroupContent>

@@ -1,35 +1,40 @@
 // CSV export and import. Every export re-imports unchanged (test/transfer.test.ts).
-// Natural keys, never internal ids: skill paths ("AWS > EC2"), e-mail addresses, role and
-// grade names. A team is a manager: team needs name the manager's e-mail.
+// Natural keys, never internal ids: skill paths ("AWS > EC2"), e-mail addresses, grade names.
+// A team is a manager: its roles and needs name the manager's e-mail, and a role is named by
+// its team and its name (two teams can each have a role called the same).
 //
-// Order for a first load: skills, grades, roles, role-skills, people, team-needs, ratings.
+// Order for a first load: skills, grades, people, team-roles, role-people, role-skills,
+// team-needs, ratings.
 // Bad rows are skipped and reported with their line number; dryRun checks a file
 // without changing anything.
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { DB } from "../db/index.ts";
 import * as s from "../db/schema.ts";
 import { parseCsvObjects, toCsv } from "./csv.ts";
+import { nextTint } from "./role-colors.ts";
 
-export const KINDS = ["skills", "grades", "roles", "role-skills", "people", "team-needs", "ratings"] as const;
+export const KINDS = ["skills", "grades", "people", "team-roles", "role-people", "role-skills", "team-needs", "ratings"] as const;
 export type Kind = (typeof KINDS)[number];
 export const SEP = " > ";
 
 export const COLUMNS: Record<Kind, string[]> = {
   skills: ["category", "skill", "sub_skill", "aliases", "description", "status"],
   grades: ["grade", "rank"],
-  roles: ["role", "description"],
-  "role-skills": ["role", "grade", "skill", "target", "mandatory"],
-  people: ["email", "name", "title", "role", "grade", "manager_email", "team_name", "team_role", "team_role_for", "location", "active"],
+  people: ["email", "name", "title", "grade", "manager_email", "team_name", "location", "active"],
+  "team-roles": ["manager_email", "role", "description"],
+  "role-people": ["manager_email", "role", "email"],
+  "role-skills": ["manager_email", "role", "skill", "level", "must_have"],
   "team-needs": ["manager_email", "skill", "min_level", "headcount", "note"],
   ratings: ["email", "skill", "self_level", "confirmed_level", "status", "self_comment", "manager_comment", "interest", "self_on", "confirmed_on"],
 };
 
 export const DESCRIPTIONS: Record<Kind, string> = {
-  skills: "The skill catalogue. A row with sub_skill is a sub-skill under skill. Aliases separated by ;. status: active, draft or retired. Existing skills are updated, new ones added, nothing deleted; new skills that look like existing ones are listed for a decision first.",
-  grades: "Grades in order: a higher rank is the next grade up.",
-  roles: "Job roles and what they are for.",
-  "role-skills": "Required level per role, skill and (optionally) grade. A blank grade means every grade.",
-  people: "One row per person, matched by e-mail. manager_email builds the teams; team_name names the team a manager leads. role is a person's own role (empty: they follow their team's). For a manager, team_role is the role chosen for the team and team_role_for says who follows it: direct (the people reporting to them) or all (everyone below).",
+  skills: "The skill catalogue. A row with sub_skill is a sub-skill under skill. Aliases separated by ;. status: active or retired. Existing skills are updated, new ones added, nothing deleted; new skills that look like existing ones are listed for a decision first.",
+  grades: "Grades in order: a label on a person (Associate, Senior ...).",
+  people: "One row per person, matched by e-mail. manager_email builds the teams; team_name names the team a manager leads.",
+  "team-roles": "The roles of each team: the manager's e-mail, the role's name (unique within that team) and what it is for.",
+  "role-people": "Who is in which role of their manager's team. A person can be in several roles: one row each.",
+  "role-skills": "The skills a team's role asks for, with the level (1-5) and whether it is a must-have (yes) or a nice-to-have (no).",
   "team-needs": "What a manager's team needs: N people at a minimum level in a skill.",
   ratings: "Self and confirmed levels per person and skill. status: draft, submitted (waiting for the manager), confirmed or returned; empty = confirmed when there is a confirmed level, else submitted.",
 };
@@ -55,7 +60,7 @@ const lc = (x: string) => x.trim().toLowerCase();
 async function lookups(q: Q) {
   const [skills, cats, roles, grades, people] = await Promise.all([
     q.select().from(s.skill), q.select().from(s.skillCategory),
-    q.select().from(s.jobRole), q.select().from(s.grade), q.select().from(s.employee),
+    q.select().from(s.teamRole), q.select().from(s.grade), q.select().from(s.employee),
   ]);
   const skillById = new Map(skills.map((k) => [k.id, k]));
   const skillPath = (id: string) => {
@@ -97,25 +102,32 @@ export async function exportCsv(db: DB, kind: Kind): Promise<string> {
     });
   } else if (kind === "grades") {
     rows = [...L.grades].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)).map((g) => ({ grade: g.name, rank: g.rank }));
-  } else if (kind === "roles") {
-    rows = [...L.roles].sort((a, b) => a.name.localeCompare(b.name)).map((r) => ({ role: r.name, description: r.description }));
+  } else if (kind === "team-roles") {
+    rows = [...L.roles].map((r) => ({ manager_email: email(r.managerId), role: r.name, description: r.description, sort: r.sort }))
+      .sort((a, b) => a.manager_email.localeCompare(b.manager_email) || a.sort - b.sort || a.role.localeCompare(b.role));
+  } else if (kind === "role-people") {
+    const members = await db.select().from(s.teamRoleMember);
+    const role = new Map(L.roles.map((r) => [r.id, r]));
+    rows = members.filter((m) => role.has(m.roleId)).map((m) => ({ manager_email: email(role.get(m.roleId)!.managerId), role: role.get(m.roleId)!.name, email: email(m.employeeId) }))
+      .sort((a, b) => `${a.manager_email}${a.role}${a.email}`.localeCompare(`${b.manager_email}${b.role}${b.email}`));
   } else if (kind === "role-skills") {
-    const rs = await db.select().from(s.roleSkill);
-    rows = rs.map((r) => ({
-      role: L.roles.find((x) => x.id === r.roleId)?.name ?? "", grade: r.gradeId ? L.grades.find((g) => g.id === r.gradeId)?.name ?? "" : "",
-      skill: L.skillPath(r.skillId), target: r.target, mandatory: r.mandatory ? "yes" : "no",
-    })).sort((a, b) => `${a.role}${a.skill}${a.grade}`.localeCompare(`${b.role}${b.skill}${b.grade}`));
+    const rs = await db.select().from(s.teamRoleSkill);
+    const role = new Map(L.roles.map((r) => [r.id, r]));
+    rows = rs.filter((r) => role.has(r.roleId)).map((r) => ({
+      manager_email: email(role.get(r.roleId)!.managerId), role: role.get(r.roleId)!.name,
+      skill: L.skillPath(r.skillId), level: r.target, must_have: r.mandatory ? "yes" : "no",
+    })).sort((a, b) => `${a.manager_email}${a.role}${a.skill}`.localeCompare(`${b.manager_email}${b.role}${b.skill}`));
   } else if (kind === "people") {
     rows = L.people.map((p) => ({
       email: p.email, name: p.name, title: p.title,
-      role: L.roles.find((r) => r.id === p.roleId)?.name ?? "", grade: L.grades.find((g) => g.id === p.gradeId)?.name ?? "",
+      grade: L.grades.find((g) => g.id === p.gradeId)?.name ?? "",
       manager_email: email(p.managerId), team_name: p.teamName,
-      team_role: L.roles.find((r) => r.id === p.teamRoleId)?.name ?? "", team_role_for: p.teamRoleId ? (p.teamRoleCascade ? "all" : "direct") : "",
       location: p.location, active: p.active ? "yes" : "no",
     })).sort((a, b) => a.email.localeCompare(b.email));
   } else if (kind === "team-needs") {
     const needs = await db.select().from(s.teamNeed);
-    rows = needs.map((n) => ({ manager_email: email(n.managerId), skill: L.skillPath(n.skillId), min_level: n.minLevel, headcount: n.headcount, note: n.note }))
+    // a need the manager took off the list is not a need: it is left out
+    rows = needs.filter((n) => !n.dismissed).map((n) => ({ manager_email: email(n.managerId), skill: L.skillPath(n.skillId), min_level: n.minLevel, headcount: n.headcount, note: n.note }))
       .sort((a, b) => `${a.manager_email}${a.skill}`.localeCompare(`${b.manager_email}${b.skill}`));
   } else if (kind === "ratings") {
     const ratings = await db.select().from(s.rating);
@@ -137,7 +149,7 @@ export async function importCsv(db: DB, kind: Kind, text: string, opts: { dryRun
   const report: ImportReport = { kind, rows: rows.length, created: 0, updated: 0, errors: [], warnings: [], dryRun: !!opts.dryRun, matches: [], undecided: 0 };
   const err = (line: number, message: string) => report.errors.push({ line, message });
   const warn = (line: number, message: string) => report.warnings.push({ line, message });
-  const required = { skills: ["category", "skill"], grades: ["grade", "rank"], roles: ["role"], "role-skills": ["role", "skill", "target"], people: ["email"], "team-needs": ["manager_email", "skill", "min_level"], ratings: ["email", "skill"] }[kind];
+  const required = { skills: ["category", "skill"], grades: ["grade", "rank"], people: ["email"], "team-roles": ["manager_email", "role"], "role-people": ["manager_email", "role", "email"], "role-skills": ["manager_email", "role", "skill", "level"], "team-needs": ["manager_email", "skill", "min_level"], ratings: ["email", "skill"] }[kind];
   if (rows.length) {
     const missing = required.filter((c) => !(c in rows[0].data));
     if (missing.length) { err(1, `Missing column(s): ${missing.join(", ")}. Expected: ${COLUMNS[kind].join(", ")}`); return report; }
@@ -147,9 +159,10 @@ export async function importCsv(db: DB, kind: Kind, text: string, opts: { dryRun
       const L = await lookups(tx);
       if (kind === "skills") await importSkills(tx, L, rows, report, err, warn, opts.decisions ?? []);
       else if (kind === "grades") await importGrades(tx, L, rows, report, err);
-      else if (kind === "roles") await importRoleList(tx, L, rows, report, err);
-      else if (kind === "role-skills") await importRoles(tx, L, rows, report, err);
-      else if (kind === "people") await importPeople(tx, L, rows, report, err);
+      else if (kind === "people") await importPeople(tx, L, rows, report, err, warn);
+      else if (kind === "team-roles") await importTeamRoles(tx, L, rows, report, err);
+      else if (kind === "role-people") await importRolePeople(tx, L, rows, report, err);
+      else if (kind === "role-skills") await importRoleSkills(tx, L, rows, report, err);
       else if (kind === "team-needs") await importNeeds(tx, L, rows, report, err);
       else if (kind === "ratings") await importRatings(tx, L, rows, report, err, opts.actorId ?? null);
       if (opts.dryRun) throw new Rollback();
@@ -309,7 +322,7 @@ async function importSkills(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err
     const catName = data.category, top = data.skill, sub = data.sub_skill ?? "";
     if (!catName || !top) { err(line, "category and skill are required"); continue; }
     const status = data.status ? lc(data.status) : "active";
-    if (!["active", "draft", "retired"].includes(status)) { err(line, `status must be active, draft or retired (was "${data.status}")`); continue; }
+    if (!["active", "retired"].includes(status)) { err(line, `status must be active or retired (was "${data.status}")`); continue; }
     const aliases = (data.aliases ?? "").split(/;/).map((x) => x.trim()).filter(Boolean);
     // upsert: a skill that exists is updated from the columns the file has; a column the file
     // leaves out (or a blank status) keeps what is there, so a short file never wipes aliases
@@ -414,38 +427,64 @@ async function importGrades(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err
   }
 }
 
-async function importRoleList(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err) {
+/** The role of a manager's team with this name; made when it is not there yet (create). */
+async function teamRoleFor(tx: Tx, L: Lk, line: number, data: Record<string, string>, err: Err, create: boolean) {
+  const m = L.personByEmail.get(lc(data.manager_email ?? ""));
+  if (!m) { err(line, `Unknown manager ${data.manager_email} (import people first)`); return null; }
+  const name = (data.role ?? "").trim();
+  if (name.length < 2) { err(line, "role is required"); return null; }
+  let role = L.roles.find((x) => x.managerId === m.id && lc(x.name) === lc(name));
+  if (!role && create) {
+    [role] = await tx.insert(s.teamRole).values({ managerId: m.id, name, sort: L.roles.filter((x) => x.managerId === m.id).length + 1, color: nextTint(L.roles.filter((x) => x.managerId === m.id).map((x) => x.color)) }).returning();
+    L.roles.push(role);
+    return { role, created: true };
+  }
+  if (!role) { err(line, `${data.manager_email} has no role called "${name}" (import team-roles first)`); return null; }
+  return { role, created: false };
+}
+
+async function importTeamRoles(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err) {
   for (const { line, data } of rows) {
-    if (!data.role) { err(line, "role is required"); continue; }
-    const role = L.roles.find((x) => lc(x.name) === lc(data.role));
-    if (role) { if ("description" in data) await tx.update(s.jobRole).set({ description: data.description }).where(eq(s.jobRole.id, role.id)); r.updated++; }
-    else { const [n] = await tx.insert(s.jobRole).values({ name: data.role, description: data.description ?? "" }).returning(); L.roles.push(n); r.created++; }
+    const hit = await teamRoleFor(tx, L, line, data, err, true);
+    if (!hit) continue;
+    if ("description" in data && hit.role.description !== data.description) await tx.update(s.teamRole).set({ description: data.description }).where(eq(s.teamRole.id, hit.role.id));
+    if (hit.created) r.created++; else r.updated++;
   }
 }
 
-async function importRoles(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err) {
+async function importRolePeople(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err) {
+  for (const { line, data } of rows) {
+    const p = L.personByEmail.get(lc(data.email ?? ""));
+    if (!p) { err(line, `Unknown person ${data.email} (import people first)`); continue; }
+    const hit = await teamRoleFor(tx, L, line, data, err, true);
+    if (!hit) continue;
+    if (p.managerId !== hit.role.managerId) { err(line, `${data.email} does not report to ${data.manager_email}: a person is put in the roles of their own manager's team`); continue; }
+    const made = await tx.insert(s.teamRoleMember).values({ roleId: hit.role.id, employeeId: p.id }).onConflictDoNothing().returning();
+    if (made.length) r.created++; else r.updated++;
+  }
+}
+
+async function importRoleSkills(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err) {
   for (const { line, data } of rows) {
     const skill = findSkill(L, data.skill ?? "");
     if (!skill) { err(line, `Unknown skill "${data.skill}" (use "Skill > Sub-skill" for a sub-skill)`); continue; }
-    const target = lvl(data.target, 1);
-    if (target == null || target === "bad") { err(line, `target must be 1-5 (was "${data.target}")`); continue; }
-    let role = L.roles.find((x) => lc(x.name) === lc(data.role));
-    if (!role) { [role] = await tx.insert(s.jobRole).values({ name: data.role }).returning(); L.roles.push(role); }
-    let gradeId: string | null = null;
-    if (data.grade) {
-      let g = L.grades.find((x) => lc(x.name) === lc(data.grade));
-      if (!g) { [g] = await tx.insert(s.grade).values({ name: data.grade, rank: Math.max(0, ...L.grades.map((x) => x.rank)) + 1 }).returning(); L.grades.push(g); }
-      gradeId = g.id;
-    }
-    const where = and(eq(s.roleSkill.roleId, role.id), eq(s.roleSkill.skillId, skill.id), gradeId ? eq(s.roleSkill.gradeId, gradeId) : isNull(s.roleSkill.gradeId));
-    const had = await tx.delete(s.roleSkill).where(where).returning();
-    await tx.insert(s.roleSkill).values({ roleId: role.id, gradeId, skillId: skill.id, target, mandatory: yes(data.mandatory, true) });
+    const target = lvl(data.level ?? data.target, 1);
+    if (target == null || target === "bad") { err(line, `level must be 1-5 (was "${data.level ?? data.target ?? ""}")`); continue; }
+    const hit = await teamRoleFor(tx, L, line, data, err, true);
+    if (!hit) continue;
+    const where = and(eq(s.teamRoleSkill.roleId, hit.role.id), eq(s.teamRoleSkill.skillId, skill.id));
+    const had = await tx.delete(s.teamRoleSkill).where(where).returning();
+    await tx.insert(s.teamRoleSkill).values({ roleId: hit.role.id, skillId: skill.id, target, mandatory: yes(data.must_have ?? data.mandatory, true) });
     if (had.length) r.updated++; else r.created++;
   }
 }
 
-async function importPeople(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err) {
+async function importPeople(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err, warn: Err) {
   const later: { id: string; line: number; manager: string }[] = [];
+  // files made before roles belonged to teams
+  if (rows.length && ["role", "team_role"].some((c) => c in rows[0].data && rows.some((x) => x.data[c]))) {
+    warn(1, "The role and team_role columns are not used any more: roles belong to a team now. Load them with team-roles, role-people and role-skills.");
+  }
   for (const { line, data } of rows) {
     const email = lc(data.email ?? "");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err(line, `Not an e-mail address: "${data.email}"`); continue; }
@@ -457,17 +496,6 @@ async function importPeople(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err
     if ("location" in data) values.location = data.location;
     if ("active" in data) values.active = yes(data.active, true);
     if ("team_name" in data) values.teamName = data.team_name;
-    if (data.role) {
-      const role = L.roles.find((x) => lc(x.name) === lc(data.role));
-      if (!role) { err(line, `Unknown role "${data.role}" (add it in Roles, or import roles first)`); continue; }
-      values.roleId = role.id;
-    } else if ("role" in data) values.roleId = null;
-    if (data.team_role) {
-      const role = L.roles.find((x) => lc(x.name) === lc(data.team_role));
-      if (!role) { err(line, `Unknown team role "${data.team_role}" (add it in Roles, or import roles first)`); continue; }
-      values.teamRoleId = role.id;
-      values.teamRoleCascade = /^(all|everyone|yes|true|1)$/i.test((data.team_role_for ?? "").trim());
-    } else if ("team_role" in data) { values.teamRoleId = null; values.teamRoleCascade = false; }
     if (data.grade) {
       const g = L.grades.find((x) => lc(x.name) === lc(data.grade));
       if (!g) { err(line, `Unknown grade "${data.grade}"`); continue; }

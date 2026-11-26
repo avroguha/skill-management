@@ -21,10 +21,10 @@ export default async function SettingsHome() {
   const db = await getDb();
   const engine = await getEngine();
   const n = async (q: Promise<{ n: number }[]>) => Number((await q)[0]?.n ?? 0);
-  const [skills, drafts, roleTargets, sso, dir, email, lastSync, imported] = await Promise.all([
+  const [skills, requests, coordinators, sso, dir, email, lastSync, imported] = await Promise.all([
     n(db.select({ n: count() }).from(schema.skill).where(eq(schema.skill.status, "active"))),
-    n(db.select({ n: count() }).from(schema.skill).where(eq(schema.skill.status, "draft"))),
-    n(db.select({ n: count() }).from(schema.roleSkill)),
+    n(db.select({ n: count() }).from(schema.catalogueRequest).where(eq(schema.catalogueRequest.status, "pending"))),
+    n((await getDb("live")).select({ n: count() }).from(schema.user).where(eq(schema.user.role, "coordinator"))),
     readSsoSettings(db),
     readDirectoryConfig(db),
     readEmailSettings(db),
@@ -34,7 +34,8 @@ export default async function SettingsHome() {
   const people = engine.activeEmployees;
   const managers = people.filter(engine.isManager).length;
   const asked = people.filter(engine.assesses);
-  const withRole = asked.filter((e) => e.roleId).length;
+  const withRole = asked.filter((e) => e.roleIds.length).length;
+  const teamsWithRoles = new Set(engine.roles.map((r) => r.managerId)).size;
   const sync = lastSync[0];
   const summary = imported[0]?.value as ImportSummary | undefined;
 
@@ -46,11 +47,14 @@ export default async function SettingsHome() {
       text: sso.active ? "Active: people sign in with their company account." : "Not active: only local accounts can sign in.",
       info: "Company sign-in (SAML 2.0). Only active people from ServiceNow can sign in with it. The local admin account always keeps working." },
     { done: skills > 0, href: "/settings/skills", title: "Skill catalogue",
-      text: skills ? `${skills} skills${drafts ? `, ${drafts} suggested and waiting for you` : ""}.` : "Empty: upload a CSV of skills.",
-      info: "Categories, skills and sub-skills people rate themselves on. Upload a CSV, or add them one by one." },
-    { done: roleTargets > 0 && withRole > 0, href: "/settings/roles", title: "Roles and their targets",
-      text: `${engine.roles.length} roles with ${roleTargets} skill targets · ${withRole} of ${asked.length} people who rate themselves have a role.`,
-      info: "A role says which skills a person is expected to have and at what level. People without a role have no targets: they can still rate skills, but no gap is shown for them. Roles can be given from designations automatically (ServiceNow › Roles from designation)." },
+      text: skills ? `${skills} skills.` : "Empty: upload a CSV of skills, or go back to the starter catalogue in Data & backups.",
+      info: "Categories, skills and sub-skills people rate themselves on: the same for everyone. Upload a CSV, or add them one by one. Managers and everyone else ask for what is missing (Requests)." },
+    { done: coordinators > 0 || !!v?.demo, href: "/settings/people", title: "Coordinators for new skills",
+      text: `${coordinators ? `${coordinators} coordinator${coordinators === 1 ? "" : "s"}` : "No coordinator yet: only administrators can approve"} · ${requests} request${requests === 1 ? "" : "s"} waiting.`,
+      info: "A coordinator approves requests for new skills and categories, sends them back with a note, or says no with a reason. Name one or a few under People & access › Accounts: set their access to Coordinator. Administrators can always decide too." },
+    { done: withRole > 0, href: "/team", title: "Teams have made their roles",
+      text: `${teamsWithRoles} of ${managers} teams have roles (${engine.roles.length} in all) · ${withRole} of ${asked.length} people who rate themselves are in a role.`,
+      info: "A role is a group a manager makes inside their own team, with the skills it asks for. Managers make them on My team › People and roles; nobody gets a role by themselves. People in no role have no targets: they can still rate skills, but no gap is shown for them." },
     { done: email.enabled, href: "/settings/email", title: "E-mail",
       text: email.enabled ? "On: managers hear when ratings wait for them; people get reminders." : "Off: nobody is told when something waits for them.",
       info: "Through the company mail relay. Tells managers when ratings wait for them, people when their ratings are confirmed or sent back, and sends weekly reminders and a manager digest." },

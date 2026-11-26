@@ -106,3 +106,37 @@ See IDEAS.md section 10. The build took these defaults, each easy to change:
 3. Transparency: employees see their own profile only; managers see their people.
 4. Cadence: assessment cycles with a due date, plus continuous updates; ratings go stale after 12 months.
 5. Scale: 0-5 as received.
+
+## Roles per team, requests, drafts (owner's notes, 2026-11-26)
+
+The owner's handwritten notes and what was built for each. This replaces the 2026-11-20 model (one list of roles for the organisation, chosen for a team by its manager and passed down).
+
+| The owner's words | Where it lives |
+|---|---|
+| Role name is not unique throughout the platform, it is only unique to that team | `team_role` (unique per manager); the same name in two teams is two roles |
+| No auto role cascading from the manager | Nobody is in a role until their manager puts them in one; nothing is passed down, and the ServiceNow sync gives no roles |
+| The same team member can serve multiple roles | `team_role_member`; a person is asked for every skill any of their roles asks for, at the highest level asked |
+| One section per role on the team page | My team › People and roles |
+| Select multiple members and add a role; drag and drop people to roles | Tick people and *Add them to a role*; drag a person onto a role (Ctrl while dropping adds them to that role as well) |
+| Right-click on the person: add to another role, delete from role; a person cannot be deleted if that is their only entry | The person's menu; *Take out of this role* is greyed with the reason when it is their only role |
+| The team manager creates roles and adds and removes skills (predefined) | *New role*, *Add skills* from the catalogue, a chip per skill |
+| Skills must-have can be deleted | Any skill is removed from a role, and any team need from the list, including the ones the roles imply |
+| Skill and category are a global setting; a manager can ask for a skill and a category, approved by a coordinator or an administrator | Requests; `catalogue_request` |
+| A user type Coordinator, the same way as admin | Settings › People & access › Accounts: Coordinator |
+| The requestor sees who it is pending with, or rejected with a comment, or returned with a modification comment | Every request shows where it is and with whom, with the note |
+| A predefined, auto-populated set of categories and skills that can be modified: technical by technology, managerial, analytical, business | The starter catalogue (loaded on a fresh install, restored by Reset); changed in Settings › Skills |
+| A right-click menu for everything, based on what is right-clicked | `src/components/action-menu.tsx`: people, roles, skills, needs, requests, Review lines, every table row |
+| Any change anyone makes goes into a draft stage to modify and then confirm; a section to review | A team's roles and needs: the draft and My team › Review changes. Own ratings: Save, then Send. Settings and approvals act at once |
+| An admin option to revert all changes back to out-of-the-box data; also reset a particular data point such as assessments or a team | Settings › Data & backups › Reset |
+| A manager sees if someone fits in a different team, and under whom, at a 50% skills match; the 50% is a setting, positive numbers only | My team › Fit in other teams; Settings › Levels & rules |
+
+## The Menu button, role colours, who sees what (owner, 2026-11-26)
+
+| What the owner asked | Where it is |
+|---|---|
+| The Menu button next to "Skill Management" | At the top of the menu, beside the app's name (`src/components/menu-button.tsx`). Folded down to icons it sits under the logo; on a phone, where the menu is closed until asked for, the top bar has one too |
+| Each role a slight pastel tint, easy to see on People and roles and wherever else roles show | `src/lib/role-colors.ts` and the tint classes in `globals.css`: the role's section on the team's page and on Roles, its chip beside a person (team lists, People, a person's page, My skills, Fit in other teams) |
+| An option to choose the colour, and everything a tint, nothing bright | Twelve tints to choose from (the dot beside a role's name, its menu › Colour, the role's box). All share one lightness and a low strength; anything else is refused. A new role takes a colour its team does not use yet |
+| Only managers see the details of their associates; associates see nothing that is not theirs | A team member sees their own skills, ratings, roles and requests, and the catalogue. Roles shows them only the roles they are in, without who else is in them. `maySeeTeamRoles` in `src/lib/access.ts` |
+| By default associates do not see which team they fit; an admin option to show or hide | Settings › Levels & rules › *People see which other teams they would fit in*, off by default. `maySeeFit` in `src/lib/access.ts` |
+| Settings stay as they are: only a team's roles and needs wait as a draft | No change: Settings act at once |

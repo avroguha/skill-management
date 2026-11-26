@@ -1,6 +1,7 @@
 "use client";
 // One table for every list: sortable columns, a search box, faceted filter chips,
-// pagination and a CSV export of exactly what is on screen after filtering.
+// pagination and a CSV export of exactly what is on screen after filtering. A right-click
+// on a row offers what can be done with it: open it, show only rows like it, copy it.
 // Columns are plain data (kind + key), so server pages pass them without writing
 // a client component per table.
 import { useMemo, useState } from "react";
@@ -10,7 +11,8 @@ import {
   getPaginationRowModel, getSortedRowModel, useReactTable, type ColumnDef, type SortingState,
   type ColumnFiltersState, type FilterFn,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, ChevronsUpDown, Download, PlusCircle, Check, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Download, PlusCircle, Check, Search, Copy, ExternalLink, Filter, FilterX, SquareArrowOutUpRight } from "lucide-react";
+import { ActionMenu, type MenuAction } from "@/components/action-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,8 +26,9 @@ import { cn } from "@/lib/utils";
 import { substringFilter } from "@/lib/search";
 import { Info } from "@/components/info";
 import { Person } from "@/components/person-avatar";
+import { RoleChips, type RoleTag } from "@/components/role-chip";
 
-export type ColKind = "text" | "link" | "person" | "number" | "pct" | "date" | "level" | "gap" | "muted" | "badge";
+export type ColKind = "text" | "link" | "person" | "number" | "pct" | "date" | "level" | "gap" | "muted" | "badge" | "roles";
 export interface ColSpec {
   key: string;
   header: string;
@@ -34,6 +37,8 @@ export interface ColSpec {
   hrefKey?: string;
   /** for kind=person: the row field holding the photo URL (initials without one) */
   photoKey?: string;
+  /** for kind=roles: the row field holding the roles as { name, tint }; the column's own value is their names, for sorting, filtering and the CSV */
+  chipsKey?: string;
   align?: "left" | "right" | "center";
   facet?: boolean;
   sortable?: boolean;
@@ -70,6 +75,10 @@ function renderCell(c: ColSpec, row: Row) {
     case "gap": {
       const g = v as GapCategory;
       return g ? <span className={cn("inline-flex rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", GAP_CLASS[g])}>{GAP_LABEL[g]}</span> : null;
+    }
+    case "roles": {
+      const tags = (c.chipsKey ? row[c.chipsKey] : null) as RoleTag[] | null | undefined;
+      return tags?.length ? <RoleChips roles={tags} /> : <span className="text-muted-foreground">{String(v || "–")}</span>;
     }
     case "badge":
       return v ? <span className="inline-flex rounded-md border px-1.5 py-0.5 text-xs whitespace-nowrap">{String(v)}</span> : null;
@@ -135,7 +144,7 @@ function toCsv(columns: ColSpec[], rows: Row[]): string {
 
 export function DataTable({
   columns, rows, searchKeys, searchPlaceholder = "Search…", pageSize = 25, initialSort, emptyText = "Nothing to show.",
-  csvName, toolbar, dense, actions,
+  csvName, toolbar, dense, actions, rowMenu,
 }: {
   columns: ColSpec[];
   rows: Row[];
@@ -149,6 +158,8 @@ export function DataTable({
   dense?: boolean;
   /** extra cell at the end of each row (edit / delete buttons) */
   actions?: (row: Row) => React.ReactNode;
+  /** more right-click actions for a row, shown first (from a client component) */
+  rowMenu?: (row: Row) => MenuAction[];
 }) {
   const [sorting, setSorting] = useState<SortingState>(initialSort ? [{ id: initialSort.key, desc: !!initialSort.desc }] : []);
   const [filters, setFilters] = useState<ColumnFiltersState>([]);
@@ -185,6 +196,29 @@ export function DataTable({
     getPaginationRowModel: getPaginationRowModel(),
     initialState: { pagination: { pageSize } },
   });
+
+  // what a right-click on a row offers: open what it links to, narrow the list to rows like it, copy
+  const linkCol = columns.find((c) => c.hrefKey && (c.kind === "link" || c.kind === "person"));
+  const menuFor = (row: Row): { title: string; actions: MenuAction[] } => {
+    const title = String(row[(linkCol ?? columns[0]!).key] ?? "");
+    const href = linkCol?.hrefKey ? (row[linkCol.hrefKey] as string | undefined) : undefined;
+    const out: MenuAction[] = [...(rowMenu?.(row) ?? [])];
+    if (href) {
+      out.push({ key: "open", label: `Open ${title}`, icon: ExternalLink, href, separator: out.length > 0 });
+      out.push({ key: "tab", label: "Open in a new tab", icon: SquareArrowOutUpRight, href, newTab: true });
+    }
+    columns.filter((c) => c.facet).forEach((c, i) => {
+      const value = String(row[c.key] ?? "");
+      if (!value) return;
+      const col = table.getColumn(c.key)!;
+      const on = ((col.getFilterValue() as string[] | undefined) ?? []).includes(value);
+      out.push({ key: `only:${c.key}`, label: on ? `Show every ${c.header.toLowerCase()} again` : `Show only ${c.header.toLowerCase()}: ${value}`, icon: on ? FilterX : Filter, separator: i === 0 && out.length > 0,
+        onSelect: () => { col.setFilterValue(on ? undefined : [value]); table.setPageIndex(0); } });
+    });
+    out.push({ key: "copy", label: `Copy “${title}”`, icon: Copy, copy: title, separator: out.length > 0 });
+    out.push({ key: "copy-row", label: "Copy the whole row", icon: Copy, copy: columns.map((c) => (row[c.key] == null ? "" : String(row[c.key]))).join("\t") });
+    return { title, actions: out };
+  };
 
   const filtered = table.getFilteredRowModel().rows;
   const download = () => {
@@ -236,7 +270,8 @@ export function DataTable({
           </TableHeader>
           <TableBody>
             {table.getRowModel().rows.length ? table.getRowModel().rows.map((r) => (
-              <TableRow key={r.id}>
+              <ActionMenu key={r.id} {...menuFor(r.original)}>
+              <TableRow>
                 {r.getVisibleCells().map((cell) => {
                   const spec = columns.find((c) => c.key === cell.column.id)!;
                   return (
@@ -247,6 +282,7 @@ export function DataTable({
                 })}
                 {actions && <TableCell className="py-1 text-right whitespace-nowrap">{actions(r.original)}</TableCell>}
               </TableRow>
+              </ActionMenu>
             )) : (
               <TableRow><TableCell colSpan={columns.length + (actions ? 1 : 0)} className="h-20 text-center text-sm text-muted-foreground">{emptyText}</TableCell></TableRow>
             )}

@@ -3,31 +3,41 @@
 //
 //   admin      everything, including Settings
 //   leader     reads the whole organisation (an executive, HR, a programme lead)
+//   coordinator  approves requests for new skills and categories (Requests); otherwise
+//              they are who they are: a manager when people report to them, else an employee
 //   manager    anyone with people reporting to them (derived, never assigned): they see
 //              everyone below them, confirm their direct reports' ratings and set what
 //              their team needs
-//   employee   their own skills, the skills catalogue and people search
+//   employee   what is their own and nothing else: their skills and ratings, the roles they
+//              are in, their own requests, and the catalogue (which is the same for everyone).
+//              No other person's details, not even a team mate's: only a person's managers
+//              (and leaders and administrators) see those.
 import type { Employee, Engine } from "./engine/engine.ts";
 import { ALL } from "./engine/engine.ts";
 
-export type AccessRole = "admin" | "leader" | "manager" | "employee";
+export type AccessRole = "admin" | "leader" | "coordinator" | "manager" | "employee";
 export const ACCESS_ROLES: { value: AccessRole; label: string; description: string }[] = [
   { value: "admin", label: "Administrator", description: "Everything, including Settings." },
   { value: "leader", label: "Leader", description: "Sees the whole organisation, read-only beyond their own people." },
+  { value: "coordinator", label: "Coordinator", description: "Approves requests for new skills and categories, sends them back or says no. Otherwise sees what a manager or employee sees." },
   { value: "manager", label: "Manager", description: "Anyone with people reporting to them gets this by themselves: they see everyone below them and confirm their direct reports' ratings." },
-  { value: "employee", label: "Employee", description: "Their own skills, the catalogue and people search." },
+  { value: "employee", label: "Employee", description: "Only what is their own: their skills and ratings, the roles they are in, their requests, and the catalogue. Nobody else's details." },
 ];
 
 /** v1 names map onto v2's: an executive or operator becomes a leader. */
 export function asRole(r: string | null | undefined): AccessRole {
   if (r === "admin") return "admin";
   if (r === "leader" || r === "executive" || r === "operator") return "leader";
+  if (r === "coordinator") return "coordinator";
   if (r === "manager") return "manager";
   return "employee";
 }
 
 export interface Access {
+  /** what they are for seeing people: never "coordinator" (that is the flag below) */
   role: AccessRole;
+  /** may approve requests for new skills and categories: coordinators and administrators */
+  coordinator: boolean;
   /** reads every person (admin and leader) */
   allPeople: boolean;
   /** the people this viewer may read */
@@ -44,7 +54,8 @@ export interface Access {
 
 export function buildAccess(engine: Engine, assignedRole: AccessRole, employee: Employee | null): Access {
   const below = employee ? engine.reportsOf(employee.id) : [];
-  let role = assignedRole;
+  const coordinator = assignedRole === "coordinator" || assignedRole === "admin";
+  let role: AccessRole = assignedRole === "coordinator" ? "employee" : assignedRole;
   if (role === "employee" && below.length) role = "manager";
   const allPeople = role === "admin" || role === "leader";
 
@@ -63,11 +74,29 @@ export function buildAccess(engine: Engine, assignedRole: AccessRole, employee: 
   }
 
   const homeScope = allPeople ? ALL : employee && below.length ? employee.id : null;
-  return { role, allPeople, employeeIds, reportIds, manageIds, homeScope, canSeeTeams: homeScope != null };
+  return { role, coordinator, allPeople, employeeIds, reportIds, manageIds, homeScope, canSeeTeams: homeScope != null };
 }
 
 /** Whether a viewer may look at a scope (a manager's team, or the whole organisation). */
 export function maySeeScope(a: Pick<Access, "allPeople" | "employeeIds">, scope: string): boolean {
   if (scope === ALL) return a.allPeople;
   return a.allPeople || a.employeeIds.has(scope);
+}
+
+/**
+ * Whether a viewer sees the whole of a team's roles, with who is in each: those who manage
+ * the team (its manager and the managers above), leaders and administrators. A member of
+ * the team sees the roles they are in themselves, and not who else is in them.
+ */
+export function maySeeTeamRoles(a: Pick<Access, "allPeople" | "manageIds">, managerId: string): boolean {
+  return a.allPeople || a.manageIds.has(managerId);
+}
+
+/**
+ * Whether a viewer sees which other teams a person would fit in. For someone else: whoever
+ * may see that person at all (their managers, leaders, administrators). For themselves: only
+ * when an administrator switched that on (Settings, Levels & rules); it is off by default.
+ */
+export function maySeeFit(a: Pick<Access, "allPeople" | "canSeeTeams">, self: boolean, membersSeeFit: boolean): boolean {
+  return self ? membersSeeFit || a.allPeople : a.canSeeTeams;
 }

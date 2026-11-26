@@ -1,6 +1,6 @@
 "use client";
 import { useState, useTransition } from "react";
-import { Check, Merge, Loader2 } from "lucide-react";
+import { Merge, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field as InfoField } from "@/components/info";
@@ -15,7 +15,6 @@ type Row = Record<string, unknown>;
 
 export function SkillsAdmin({ rows, columns, fields, targets }: { rows: Row[]; columns: ColSpec[]; fields: Field[]; targets: { value: string; label: string }[] }) {
   const [merging, setMerging] = useState<Row | null>(null);
-  const [pending, start] = useTransition();
   return (
     <>
       <AdminCrud noun="skill" csvName="skills" rows={rows} columns={columns} fields={fields}
@@ -25,17 +24,6 @@ export function SkillsAdmin({ rows, columns, fields, targets }: { rows: Row[]; c
         save={saveSkill} remove={deleteSkill}
         extraActions={(row) => (
           <>
-            {row.status === "draft" && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label={`Approve ${String(row.label)}`} disabled={pending} onClick={() => start(async () => {
-                    const r = await saveSkill({ ...row, status: "active" });
-                    if (r.ok) toast.success("Approved: people can rate it now"); else toast.error(r.error);
-                  })}><Check className="size-3.5" /></Button>
-                </TooltipTrigger>
-                <TooltipContent>Approve the suggestion</TooltipContent>
-              </Tooltip>
-            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label={`Merge ${String(row.label)}`} onClick={() => setMerging(row)}><Merge className="size-3.5" /></Button>

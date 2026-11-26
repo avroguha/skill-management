@@ -20,9 +20,10 @@ export type { Mode } from "@/db";
 export const DEMO_PERSONAS = [
   { key: "top", label: "Head of the organisation", description: "Sees every team: where the organisation is strong and short." },
   { key: "director", label: "Director", description: "Leads several teams through their managers." },
-  { key: "manager", label: "Team manager", description: "Confirms ratings and sets what the team needs; has work waiting." },
+  { key: "manager", label: "Team manager", description: "Makes the team's roles, puts people in them, confirms ratings; has changes waiting in Review." },
+  { key: "coordinator", label: "Coordinator", description: "Approves requests for new skills and categories; manages a team too." },
   { key: "member", label: "Team member", description: "Rates their own skills and sends them to their manager." },
-  { key: "admin", label: "Administrator", description: "Settings: the skills catalogue, roles, levels." },
+  { key: "admin", label: "Administrator", description: "Settings: the skills catalogue, levels, resets." },
 ] as const;
 export type DemoPersona = (typeof DEMO_PERSONAS)[number]["key"];
 
@@ -182,7 +183,7 @@ async function demoViewer(real: Viewer, persona: string): Promise<Viewer> {
   const ids = await demoPersonas(await getDb("demo"));
   const p = DEMO_PERSONAS.find((x) => x.key === persona) ?? DEMO_PERSONAS[0];
   const employee = p.key === "admin" ? null : engine.empById.get(ids?.[p.key] ?? "") ?? null;
-  const role: AccessRole = p.key === "admin" ? "admin" : p.key === "top" ? "leader" : "employee";
+  const role: AccessRole = p.key === "admin" ? "admin" : p.key === "top" ? "leader" : p.key === "coordinator" ? "coordinator" : "employee";
   const v = buildViewer(engine, {
     userId: `demo:${p.key}`, name: employee?.name ?? "Demo administrator", email: employee?.email ?? "admin@avro.com",
     username: null, role, mustChangePassword: false,

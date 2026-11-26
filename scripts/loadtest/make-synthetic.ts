@@ -29,23 +29,25 @@ const pick = <T>(a: T[]) => a[Math.floor(rnd() * a.length)];
 const { MADE_UP_FIRST: FIRST, MADE_UP_LAST: LAST, MADE_UP_PLACES } = await import("../../src/db/made-up-names.ts");
 
 const [top] = await q<{ id: string }>(sql`select id from employee where manager_id is null and active order by name limit 1`);
-const roles = await q<{ id: string; name: string }>(sql`select id, name from job_role`);
+// the demo's roles, by name, are the patterns: every synthetic team gets its own copy of two of them
+const demoRoles = await q<{ id: string; name: string; description: string }>(sql`select distinct on (name) id, name, description from team_role order by name, id`);
 const grades = await q<{ id: string; rank: number }>(sql`select id, rank from grade order by rank`);
-const roleSkills = await q<{ role_id: string; grade_id: string | null; skill_id: string; target: number }>(sql`select role_id, grade_id, skill_id, target from role_skill`);
+const demoRoleSkills = await q<{ role_id: string; skill_id: string; target: number; mandatory: boolean }>(sql`select role_id, skill_id, target, mandatory from team_role_skill`);
 const leaf = new Set((await q<{ id: string }>(sql`select id from skill s where status = 'active' and not exists (select 1 from skill c where c.parent_id = s.id and c.status = 'active')`)).map((r) => r.id));
-const director = roles.find((r) => /director/i.test(r.name)) ?? roles[0];
-const lead = roles.find((r) => /manager/i.test(r.name)) ?? roles[0];
-const ics = roles.filter((r) => r.id !== director.id && r.id !== lead.id);
 
 type Emp = Record<string, unknown>;
 const emps: Emp[] = [];
+const teamRoles: Record<string, unknown>[] = [];
+const roleMembers: Record<string, unknown>[] = [];
+const roleSkills: Record<string, unknown>[] = [];
+const asked = new Map<string, { skill_id: string; target: number }[]>(); // person -> what their role asks for
 const ratings: Record<string, unknown>[] = [];
 let n = 0;
-const person = (managerId: string, teamName: string, roleId: string, gradeId: string, title: string): string => {
+const person = (managerId: string, teamName: string, gradeId: string, title: string): string => {
   n += 1;
   const id = crypto.randomUUID();
   const first = pick(FIRST), last = pick(LAST);
-  emps.push({ id, name: `${first} ${last}`, email: `syn${n}@synthetic.avro.test`, title, team_name: teamName, role_id: roleId, grade_id: gradeId, manager_id: managerId, active: true, location: pick(MADE_UP_PLACES), source: "manual" });
+  emps.push({ id, name: `${first} ${last}`, email: `syn${n}@synthetic.avro.test`, title, team_name: teamName, grade_id: gradeId, manager_id: managerId, active: true, location: pick(MADE_UP_PLACES), source: "manual" });
   return id;
 };
 const g = (rank: number) => grades.find((x) => x.rank === rank)?.id ?? grades[grades.length - 1].id;
@@ -53,22 +55,34 @@ const g = (rank: number) => grades.find((x) => x.rank === rank)?.id ?? grades[gr
 // 8 VPs > 8 directors each > 10 managers each > team members to reach the target
 const managers: string[] = [];
 for (let v = 0; v < 8; v++) {
-  const vp = person(top.id, `Division ${v + 1}`, director.id, g(5), "Vice President");
+  const vp = person(top.id, `Division ${v + 1}`, g(5), "Vice President");
   for (let d = 0; d < 8; d++) {
-    const dir = person(vp, `Department ${v + 1}.${d + 1}`, director.id, g(5), "Director");
-    for (let m = 0; m < 10; m++) managers.push(person(dir, `Team ${v + 1}.${d + 1}.${m + 1}`, lead.id, g(4), "Engineering Manager"));
+    const dir = person(vp, `Department ${v + 1}.${d + 1}`, g(5), "Director");
+    for (let m = 0; m < 10; m++) managers.push(person(dir, `Team ${v + 1}.${d + 1}.${m + 1}`, g(4), "Engineering Manager"));
   }
 }
 const perTeam = Math.max(1, Math.round((target - n) / managers.length));
-for (const m of managers) for (let i = 0; i < perTeam; i++) {
-  const role = pick(ics);
-  person(m, "", role.id, g(1 + Math.floor(rnd() * 4)), role.name);
+for (const m of managers) {
+  // two roles of the team's own, each a copy of a demo role's skills
+  const mine = [pick(demoRoles), pick(demoRoles)].filter((r, i, a) => a.findIndex((x) => x.name === r.name) === i).map((r, i) => {
+    const id = crypto.randomUUID();
+    teamRoles.push({ id, manager_id: m, name: r.name, description: r.description, sort: i + 1 });
+    const skills = demoRoleSkills.filter((k) => k.role_id === r.id);
+    for (const k of skills) roleSkills.push({ role_id: id, skill_id: k.skill_id, target: k.target, mandatory: k.mandatory });
+    return { id, name: r.name, skills };
+  });
+  for (let i = 0; i < perTeam; i++) {
+    const role = pick(mine);
+    const id = person(m, "", g(1 + Math.floor(rnd() * 4)), role.name);
+    roleMembers.push({ role_id: role.id, employee_id: id });
+    asked.set(id, role.skills);
+  }
 }
 
-// ratings on most of each person's role skills (all grades + their grade)
+// ratings on most of the skills each person's role asks for
 const now = Date.now();
 for (const e of emps) {
-  const skills = roleSkills.filter((r) => r.role_id === e.role_id && (!r.grade_id || r.grade_id === e.grade_id) && leaf.has(r.skill_id));
+  const skills = (asked.get(String(e.id)) ?? []).filter((r) => leaf.has(r.skill_id));
   for (const r of skills) {
     if (rnd() < 0.25) continue;
     const self = Math.max(0, Math.min(5, r.target + Math.floor(rnd() * 3) - 1));
@@ -87,6 +101,9 @@ const load = async (table: string, rows: Record<string, unknown>[]) => {
   }
 };
 await load("employee", emps);
+await load("team_role", teamRoles);
+await load("team_role_member", roleMembers);
+await load("team_role_skill", roleSkills);
 await load("rating", ratings);
 const total = (await q<{ n: number }>(sql`select count(*)::int as n from employee where active`))[0].n;
 const file = B.encodeBackup(await B.exportBackup(db, "synthetic", "manual"));

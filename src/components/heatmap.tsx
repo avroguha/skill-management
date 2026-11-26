@@ -93,7 +93,7 @@ export interface PeopleHeatmapData {
   rows: { id: string; name: string; title: string; href: string; onTargetPct: number | null; cells: Record<string, PeopleCell> }[];
 }
 
-const SOURCE_LABEL: Record<string, string> = { grade: "their role and grade", role: "their role" };
+const SOURCE_LABEL: Record<string, string> = { role: "their roles" };
 
 function PersonCell({ c, levels, label }: { c: PeopleCell; levels: string[]; label: string }) {
   const cls = c.target == null && c.level != null ? "bg-status-none text-foreground/70" : GAP_CLASS[c.category];
@@ -111,7 +111,7 @@ function PersonCell({ c, levels, label }: { c: PeopleCell; levels: string[]; lab
       <TooltipContent side="top" className="w-64 max-w-64 flex-col items-start gap-0.5 text-xs">
         <div className="font-medium">{label}</div>
         <div>{c.level == null && c.target != null ? "Not confirmed yet" : GAP_LABEL[c.target == null ? "not_required" : c.category]}{c.mandatory ? "" : c.target != null ? " (optional)" : ""}</div>
-        {c.target != null && <div>Target {c.target} {levels[c.target]}, from {SOURCE_LABEL[c.source ?? ""] ?? "their role"}</div>}
+        {c.target != null && <div>Target {c.target} {levels[c.target]}, from {SOURCE_LABEL[c.source ?? ""] ?? "their roles"}</div>}
         <div>Confirmed: {c.validatedLevel != null ? `${c.validatedLevel} ${levels[c.validatedLevel]}` : "not yet"}</div>
         <div>Their own level: {c.selfLevel != null ? `${c.selfLevel} ${levels[c.selfLevel]}` : "not rated"}</div>
         {c.at && <div className={cn(c.stale && "font-medium")}>{c.stale ? "Stale: confirmed " : "Confirmed "}{new Date(c.at).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}</div>}

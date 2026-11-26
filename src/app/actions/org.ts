@@ -23,10 +23,7 @@ export async function orgInfo(id: string): Promise<{ ok: true; info: OrgInfo } |
     const db = await getDb();
     const [row] = await db.select().from(schema.employee).where(eq(schema.employee.id, id));
     if (!row) return { ok: false, error: "Not found." };
-    const [roles, grades] = await Promise.all([
-      db.select().from(schema.jobRole).orderBy(asc(schema.jobRole.name)),
-      db.select().from(schema.grade),
-    ]);
+    const grades = await db.select().from(schema.grade);
 
     // everyone under this person through the manager chain, and them
     const kids = new Map<string, string[]>();
@@ -71,7 +68,7 @@ export async function orgInfo(id: string): Promise<{ ok: true; info: OrgInfo } |
         userName: row.userName, email: row.email,
         manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? null : null,
         unit: e.managerId ? engine.teamLabel(e.managerId) : null,
-        role: roles.find((r) => r.id === e.roleId)?.name ?? null,
+        role: e.roleIds.map((rid) => engine.roleById.get(rid)?.name).filter(Boolean).join(", ") || null,
         grade: grades.find((g) => g.id === row.gradeId)?.name ?? null,
         location: row.location, source: row.source, userType: row.userType,
         syncedAt: row.syncedAt?.toISOString() ?? null,

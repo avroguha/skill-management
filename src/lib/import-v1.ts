@@ -4,8 +4,8 @@
 // going back to v1 stays possible. Everything that still has a meaning comes across with
 // its ids unchanged (so sessions, SSO links, ratings and history line up):
 //
-//   accounts, sessions, single sign-on providers, people, roles, grades, skill categories,
-//   skills, levels, role targets, ratings and their history, the ServiceNow groups, the
+//   accounts, sessions, single sign-on providers, people, grades, skill categories,
+//   skills, levels, ratings and their history, the ServiceNow groups, the
 //   settings (single sign-on, ServiceNow, e-mail, help, levels), sync runs, the audit log,
 //   sent e-mail
 //
@@ -13,6 +13,9 @@
 //
 //   a unit's team needs  -> the needs of the unit's manager's team
 //   a unit's name        -> the team name of its manager (hand-made units only)
+//   a person's role      -> a role of their manager's team, with the skills that role asked
+//                           for (roles belong to a team now; see legacy-roles.ts)
+//   a suggested skill    -> a request for a coordinator (Requests)
 //
 // What v2 no longer has is counted and left behind (it stays in the v1 database): units,
 // assessment rounds, per-person targets, training plans, open positions, charts, operator
@@ -23,6 +26,7 @@ import { eq, sql } from "drizzle-orm";
 import type { DB } from "../db/index.ts";
 import { databaseNames, liteDirs, withDatabase, withPassword } from "../db/index.ts";
 import * as s from "../db/schema.ts";
+import { convertLegacyRoles } from "./legacy-roles.ts";
 
 export const IMPORT_KEY = "imported_v1";
 
@@ -31,7 +35,7 @@ export interface ImportSummary {
   /** where it came from, or null when there was no v1 database */
   source: string | null;
   copied: Record<string, number>;
-  converted: { teamNeeds: number; teamNames: number };
+  converted: { teamNeeds: number; teamNames: number; teamRoles?: number; requests?: number };
   leftBehind: Record<string, number>;
   note?: string;
 }
@@ -42,7 +46,7 @@ interface Source { label: string; query: (text: string) => Promise<Row[]>; close
 /** v1 tables copied as they are (in an order that satisfies the foreign keys). */
 const COPY = [
   "user", "account", "session", "verification", "sso_provider",
-  "job_role", "grade", "skill_category", "skill", "proficiency_level", "role_skill",
+  "grade", "skill_category", "skill", "proficiency_level",
   "employee", "rating", "rating_event",
   "sn_group", "group_member", "sync_run", "audit_log", "sso_attempt", "sso_pending", "email_message",
 ] as const;
@@ -72,6 +76,15 @@ async function openSource(): Promise<Source | null> {
   const client = new PGlite(dir);
   await client.waitReady;
   return { label: `embedded database ${dir}`, query: async (q) => (await client.query<Row>(q)).rows, close: () => client.close() };
+}
+
+/** A skill someone suggested used to wait as a draft skill; it is a request for a coordinator now. */
+export async function draftSkillsToRequests(db: DB): Promise<number> {
+  const made = (await db.execute(sql`insert into "catalogue_request" ("id", "kind", "name", "category_id", "parent_id", "reason", "status", "requested_by_name")
+    select md5('request:' || k."id"), 'skill', k."name", k."category_id", k."parent_id", k."description", 'pending', ''
+    from "skill" k where k."status" = 'draft' on conflict do nothing returning "id"`)) as unknown as { rows: unknown[] };
+  await db.execute(sql`delete from "skill" where "status" = 'draft'`);
+  return made.rows.length;
 }
 
 /** For tests: import from a given source instead of the configured one. */
@@ -137,6 +150,24 @@ export async function importFrom(db: DB, src: Source): Promise<ImportSummary> {
       summary.converted.teamNeeds = needs.length;
       await insert(t, "team_need", needs, true);
     }
+    // roles: one list for everyone in v1, a role of each team here
+    if (tables.has("job_role") && tables.has("role_skill")) {
+      const [people, roles, roleSkills] = await Promise.all([
+        src.query(`select id, manager_id, active, role_id from "employee"`),
+        src.query(`select id, name, description from "job_role"`),
+        src.query(`select role_id, grade_id, skill_id, target, mandatory from "role_skill"`),
+      ]);
+      const c = convertLegacyRoles(
+        people.map((p) => ({ id: String(p.id), managerId: (p.manager_id as string | null) ?? null, active: p.active !== false, roleId: (p.role_id as string | null) ?? null })),
+        roles.map((r) => ({ id: String(r.id), name: String(r.name), description: String(r.description ?? "") })),
+        roleSkills.map((k) => ({ roleId: String(k.role_id), gradeId: (k.grade_id as string | null) ?? null, skillId: String(k.skill_id), target: Number(k.target), mandatory: k.mandatory !== false })),
+      );
+      await insert(t, "team_role", c.roles.map((r) => ({ id: r.id, manager_id: r.managerId, name: r.name, description: r.description })));
+      await insert(t, "team_role_member", c.members.map((m) => ({ role_id: m.roleId, employee_id: m.employeeId })));
+      await insert(t, "team_role_skill", c.skills.map((k) => ({ role_id: k.roleId, skill_id: k.skillId, target: k.target, mandatory: k.mandatory })), true);
+      summary.converted.teamRoles = c.roles.length;
+    }
+    summary.converted.requests = await draftSkillsToRequests(t);
     for (const [table, label] of Object.entries(LEFT_BEHIND)) {
       if (!tables.has(table)) continue;
       const [{ n }] = await src.query(`select count(*)::int as n from "${table}"`);

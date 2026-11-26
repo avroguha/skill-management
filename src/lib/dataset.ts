@@ -5,7 +5,6 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.ts";
 import * as s from "../db/schema.ts";
 import { DEFAULT_SETTINGS, type Dataset, type Settings } from "./engine/engine.ts";
-import { resolveRoles } from "./team-roles.ts";
 
 export async function readSettings(db: DB): Promise<Settings> {
   const [row] = await db.select().from(s.appSetting).where(eq(s.appSetting.key, "settings"));
@@ -13,14 +12,15 @@ export async function readSettings(db: DB): Promise<Settings> {
 }
 
 export async function loadDatasetFrom(db: DB): Promise<Dataset> {
-  const [settings, employees, categories, skills, roles, grades, roleSkills, teamNeeds, ratings] = await Promise.all([
+  const [settings, employees, categories, skills, roles, members, grades, roleSkills, teamNeeds, ratings] = await Promise.all([
     readSettings(db),
     db.select().from(s.employee),
     db.select().from(s.skillCategory),
     db.select().from(s.skill),
-    db.select().from(s.jobRole),
+    db.select().from(s.teamRole),
+    db.select().from(s.teamRoleMember),
     db.select().from(s.grade),
-    db.select().from(s.roleSkill),
+    db.select().from(s.teamRoleSkill),
     db.select().from(s.teamNeed),
     db.select({
       employeeId: s.rating.employeeId, skillId: s.rating.skillId,
@@ -29,24 +29,28 @@ export async function loadDatasetFrom(db: DB): Promise<Dataset> {
       interest: s.rating.interest, status: s.rating.status,
     }).from(s.rating),
   ]);
-  // a role is a person's own, else the one their manager chose for the team (people who have
-  // left neither give nor take one)
-  const roleOf = resolveRoles(employees.filter((e) => e.active));
+  // a person is in the roles of their OWN manager's team: one left behind in another team
+  // (they moved to another manager) does not count
+  const roleManager = new Map(roles.map((r) => [r.id, r.managerId]));
+  const managerOf = new Map(employees.map((e) => [e.id, e.managerId]));
+  const roleIds = new Map<string, string[]>();
+  for (const m of members) {
+    if (roleManager.get(m.roleId) !== managerOf.get(m.employeeId)) continue;
+    roleIds.set(m.employeeId, [...(roleIds.get(m.employeeId) ?? []), m.roleId]);
+  }
   return {
     now: Date.now(),
     settings,
     employees: employees.map((e) => ({
       id: e.id, name: e.name, email: e.email, title: e.title, teamName: e.teamName,
-      roleId: roleOf.get(e.id)?.roleId ?? e.roleId, roleFrom: roleOf.get(e.id)?.from ?? null,
-      ownRoleId: e.roleId, teamRoleId: e.teamRoleId, teamRoleCascade: e.teamRoleCascade,
-      gradeId: e.gradeId, managerId: e.managerId, active: e.active, location: e.location,
+      roleIds: roleIds.get(e.id) ?? [], gradeId: e.gradeId, managerId: e.managerId, active: e.active, location: e.location,
     })),
     categories: categories.map((c) => ({ id: c.id, name: c.name, sort: c.sort })),
     skills: skills.map((k) => ({ id: k.id, name: k.name, categoryId: k.categoryId, parentId: k.parentId, status: k.status, sort: k.sort })),
-    roles: roles.map((r) => ({ id: r.id, name: r.name })),
+    roles: roles.map((r) => ({ id: r.id, name: r.name, managerId: r.managerId, description: r.description, sort: r.sort, color: r.color })),
     grades: grades.map((g) => ({ id: g.id, name: g.name, rank: g.rank })),
-    roleSkills: roleSkills.map((r) => ({ roleId: r.roleId, gradeId: r.gradeId, skillId: r.skillId, target: r.target, mandatory: r.mandatory })),
-    teamNeeds: teamNeeds.map((n) => ({ managerId: n.managerId, skillId: n.skillId, minLevel: n.minLevel, headcount: n.headcount })),
+    roleSkills: roleSkills.map((r) => ({ roleId: r.roleId, skillId: r.skillId, target: r.target, mandatory: r.mandatory })),
+    teamNeeds: teamNeeds.map((n) => ({ managerId: n.managerId, skillId: n.skillId, minLevel: n.minLevel, headcount: n.headcount, dismissed: n.dismissed })),
     ratings,
   };
 }

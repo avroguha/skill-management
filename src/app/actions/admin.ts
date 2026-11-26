@@ -5,7 +5,7 @@
 // are refused in demo mode: they would change the real setup.
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
-import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { hashPassword } from "better-auth/crypto";
 import { getDb, schema } from "@/db";
@@ -15,7 +15,8 @@ import { samlProviderBody, DEFAULT_PROVIDER_ID, ENTITY_ID_PATTERN } from "@/lib/
 import { saveBackup } from "@/lib/backup";
 import { refreshGate } from "@/lib/sso-gate";
 import { isLocalAdmin, localAdminRefusal } from "@/lib/local-admin";
-import { roleNamed, skillNamed } from "@/lib/skill-names";
+import { skillNamed } from "@/lib/skill-names";
+import { resetAssessments, resetRequests, resetTeams, resetToOutOfBox } from "@/lib/reset";
 
 export type Result = { ok: true; message?: string; id?: string } | { ok: false; error: string };
 type Data = Record<string, unknown>;
@@ -75,7 +76,7 @@ const skillIn = z.object({
   description: text(1000),
   aliases: z.union([z.string(), z.array(z.string())]).optional().transform((x) =>
     (Array.isArray(x) ? x : (x ?? "").split(/[,;]/)).map((s) => s.trim()).filter(Boolean)),
-  status: z.enum(["active", "draft", "retired"]).default("active"),
+  status: z.enum(["active", "retired"]).default("active"),
   sort: z.coerce.number().int().default(0),
 });
 export async function saveSkill(data: Data): Promise<Result> {
@@ -137,9 +138,9 @@ export async function mergeSkill(fromId: string, intoId: string): Promise<Result
         and employee_id not in (select employee_id from rating where skill_id = ${intoId})`);
       await tx.delete(schema.rating).where(eq(schema.rating.skillId, fromId));
       await tx.execute(sql`update rating_event set skill_id = ${intoId} where skill_id = ${fromId}`);
-      await tx.execute(sql`update role_skill set skill_id = ${intoId} where skill_id = ${fromId}
-        and (role_id, coalesce(grade_id, '')) not in (select role_id, coalesce(grade_id, '') from role_skill where skill_id = ${intoId})`);
-      await tx.delete(schema.roleSkill).where(eq(schema.roleSkill.skillId, fromId));
+      await tx.execute(sql`update team_role_skill set skill_id = ${intoId} where skill_id = ${fromId}
+        and role_id not in (select role_id from team_role_skill where skill_id = ${intoId})`);
+      await tx.delete(schema.teamRoleSkill).where(eq(schema.teamRoleSkill.skillId, fromId));
       await tx.execute(sql`update team_need set skill_id = ${intoId} where skill_id = ${fromId}
         and manager_id not in (select manager_id from team_need where skill_id = ${intoId})`);
       await tx.delete(schema.teamNeed).where(eq(schema.teamNeed.skillId, fromId));
@@ -151,7 +152,7 @@ export async function mergeSkill(fromId: string, intoId: string): Promise<Result
   } catch (e) { return fail(e); }
 }
 
-// ---- levels, roles, grades -------------------------------------------------------------
+// ---- levels ----------------------------------------------------------------------------
 
 export async function saveLevel(data: Data): Promise<Result> {
   try {
@@ -164,76 +165,6 @@ export async function saveLevel(data: Data): Promise<Result> {
   } catch (e) { return fail(e); }
 }
 
-const roleIn = z.object({ id: z.string().optional(), name: z.string().trim().min(2, "Name the role.").max(80), description: text(500) });
-export async function saveRole(data: Data): Promise<Result> {
-  try {
-    const v = await admin();
-    const d = roleIn.parse(data);
-    const db = await getDb();
-    const taken = await roleNamed(db, d.name, d.id);
-    if (taken) return { ok: false, error: `A role called “${taken.name}” already exists. Role names are unique: use it, or choose a more specific name.` };
-    let id = d.id;
-    if (id) await db.update(schema.jobRole).set({ name: d.name, description: d.description }).where(eq(schema.jobRole.id, id));
-    else id = (await db.insert(schema.jobRole).values({ name: d.name, description: d.description }).returning())[0].id;
-    await audit(v, d.id ? "update_role" : "create_role", "job_role", id, d);
-    return done(["/settings/roles", "/roles"], "Role saved.", id);
-  } catch (e) { return fail(e); }
-}
-export async function deleteRole(id: string): Promise<Result> {
-  try {
-    const v = await admin();
-    const db = await getDb();
-    const [{ n }] = await db.select({ n: count() }).from(schema.employee).where(eq(schema.employee.roleId, id));
-    if (n) return { ok: false, error: `${n} ${n === 1 ? "person has" : "people have"} this as their own role. Move them to another role first.` };
-    const [{ t }] = await db.select({ t: count() }).from(schema.employee).where(eq(schema.employee.teamRoleId, id));
-    if (t) return { ok: false, error: `${t} ${t === 1 ? "team has" : "teams have"} this as their role. Their managers choose another first (My team).` };
-    await db.delete(schema.jobRole).where(eq(schema.jobRole.id, id));
-    await audit(v, "delete_role", "job_role", id);
-    return done(["/settings/roles", "/roles"], "Role deleted.");
-  } catch (e) { return fail(e); }
-}
-const gradeIn = z.object({ id: z.string().optional(), name: z.string().trim().min(1).max(40), rank: z.coerce.number().int().min(0).max(100) });
-export async function saveGrade(data: Data): Promise<Result> {
-  try {
-    const v = await admin();
-    const d = gradeIn.parse(data);
-    const db = await getDb();
-    let id = d.id;
-    if (id) await db.update(schema.grade).set({ name: d.name, rank: d.rank }).where(eq(schema.grade.id, id));
-    else id = (await db.insert(schema.grade).values({ name: d.name, rank: d.rank }).returning())[0].id;
-    await audit(v, d.id ? "update_grade" : "create_grade", "grade", id, d);
-    return done(["/settings/roles"], "Grade saved.", id);
-  } catch (e) { return fail(e); }
-}
-export async function deleteGrade(id: string): Promise<Result> {
-  try {
-    const v = await admin();
-    const db = await getDb();
-    const [{ n }] = await db.select({ n: count() }).from(schema.employee).where(eq(schema.employee.gradeId, id));
-    if (n) return { ok: false, error: `${n} people have this grade. Change it first.` };
-    await db.delete(schema.grade).where(eq(schema.grade.id, id));
-    await audit(v, "delete_grade", "grade", id);
-    return done(["/settings/roles"], "Grade deleted.");
-  } catch (e) { return fail(e); }
-}
-/** Sets (or with target null, clears) one cell of a role's skill matrix. */
-export async function setRoleSkill(input: { roleId: string; gradeId: string | null; skillId: string; target: number | null; mandatory: boolean }): Promise<Result> {
-  try {
-    const v = await admin();
-    const db = await getDb();
-    const where = and(eq(schema.roleSkill.roleId, input.roleId), eq(schema.roleSkill.skillId, input.skillId),
-      input.gradeId ? eq(schema.roleSkill.gradeId, input.gradeId) : isNull(schema.roleSkill.gradeId));
-    await db.delete(schema.roleSkill).where(where);
-    if (input.target != null) {
-      const t = level.parse(input.target);
-      if (t < 1) return { ok: false, error: "A target is 1 or more; clear the cell to drop the requirement." };
-      await db.insert(schema.roleSkill).values({ roleId: input.roleId, gradeId: input.gradeId, skillId: input.skillId, target: t, mandatory: input.mandatory });
-    }
-    await audit(v, "set_role_skill", "role_skill", input.roleId, input);
-    return done(["/settings/roles", "/roles"], "Saved.");
-  } catch (e) { return fail(e); }
-}
-
 // ---- people ---------------------------------------------------------------------------
 
 const employeeIn = z.object({
@@ -242,7 +173,6 @@ const employeeIn = z.object({
   email: z.string().trim().toLowerCase().email("A valid e-mail address, please."),
   title: text(120),
   teamName: text(80),
-  roleId: optId,
   gradeId: optId,
   managerId: optId,
   location: text(80),
@@ -259,7 +189,7 @@ export async function saveEmployee(data: Data): Promise<Result> {
       if (engine.reportsOf(d.id).some((e) => e.id === d.managerId)) return { ok: false, error: "That manager reports to this person (directly or further down): it would make a loop." };
     }
     const db = await getDb();
-    const values = { name: d.name, email: d.email, title: d.title, teamName: d.teamName, roleId: d.roleId, gradeId: d.gradeId, managerId: d.managerId, location: d.location, active: d.active };
+    const values = { name: d.name, email: d.email, title: d.title, teamName: d.teamName, gradeId: d.gradeId, managerId: d.managerId, location: d.location, active: d.active };
     let id = d.id;
     if (id) await db.update(schema.employee).set(values).where(eq(schema.employee.id, id));
     else id = (await db.insert(schema.employee).values(values).returning())[0].id;
@@ -284,6 +214,8 @@ export async function saveSettings(data: Data): Promise<Result> {
       greenAt: z.coerce.number().int().min(1).max(100),
       amberAt: z.coerce.number().int().min(0).max(99),
       managersAssess: z.union([z.boolean(), z.string()]).transform((x) => x === true || x === "true" || x === "on").default(false),
+      fitPercent: z.coerce.number({ message: "The match needed is a whole number from 1 to 100." }).int("The match needed is a whole number from 1 to 100.").min(1, "The match needed is a positive number: 1 to 100.").max(100, "The match needed is at most 100.").default(50),
+      membersSeeFit: z.union([z.boolean(), z.string()]).transform((x) => x === true || x === "true" || x === "on").default(false),
     }).parse(data);
     if (d.amberAt >= d.greenAt) return { ok: false, error: "The amber threshold must be below the green one." };
     const db = await getDb();
@@ -299,7 +231,7 @@ export async function saveSettings(data: Data): Promise<Result> {
 export async function setUserAccess(input: { userId: string; role: string; employeeId: string | null }): Promise<Result> {
   try {
     const v = await admin({ live: true });
-    const role = z.enum(["admin", "leader", "manager", "employee"]).parse(input.role);
+    const role = z.enum(["admin", "leader", "coordinator", "manager", "employee"]).parse(input.role);
     const db = await getDb();
     if (input.userId === v.userId && role !== "admin") return { ok: false, error: "You cannot take away your own administrator access." };
     const [target] = await db.select({ username: schema.user.username }).from(schema.user).where(eq(schema.user.id, input.userId));
@@ -327,7 +259,7 @@ const localUserIn = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(MIN_PASSWORD_LENGTH, `The first password needs at least ${MIN_PASSWORD_LENGTH} characters.`),
-  role: z.enum(["admin", "leader", "manager", "employee"]).default("employee"),
+  role: z.enum(["admin", "leader", "coordinator", "manager", "employee"]).default("employee"),
   employeeId: optId,
 });
 /** A local (non-SSO) account. It must change its password at first sign-in. */
@@ -454,7 +386,7 @@ export async function clearOrganisation(confirmText: string, opts: { accounts?: 
         await tx.execute(sql`delete from audit_log`);
         await tx.execute(sql`delete from sync_run`);
       }
-      for (const t of ["rating_event", "rating", "team_need", "role_skill"]) {
+      for (const t of ["rating_event", "rating", "team_need", "team_draft", "team_role", "catalogue_request"]) {
         await tx.execute(sql.raw(`delete from ${t}`));
       }
       await tx.execute(sql`delete from group_member`);
@@ -463,11 +395,57 @@ export async function clearOrganisation(confirmText: string, opts: { accounts?: 
       await tx.execute(sql`delete from skill where parent_id is not null`);
       await tx.execute(sql`delete from skill`);
       await tx.execute(sql`delete from skill_category`);
-      await tx.execute(sql`delete from job_role`);
       await tx.execute(sql`delete from grade`);
     });
     await refreshGate(db);
     await audit(v, "clear_organisation", "organisation", null, { accounts: !!opts.accounts, history: !!opts.history, safetyBackup: safety.name });
     return done(["/", "/settings", "/settings/data"], `Cleared. What was there is saved as ${safety.name} (restore it below if needed). Sync from ServiceNow or import people to start again.`);
+  } catch (e) { return fail(e); }
+}
+
+// ---- reset (Settings › Data & backups) ---------------------------------------------------
+
+const resetIn = z.object({
+  /** everything: back to the app as first installed. The others reset one thing. */
+  what: z.enum(["everything", "assessments", "team", "requests"]),
+  /** assessments: "all", a manager's id (everyone below them) or a person's id. team: "all" or a manager's id. */
+  scope: z.string().default("all"),
+  /** team: also the teams below that manager */
+  below: z.boolean().default(false),
+  confirm: z.string(),
+});
+
+/** Puts data back: one thing, or everything to how the app was first installed. A backup is taken first. */
+export async function resetData(input: z.input<typeof resetIn>): Promise<Result> {
+  try {
+    const v = await admin({ live: true });
+    const d = resetIn.parse(input);
+    if (d.confirm.trim().toUpperCase() !== "RESET") return { ok: false, error: "Type RESET to confirm." };
+    const engine = await getEngine();
+    const db = await getDb();
+    const person = d.scope === "all" ? null : engine.empById.get(d.scope);
+    if (d.scope !== "all" && !person) return { ok: false, error: "That person or team no longer exists." };
+    // a way back first: if the backup cannot be written, nothing is reset
+    const safety = await saveBackup(db, v.name, "before-clear");
+    const back = `What was there is saved as ${safety.name} (restore it from the list of backups if needed).`;
+    let message = "";
+    if (d.what === "everything") {
+      const r = await resetToOutOfBox(db);
+      message = `Back to how the app was first installed: ${r.skills} skills in the catalogue, no ratings, roles, needs or requests. People, accounts and connections stayed. ${back}`;
+    } else if (d.what === "assessments") {
+      const ids = !person ? null : engine.isManager(person) ? engine.membersOf(person.id).map((e) => e.id) : [person.id];
+      const n = await resetAssessments(db, ids);
+      message = `${n} rating${n === 1 ? "" : "s"} removed${person ? ` for ${engine.isManager(person) ? engine.teamLabel(person.id) : person.name}` : " for everyone"}. ${back}`;
+    } else if (d.what === "team") {
+      if (person && !engine.isManager(person)) return { ok: false, error: `${person.name} does not manage a team.` };
+      const ids = !person ? null : d.below ? engine.managersIn(person.id).map((m) => m.id) : [person.id];
+      const n = await resetTeams(db, ids);
+      message = `${n} role${n === 1 ? "" : "s"} removed, with the team needs and unconfirmed changes${person ? ` of ${engine.teamLabel(person.id)}${d.below ? " and the teams below it" : ""}` : " of every team"}. ${back}`;
+    } else {
+      const n = await resetRequests(db);
+      message = `${n} request${n === 1 ? "" : "s"} removed. ${back}`;
+    }
+    await audit(v, "reset_data", "organisation", person?.id ?? null, { what: d.what, scope: d.scope, below: d.below, safetyBackup: safety.name });
+    return done(["/", "/team", "/roles", "/requests", "/skills", "/people", "/insights", "/my-skills", "/settings", "/settings/data", "/settings/skills", "/settings/levels"], message);
   } catch (e) { return fail(e); }
 }

@@ -242,3 +242,12 @@
 }
 .react-flow__minimap { border: 1px solid var(--border); border-radius: 0.5rem; overflow: hidden; }
 .react-flow__controls { border-radius: 0.5rem; overflow: hidden; border: 1px solid var(--border); }
+
+/* A role's tint (src/lib/role-colors.ts). --tint is always a pastel; it is laid thinly over
+   the page's own background, so it reads the same in the light and the dark theme and can
+   never come out bright. */
+.tint-band { background-color: color-mix(in oklab, var(--tint) 16%, transparent); }
+.tint-border { border-color: color-mix(in oklab, var(--tint) 50%, var(--border)); }
+.tint-edge { box-shadow: inset 3px 0 0 color-mix(in oklab, var(--tint) 85%, transparent); }
+.tint-chip { background-color: color-mix(in oklab, var(--tint) 24%, transparent); border-color: color-mix(in oklab, var(--tint) 55%, transparent); }
+.tint-dot { background-color: var(--tint); }

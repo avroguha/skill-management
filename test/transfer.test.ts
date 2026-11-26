@@ -83,12 +83,12 @@ test("dry run reports and changes nothing; bad rows are skipped with their line 
     ].join("\n");
     const dry = await importCsv(t.db, "people", csv, { dryRun: true });
     assert.equal(dry.dryRun, true);
-    assert.deepEqual(dry.errors.map((e) => e.line), [3, 5, 4]);
-    assert.match(dry.errors[1].message, /Unknown role/);
-    assert.match(dry.errors[2].message, /Manager nobody@acme.test not found/);
+    assert.deepEqual(dry.errors.map((e) => e.line), [3, 4]);
+    assert.match(dry.errors[1].message, /Manager nobody@acme.test not found/);
+    assert.match(dry.warnings[0].message, /role and team_role columns are not used any more/, "a file from before roles belonged to teams still loads its people");
     assert.equal((await t.db.select({ n: count() }).from(schema.employee))[0].n, before, "dry run wrote nothing");
     const real = await importCsv(t.db, "people", csv);
-    assert.equal(real.created, 3);
+    assert.equal(real.created, 4);
     const people = await t.db.select().from(schema.employee);
     const eve = people.find((p) => p.email === "eve@acme.test")!;
     assert.equal(eve.managerId, people.find((p) => p.email === "ann@acme.test")!.id, "manager resolved in the second pass");
@@ -97,6 +97,32 @@ test("dry run reports and changes nothing; bad rows are skipped with their line 
     assert.match(needs.errors[0].message, /Unknown manager/);
     const missing = await importCsv(t.db, "ratings", "email,level\nann@acme.test,3\n");
     assert.match(missing.errors[0].message, /Missing column/);
+  } finally {
+    await t.close();
+  }
+});
+
+test("team roles by CSV: a role is named by its team, a person is put in the roles of their own manager only", async () => {
+  const t = await emptyDb();
+  try {
+    await importCsv(t.db, "skills", "category,skill\nCloud,Kubernetes\nCloud,Terraform\n");
+    await importCsv(t.db, "people", "email,name,manager_email\nann@acme.test,Ann,\noli@acme.test,Oli,\nbob@acme.test,Bob,ann@acme.test\nfay@acme.test,Fay,oli@acme.test\n");
+    // the same role name in two teams: two roles
+    const roles = await importCsv(t.db, "team-roles", "manager_email,role,description\nann@acme.test,SRE,Keeps production healthy\noli@acme.test,SRE,\nnobody@acme.test,SRE,\n");
+    assert.equal(roles.created, 2);
+    assert.match(roles.errors[0].message, /Unknown manager/);
+    assert.equal((await t.db.select().from(schema.teamRole)).length, 2);
+    const people = await importCsv(t.db, "role-people", "manager_email,role,email\nann@acme.test,SRE,bob@acme.test\nann@acme.test,On-call,bob@acme.test\nann@acme.test,SRE,fay@acme.test\n");
+    assert.equal(people.created, 2, "Bob is in two roles of Ann's team; the second one is made on the way");
+    assert.match(people.errors[0].message, /does not report to ann@acme.test/, "Fay reports to Oli");
+    const skills = await importCsv(t.db, "role-skills", "manager_email,role,skill,level,must_have\nann@acme.test,SRE,Kubernetes,4,yes\nann@acme.test,On-call,Kubernetes,2,no\nann@acme.test,SRE,Terraform,9,yes\n");
+    assert.equal(skills.created, 2);
+    assert.match(skills.errors[0].message, /level must be 1-5/);
+    const e = createEngine(await loadDatasetFrom(t.db));
+    const bob = e.activeEmployees.find((x) => x.email === "bob@acme.test")!;
+    const k8s = [...e.skillById.values()].find((k) => k.name === "Kubernetes")!;
+    assert.deepEqual(e.targetFor(bob, k8s.id), { target: 4, mandatory: true, source: "role" }, "the higher of his two roles");
+    assert.equal(e.activeEmployees.find((x) => x.email === "fay@acme.test")!.roleIds.length, 0);
   } finally {
     await t.close();
   }

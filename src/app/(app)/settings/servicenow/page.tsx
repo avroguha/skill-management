@@ -10,13 +10,11 @@ export const metadata = { title: "ServiceNow · Settings" };
 
 export default async function DirectoryAdmin() {
   const db = await getDb();
-  const [cfg, profile, runs, [sample], roles, grades, groups] = await Promise.all([
+  const [cfg, profile, runs, [sample], groups] = await Promise.all([
     readDirectoryConfig(db),
     readProfileSettings(db),
     db.select().from(schema.syncRun).orderBy(desc(schema.syncRun.startedAt)).limit(25),
     db.select().from(schema.employee).where(eq(schema.employee.active, true)).orderBy(asc(schema.employee.name)).limit(1),
-    db.select({ id: schema.jobRole.id, name: schema.jobRole.name }).from(schema.jobRole).orderBy(asc(schema.jobRole.name)),
-    db.select({ id: schema.grade.id, name: schema.grade.name }).from(schema.grade).orderBy(asc(schema.grade.rank)),
     db.select({
       id: schema.snGroup.id, name: schema.snGroup.name, description: schema.snGroup.description, email: schema.snGroup.email,
       active: schema.snGroup.active, syncedAt: schema.snGroup.syncedAt,
@@ -30,7 +28,7 @@ export default async function DirectoryAdmin() {
         description="People, their managers and designations come from sys_user: everyone under a top-level user, recursively, of the types you choose. The reporting lines are the teams. Only people brought in this way (or added in People & access) can sign in with single sign-on." />
       <div className="grid gap-5">
         <Section title="Connection and filter" info="Test shows who would come in without saving anything. Save keeps the settings; Sync now runs with the saved ones.">
-          <DirectoryForm initial={publicDirectoryConfig(cfg)} roles={roles} grades={grades} />
+          <DirectoryForm initial={publicDirectoryConfig(cfg)} />
         </Section>
         <div className="grid gap-5 xl:grid-cols-3">
           <Section className="xl:col-span-2" title="Sync history" info="Every sync, manual or scheduled: how many people came, were new, changed, or left.">

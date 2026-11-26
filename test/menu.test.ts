@@ -3,13 +3,14 @@
 // address each, and every "I want to ..." line leads to a page the person can open.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildMenu, locate, tasksFor, SETTINGS_SECTIONS, TEAM_SECTIONS, type MenuFor } from "../src/lib/menu.ts";
+import { buildMenu, locate, tasksFor, REQUEST_SECTIONS, SETTINGS_SECTIONS, TEAM_SECTIONS, type MenuFor } from "../src/lib/menu.ts";
 
 const member: MenuFor = { hasProfile: true, isManager: false, canSeeTeams: false, isAdmin: false };
 const manager: MenuFor = { hasProfile: true, isManager: true, canSeeTeams: true, isAdmin: false, waiting: 9 };
 const leader: MenuFor = { hasProfile: true, isManager: false, canSeeTeams: true, isAdmin: false };
-const admin: MenuFor = { hasProfile: false, isManager: false, canSeeTeams: true, isAdmin: true, draftSkills: 2 };
-const everyone = { member, manager, leader, admin };
+const admin: MenuFor = { hasProfile: false, isManager: false, canSeeTeams: true, isAdmin: true, coordinator: true, requestsWaiting: 2 };
+const coordinator: MenuFor = { hasProfile: true, isManager: false, canSeeTeams: false, isAdmin: false, coordinator: true, requestsWaiting: 4, requestsReturned: 1 };
+const everyone = { member, manager, leader, admin, coordinator };
 const labels = (f: MenuFor) => buildMenu(f).flatMap((g) => g.items.map((i) => i.label));
 
 test("the first group is called Menu and every group has a heading", () => {
@@ -23,23 +24,38 @@ test("the first group is called Menu and every group has a heading", () => {
 });
 
 test("every entry and every sub menu entry says what is behind it", () => {
-  for (const item of buildMenu({ ...manager, isAdmin: true }).flatMap((g) => g.items)) {
+  for (const item of [...buildMenu({ ...manager, isAdmin: true }), ...buildMenu(coordinator)].flatMap((g) => g.items)) {
     assert.ok(item.hint.length >= 8 && item.hint.length <= 34, `${item.label}: a short second line, got "${item.hint}"`);
     for (const s of item.sub ?? []) assert.ok(s.hint.length >= 8, `${item.label} › ${s.label} has a hint`);
   }
 });
 
 test("each person sees what is theirs, and nothing they cannot open", () => {
-  assert.deepEqual(labels(member), ["Home", "My skills", "Roles", "Skills", "Help"]);
-  assert.deepEqual(labels(manager), ["Home", "My skills", "My team", "Insights", "People", "Org chart", "Roles", "Skills", "Help"]);
-  assert.deepEqual(labels(leader), ["Home", "My skills", "Teams", "Insights", "People", "Org chart", "Roles", "Skills", "Help"]);
-  assert.deepEqual(labels(admin), ["Home", "Teams", "Insights", "People", "Org chart", "Roles", "Skills", "Settings", "Help"]);
+  assert.deepEqual(labels(member), ["Home", "My skills", "Roles", "Skills", "Requests", "Help"]);
+  assert.deepEqual(labels(manager), ["Home", "My skills", "My team", "Insights", "People", "Org chart", "Roles", "Skills", "Requests", "Help"]);
+  assert.deepEqual(labels(leader), ["Home", "My skills", "Teams", "Insights", "People", "Org chart", "Roles", "Skills", "Requests", "Help"]);
+  assert.deepEqual(labels(admin), ["Home", "Teams", "Insights", "People", "Org chart", "Roles", "Skills", "Requests", "Settings", "Help"]);
+});
+
+test("Requests: everyone can ask; a coordinator also gets the sections to decide, with what waits", () => {
+  const of = (f: MenuFor) => buildMenu(f).flatMap((g) => g.items).find((i) => i.key === "requests")!;
+  assert.equal(of(member).sub, undefined, "one section only: no sub menu to choose from");
+  assert.equal(of(member).badge, undefined);
+  assert.equal(of({ ...member, requestsReturned: 2 }).badge, 2, "their own requests that came back");
+  const c = of(coordinator);
+  assert.deepEqual(c.sub!.map((s) => s.label), ["My requests", "To approve", "All requests"]);
+  assert.deepEqual(c.sub!.map((s) => s.href), REQUEST_SECTIONS.map((s) => `/requests?tab=${s.key}`));
+  assert.equal(c.badge, 4, "what waits for a decision");
+  assert.deepEqual([c.sub![1].badge, c.sub![1].attention, c.sub![0].badge], [4, true, 1]);
+  assert.ok(tasksFor(coordinator).some((t) => t.key === "approve") && !tasksFor(member).some((t) => t.key === "approve"));
+  assert.ok(tasksFor(member).some((t) => t.key === "ask-skill"), "anyone can ask for a skill");
 });
 
 test("a team's sections and the settings sections are sub menus, each with its own address", () => {
-  const items = buildMenu({ ...manager, isAdmin: true, draftSkills: 2 }).flatMap((g) => g.items);
+  const items = buildMenu({ ...manager, isAdmin: true, teamChanges: 3 }).flatMap((g) => g.items);
   const team = items.find((i) => i.key === "team")!;
-  assert.deepEqual(team.sub!.map((s) => s.label), ["To confirm", "People", "Team needs", "Skills grid"]);
+  assert.deepEqual(team.sub!.map((s) => s.label), ["To confirm", "People and roles", "Team needs", "Skills grid", "Fit in other teams", "Review changes"]);
+  assert.deepEqual([team.sub![5].badge, team.sub![5].attention], [3, true], "changes not confirmed yet are counted on Review changes");
   assert.deepEqual(team.sub!.map((s) => s.href), TEAM_SECTIONS.map((s) => `/team?tab=${s.key}`));
   assert.equal(team.open, true, "a manager's team is open from the start: nobody has to find the sections");
   assert.equal(buildMenu(admin).flatMap((g) => g.items).find((i) => i.key === "team")!.open, false, "Teams, for someone without a team, opens when they go there");
@@ -47,7 +63,7 @@ test("a team's sections and the settings sections are sub menus, each with its o
   assert.equal(team.sub![0].attention, true);
   const settings = items.find((i) => i.key === "settings")!;
   assert.deepEqual(settings.sub!.map((s) => s.href), SETTINGS_SECTIONS.map((s) => s.href));
-  assert.equal(settings.sub!.find((s) => s.href === "/settings/skills")!.badge, 2);
+  assert.ok(!settings.sub!.some((s) => s.href === "/settings/roles"), "roles are each team's own: not a setting");
   for (const i of items) if (i.sub) assert.equal(new Set(i.sub.map((s) => s.href)).size, i.sub.length);
   assert.ok(!items.some((i) => !i.sub && i.subParam), "a sub menu parameter only where there is a sub menu");
 });

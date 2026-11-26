@@ -1,6 +1,8 @@
 // The starter skill catalogue: loaded into an empty live database on the first start, and
 // offered for download in Settings › Skills (edit it, upload it back: an upload updates what
 // exists and adds what is new). Generic on purpose: a site's own catalogue replaces or extends it.
+// Technical skills are grouped by technology (cloud, software, data, security ...); the last
+// three categories are the skills every kind of work needs: Managerial, Analytical, Business.
 // Columns as every skills CSV: category, skill, sub_skill, aliases (separated by ;), description, status.
 export const STARTER_SKILLS_CSV = `category,skill,sub_skill,aliases,description,status
 Cloud & Containers,AWS,,Amazon Web Services,"Designing, deploying and operating systems on Amazon Web Services.",active
@@ -89,14 +91,34 @@ Networking,Wireless networking,,Wi-Fi,"Designing and running wireless networks."
 End-User Computing,Desktop and device support,,,"Supporting laptops, desktops and mobile devices.",active
 End-User Computing,Device management,,Intune; MDM,"Managing and securing devices centrally.",active
 End-User Computing,Collaboration tools,,Microsoft 365; Teams,"Running and supporting collaboration tools.",active
-Ways of Working,Agile delivery,,Scrum; Kanban,"Delivering in small, frequent increments.",active
-Ways of Working,Project management,,,"Planning and running projects to time and budget.",active
-Ways of Working,Stakeholder management,,,"Understanding and working with the people affected.",active
-Ways of Working,Communication,,Presenting,"Explaining clearly, in writing and in person.",active
-Ways of Working,Technical writing,,Documentation,"Writing documentation people can follow.",active
-Ways of Working,Mentoring and coaching,,,"Helping others grow.",active
-Ways of Working,Problem solving,,,"Breaking down hard problems and finding the cause.",active
-Ways of Working,Leadership,,People management,"Setting direction and growing a team.",active
-Ways of Working,Vendor management,,,"Working with suppliers and contracts.",active
-Ways of Working,Customer focus,,,"Understanding and serving the people who use the service.",active
+Managerial,People leadership,,People management; team leadership,"Setting direction for a team and helping it do its best work.",active
+Managerial,Coaching and mentoring,,Mentoring,"Helping others grow through feedback, guidance and example.",active
+Managerial,Performance management,,Appraisals,"Setting goals, giving feedback and handling under-performance fairly.",active
+Managerial,Hiring and onboarding,,Recruitment; interviewing,"Choosing people well and getting them productive.",active
+Managerial,Planning and delegation,,,"Turning goals into work, and giving it to the right people.",active
+Managerial,Project management,,PMP; PRINCE2,"Planning and running projects to time and budget.",active
+Managerial,Agile delivery,,Scrum; Kanban,"Delivering in small, frequent increments.",active
+Managerial,Change leadership,,Organisational change,"Taking people through a change in how they work.",active
+Managerial,Budget and resource planning,,Budgeting,"Planning money and people against what has to be done.",active
+Managerial,Conflict resolution,,,"Dealing with disagreement early and fairly.",active
+Analytical,Problem solving,,Troubleshooting,"Breaking down hard problems and finding the cause.",active
+Analytical,Critical thinking,,,"Questioning assumptions and weighing the evidence.",active
+Analytical,Data analysis,,Excel analysis,"Finding what the numbers say, and what they do not.",active
+Analytical,Process analysis and improvement,,Lean; Six Sigma,"Mapping how work flows and making it better.",active
+Analytical,Requirements analysis,,Business analysis,"Working out what is really needed, and writing it down clearly.",active
+Analytical,Estimating and forecasting,,,"Judging effort, cost and demand ahead of time.",active
+Analytical,Decision making,,,"Choosing between options with the facts available.",active
+Analytical,Risk assessment,,,"Spotting what could go wrong and how much it matters.",active
+Analytical,Research,,,"Finding, checking and summarising information.",active
+Business,Stakeholder management,,,"Understanding and working with the people affected.",active
+Business,Communication,,,"Explaining clearly, in writing and in person.",active
+Business,Presenting,,Presentation skills,"Presenting to a room and holding its attention.",active
+Business,Technical writing,,Documentation,"Writing documentation people can follow.",active
+Business,Customer focus,,Customer service,"Understanding and serving the people who use the service.",active
+Business,Negotiation,,,"Reaching agreements that work for both sides.",active
+Business,Vendor management,,Supplier management,"Working with suppliers and contracts.",active
+Business,Commercial awareness,,Knowing the business,"Knowing how the organisation works and earns its living.",active
+Business,Financial awareness,,Cost awareness,"Understanding costs, budgets and the business case.",active
+Business,Service ownership,,Product ownership,"Owning a service or product end to end: what it is for, how well it does.",active
+Business,Time management,,Prioritisation,"Choosing what to do first and getting it done.",active
 `;

@@ -3,7 +3,10 @@
 //
 // v2 keeps it to people, their managers and skills:
 // - a team is a manager and the people who report to them; there are no units
-// - one skill entity org-wide; the TARGET comes from the person's role and grade
+// - a ROLE is a grouping a manager makes inside their own team (team_role): its name is
+//   unique in that team only, a person can be in several, and nobody gets one by themselves
+// - one skill entity org-wide (categories and skills are global); the TARGET comes from the
+//   roles a person is in
 // - only leaf skills are rated (a skill with active sub-skills is a heading)
 // - self and confirmed levels are two columns, never one overwritten by the other
 //   (the confirmed one is called "validated" in the code, "confirmed" on screen)
@@ -21,13 +24,7 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
 
 // ---- people -------------------------------------------------------------------------
 
-export const jobRole = pgTable("job_role", {
-  id: id(),
-  name: text("name").notNull().unique(),
-  description: text("description").notNull().default(""),
-  createdAt: created(),
-});
-
+// A grade is a label on a person (Associate, Senior ...): it no longer changes any target.
 export const grade = pgTable("grade", {
   id: id(),
   name: text("name").notNull().unique(),
@@ -42,12 +39,6 @@ export const employee = pgTable("employee", {
   title: text("title").notNull().default(""),
   /** what this person's team is called, when they manage one (default "<name>'s team") */
   teamName: text("team_name").notNull().default(""),
-  /** this person's OWN role, when they have one; empty = they follow their team's role */
-  roleId: text("role_id").references(() => jobRole.id, { onDelete: "set null" }),
-  /** the role a manager chose for their team: their direct reports follow it (and they do) */
-  teamRoleId: text("team_role_id").references(() => jobRole.id, { onDelete: "set null" }),
-  /** the team role also reaches everyone further below, until a manager there chooses another */
-  teamRoleCascade: boolean("team_role_cascade").notNull().default(false),
   gradeId: text("grade_id").references(() => grade.id, { onDelete: "set null" }),
   managerId: text("manager_id"),
   userId: text("user_id").references(() => user.id, { onDelete: "set null" }).unique(),
@@ -67,7 +58,7 @@ export const employee = pgTable("employee", {
   syncedAt: timestamp("synced_at", { withTimezone: true }),
   createdAt: created(),
 }, (t) => [index("employee_manager_idx").on(t.managerId), index("employee_user_name_idx").on(t.userName),
-  index("employee_role_idx").on(t.roleId), index("employee_grade_idx").on(t.gradeId)]);
+  index("employee_grade_idx").on(t.gradeId)]);
 
 // ---- skills and levels ------------------------------------------------------------------
 
@@ -97,17 +88,7 @@ export const proficiencyLevel = pgTable("proficiency_level", {
   description: text("description").notNull().default(""),
 });
 
-// ---- what "good" looks like ----------------------------------------------------------------
-
-export const roleSkill = pgTable("role_skill", {
-  id: id(),
-  roleId: text("role_id").notNull().references(() => jobRole.id, { onDelete: "cascade" }),
-  // null = applies to every grade of the role; a grade-specific row wins over it
-  gradeId: text("grade_id").references(() => grade.id, { onDelete: "cascade" }),
-  skillId: text("skill_id").notNull().references(() => skill.id, { onDelete: "cascade" }),
-  target: integer("target").notNull(),
-  mandatory: boolean("mandatory").notNull().default(true),
-}, (t) => [uniqueIndex("role_skill_uq").on(t.roleId, t.gradeId, t.skillId), index("role_skill_skill_idx").on(t.skillId)]);
+// ---- what a team needs ------------------------------------------------------------------------
 
 // What a manager's team needs: "at least N people at level L in skill S". The team is the
 // manager and everyone below them.
@@ -118,7 +99,82 @@ export const teamNeed = pgTable("team_need", {
   minLevel: integer("min_level").notNull(),
   headcount: integer("headcount").notNull().default(1),
   note: text("note").notNull().default(""),
+  /** a need the team's roles imply that the manager took off the list: it stays off */
+  dismissed: boolean("dismissed").notNull().default(false),
 }, (t) => [uniqueIndex("team_need_uq").on(t.managerId, t.skillId), index("team_need_skill_idx").on(t.skillId)]);
+
+// ---- a team's roles ---------------------------------------------------------------------------
+// A role belongs to one team (its manager). The manager makes as many as the team needs, puts
+// people in them and says which skills each one asks for.
+
+export const teamRole = pgTable("team_role", {
+  id: id(),
+  managerId: text("manager_id").notNull().references(() => employee.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  /** its tint, a key of src/lib/role-colors.ts; "" = the next colour its team does not use yet */
+  color: text("color").notNull().default(""),
+  sort: integer("sort").notNull().default(0),
+  createdAt: created(),
+}, (t) => [uniqueIndex("team_role_name_uq").on(t.managerId, t.name), index("team_role_manager_idx").on(t.managerId)]);
+
+export const teamRoleMember = pgTable("team_role_member", {
+  roleId: text("role_id").notNull().references(() => teamRole.id, { onDelete: "cascade" }),
+  employeeId: text("employee_id").notNull().references(() => employee.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.roleId, t.employeeId] }), index("team_role_member_employee_idx").on(t.employeeId)]);
+
+export const teamRoleSkill = pgTable("team_role_skill", {
+  roleId: text("role_id").notNull().references(() => teamRole.id, { onDelete: "cascade" }),
+  skillId: text("skill_id").notNull().references(() => skill.id, { onDelete: "cascade" }),
+  target: integer("target").notNull(),
+  /** a must-have (true) or a nice-to-have */
+  mandatory: boolean("mandatory").notNull().default(true),
+}, (t) => [primaryKey({ columns: [t.roleId, t.skillId] }), index("team_role_skill_skill_idx").on(t.skillId)]);
+
+// Changes to a team's roles and needs that are not confirmed yet: the whole team setup as it
+// would be (src/lib/team-setup.ts), one per team. Nothing counts until it is confirmed.
+export const teamDraft = pgTable("team_draft", {
+  managerId: text("manager_id").primaryKey().references(() => employee.id, { onDelete: "cascade" }),
+  doc: jsonb("doc").notNull(),
+  authorId: text("author_id"),
+  authorName: text("author_name").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---- asking for a new skill or category ---------------------------------------------------------
+// Skills and categories are the same for everyone, so a new one is asked for and a coordinator
+// (or an administrator) approves it, sends it back with a note, or says no with a reason.
+export const catalogueRequest = pgTable("catalogue_request", {
+  id: id(),
+  // skill | category
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  /** for a skill: the category it should go in ... */
+  categoryId: text("category_id"),
+  /** ... or the name of a category that is asked for too */
+  categoryName: text("category_name").notNull().default(""),
+  /** for a sub-skill: the skill it goes under */
+  parentId: text("parent_id"),
+  /** why it is needed, in the asker's words */
+  reason: text("reason").notNull().default(""),
+  // pending (waits for a coordinator) | returned (back with the asker, to change) | approved | rejected | withdrawn
+  status: text("status").notNull().default("pending"),
+  requestedById: text("requested_by_id"),
+  requestedByEmployeeId: text("requested_by_employee_id"),
+  requestedByName: text("requested_by_name").notNull().default(""),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  decidedById: text("decided_by_id"),
+  decidedByName: text("decided_by_name").notNull().default(""),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  /** the coordinator's note: why it came back, why not, or what was changed */
+  comment: text("comment").notNull().default(""),
+  /** the skill or category that was made from it */
+  resultId: text("result_id"),
+  /** what happened to it, oldest first */
+  history: jsonb("history").$type<{ at: string; by: string; action: string; note: string }[]>().notNull().default([]),
+}, (t) => [index("catalogue_request_status_idx").on(t.status), index("catalogue_request_by_idx").on(t.requestedById)]);
 
 // ---- assessment -----------------------------------------------------------------------------
 

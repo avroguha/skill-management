@@ -87,7 +87,7 @@ export function decodeBackup(buf: Buffer): BackupFile {
 }
 
 export function summarise(b: BackupFile): Record<string, number> {
-  const pick = ["employee", "skill", "job_role", "rating", "team_need", "user"];
+  const pick = ["employee", "skill", "team_role", "rating", "team_need", "user"];
   return Object.fromEntries(pick.map((t) => [t, b.tables[t]?.length ?? 0]));
 }
 
@@ -123,6 +123,33 @@ export async function restoreBackup(db: DB, b: BackupFile): Promise<Record<strin
         const chunk = JSON.stringify(rows.slice(i, i + 500));
         await tx.execute(sql`insert into ${sql.identifier(t)} (${list}) select ${list} from json_populate_recordset(null::${sql.identifier(t)}, ${chunk}::json)`);
       }
+    }
+    // a backup from before roles belonged to teams: its roles become roles of each team
+    if (!b.tables.team_role && b.tables.job_role?.length) {
+      const { convertLegacyRoles } = await import("./legacy-roles.ts");
+      type R = Record<string, unknown>;
+      const c = convertLegacyRoles(
+        (b.tables.employee ?? []).map((p: R) => ({ id: String(p.id), managerId: (p.manager_id as string | null) ?? null, active: p.active !== false, roleId: (p.role_id as string | null) ?? null, teamRoleId: (p.team_role_id as string | null) ?? null, teamRoleCascade: p.team_role_cascade === true })),
+        b.tables.job_role.map((r: R) => ({ id: String(r.id), name: String(r.name), description: String(r.description ?? "") })),
+        (b.tables.role_skill ?? []).map((k: R) => ({ roleId: String(k.role_id), gradeId: (k.grade_id as string | null) ?? null, skillId: String(k.skill_id), target: Number(k.target), mandatory: k.mandatory !== false })),
+      );
+      const put = async (t: string, rows: R[]) => {
+        counts[t] = rows.length;
+        const names = Object.keys(rows[0] ?? {});
+        const list = sql.join(names.map((n) => sql.identifier(n)), sql`, `);
+        for (let i = 0; i < rows.length; i += 500) {
+          await tx.execute(sql`insert into ${sql.identifier(t)} (${list}) select ${list} from json_populate_recordset(null::${sql.identifier(t)}, ${JSON.stringify(rows.slice(i, i + 500))}::json) on conflict do nothing`);
+        }
+      };
+      await put("team_role", c.roles.map((r) => ({ id: r.id, manager_id: r.managerId, name: r.name, description: r.description })));
+      await put("team_role_member", c.members.map((m) => ({ role_id: m.roleId, employee_id: m.employeeId })));
+      await put("team_role_skill", c.skills.map((k) => ({ role_id: k.roleId, skill_id: k.skillId, target: k.target, mandatory: k.mandatory })));
+    }
+    if (!b.tables.catalogue_request) {
+      await tx.execute(sql`insert into "catalogue_request" ("id", "kind", "name", "category_id", "parent_id", "reason", "status", "requested_by_name")
+        select md5('request:' || k."id"), 'skill', k."name", k."category_id", k."parent_id", k."description", 'pending', ''
+        from "skill" k where k."status" = 'draft' on conflict do nothing`);
+      await tx.execute(sql`delete from "skill" where "status" = 'draft'`);
     }
     // the triggers were off while loading: tell every worker the data changed
     await tx.execute(sql`update data_version set v = v + 1 where id = 1`);

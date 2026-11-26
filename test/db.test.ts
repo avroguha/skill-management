@@ -84,44 +84,83 @@ test("demo people have invented names and work in invented places: nobody finds 
   for (const n of [...all, ...MADE_UP_PLACES]) assert.ok(!everyday.includes(n.toLowerCase()), n);
 });
 
-test("the demo shows roles the way managers set them: chosen for a team, for everyone below, changed lower down, or one's own", async () => {
+test("the demo shows roles the way the app means them: each team's own, the same name in two teams, a person in two roles", async () => {
   const demo = await getDb("demo");
   const e = createEngine(await loadDatasetFrom(demo));
-  const roleNames = e.roles.map((r) => r.name);
-  for (const r of ["IT Operations", "SRE", "Software Developer", "Batch Operations", "ServiceNow", "ITOM ServiceNow"]) assert.ok(roleNames.includes(r), `role ${r}`);
+  const roleNames = new Set(e.roles.map((r) => r.name));
+  for (const r of ["IT Operations", "SRE", "Software Developer", "Batch Operations", "ServiceNow", "ITOM ServiceNow"]) assert.ok(roleNames.has(r), `role ${r}`);
   const team = (name: string) => e.activeEmployees.find((x) => x.teamName === name)!;
-  const roleOf = (x: { roleId: string | null }) => e.roleById.get(x.roleId ?? "")?.name ?? null;
-  const members = (name: string) => e.directReportsOf(team(name).id);
+  const rolesOf = (name: string) => e.rolesOf(team(name).id).map((r) => r.name);
 
-  // the head of Operations chose IT Operations for everyone below
-  const ops = team("Operations");
-  assert.equal(roleOf({ roleId: ops.teamRoleId ?? null }), "IT Operations");
-  assert.equal(ops.teamRoleCascade, true);
-  const desk = members("Service Desk");
-  assert.ok(desk.length >= 5 && desk.every((x) => roleOf(x) === "IT Operations" && x.roleFrom === ops.id && !x.ownRoleId), "Service Desk follows it, two levels down, with no role of their own");
+  // a role belongs to one team; two teams each have their own SRE
+  assert.deepEqual(rolesOf("Compute & Containers"), ["Cloud Engineer", "SRE"]);
+  assert.deepEqual(rolesOf("Reliability"), ["SRE"]);
+  const sre = e.roles.filter((r) => r.name === "SRE");
+  assert.ok(sre.length >= 3 && new Set(sre.map((r) => r.managerId)).size === sre.length, "one SRE per team that has it, each its own role");
+  assert.deepEqual(rolesOf("Cloud Platform"), [], "a director's own team (the managers below) has no roles: nothing is passed down");
 
-  // a manager below chose another for their team; a department head chose another for everyone below them
-  assert.ok(members("Batch Operations").every((x) => roleOf(x) === "Batch Operations" && x.roleFrom === team("Batch Operations").id));
-  assert.ok(members("Change & Release").every((x) => roleOf(x) === "ServiceNow" && x.roleFrom === team("IT Service Management").id));
-  // ... and the more specific role, next to the one it was named after
-  assert.ok(members("CMDB & Discovery").every((x) => roleOf(x) === "ITOM ServiceNow"));
+  // people are in the roles of their own manager's team only, and every role has someone
+  for (const x of e.activeEmployees) for (const rid of x.roleIds) assert.equal(e.roleById.get(rid)!.managerId, x.managerId, `${x.name} is in a role of their own team`);
+  for (const r of e.roles) assert.ok(e.roleMembers(r.id).length > 0, `${r.name} has people`);
 
-  // nobody is forced: a few people keep a role of their own inside a team with another
-  const own = members("Compute & Containers").filter((x) => x.ownRoleId);
-  assert.ok(own.length > 0 && own.every((x) => roleOf(x) === "SRE" && x.roleFrom == null));
-  assert.ok(members("Compute & Containers").some((x) => roleOf(x) === "Cloud Engineer" && x.roleFrom === team("Cloud Platform").id));
+  // one person serves two roles where a team has two, and is asked for both roles' skills
+  const both = e.directReportsOf(team("Compute & Containers").id).filter((x) => x.roleIds.length === 2);
+  assert.equal(both.length, 1);
+  const asked = new Set(e.requiredSkillIds(both[0]));
+  for (const rid of both[0].roleIds) for (const k of e.roleSkillsOf(rid)) assert.ok(asked.has(k.skillId));
 
   // the same skill is in several roles
   const [{ id: linux }] = await demo.select({ id: s.skill.id }).from(s.skill).where(eq(s.skill.name, "Linux administration"));
-  const using = new Set((await demo.select({ roleId: s.roleSkill.roleId }).from(s.roleSkill).where(eq(s.roleSkill.skillId, linux))).map((x) => x.roleId));
+  const using = new Set((await demo.select({ roleId: s.teamRoleSkill.roleId }).from(s.teamRoleSkill).where(eq(s.teamRoleSkill.skillId, linux))).map((x) => x.roleId));
   assert.ok(using.size >= 4, `Linux administration is in ${using.size} roles`);
 
-  // everyone who is asked to rate has a role, and so something to rate
-  const asked = e.activeEmployees.filter((x) => e.assesses(x));
-  assert.equal(asked.filter((x) => !x.roleId).length, 0);
+  // everyone who is asked to rate is in a role, and so has something to rate
+  assert.equal(e.activeEmployees.filter((x) => e.assesses(x) && !x.roleIds.length).length, 0);
   const p = (await demoPersonas(demo))!;
-  assert.equal(roleOf(e.empById.get(p.member)!), "Cloud Engineer");
-  assert.ok(e.directReportsOf(p.director).some((x) => e.isManager(x)), "the director persona has managers below: the app asks who a role is for");
+  assert.deepEqual(e.empById.get(p.member)!.roleIds.map((id) => e.roleById.get(id)!.name), ["Cloud Engineer"]);
+  assert.ok(e.isManager(e.empById.get(p.coordinator)!), "the coordinator persona manages a team too");
+
+  // someone's skills also match a role of another team, at the default 50%
+  assert.ok(e.directReportsOf(p.manager).some((x) => e.roleFits(x).length > 0), "the manager persona sees where their people would also fit");
+});
+
+test("the demo has changes waiting in Review for the manager persona, and requests at every stage", async () => {
+  const demo = await getDb("demo");
+  const { readDraft, readLiveSetup } = await import("../src/lib/team-setup-db.ts");
+  const { diffSetup } = await import("../src/lib/team-setup.ts");
+  const p = (await demoPersonas(demo))!;
+  const draft = await readDraft(demo, p.manager);
+  assert.ok(draft, "a draft is waiting");
+  const changes = diffSetup(await readLiveSetup(demo, p.manager), draft!.setup);
+  assert.deepEqual(changes.map((c) => c.kind).sort(), ["member_added", "member_added", "role_added", "skill_added", "skill_added"]);
+  const requests = await demo.select().from(s.catalogueRequest);
+  assert.deepEqual([...new Set(requests.map((r) => r.status))].sort(), ["approved", "pending", "rejected", "returned"]);
+  assert.ok(requests.some((r) => r.kind === "category" && r.status === "pending"));
+  for (const r of requests.filter((x) => x.status === "returned" || x.status === "rejected")) assert.ok(r.comment.length > 10 && r.decidedByName, "sent back or refused with a note, by someone");
+});
+
+test("the catalogue has the three kinds of skill every sort of work needs, next to the technical ones", async () => {
+  const live = await getDb("live");
+  const cats = (await live.select().from(s.skillCategory)).map((c) => c.name);
+  for (const c of ["Managerial", "Analytical", "Business"]) assert.ok(cats.includes(c), `starter category ${c}`);
+  assert.ok(cats.length >= 10, "and the technical ones, by technology");
+  assert.ok(!cats.includes("Ways of Working"));
+  const demoCats = (await (await getDb("demo")).select().from(s.skillCategory)).map((c) => c.name);
+  for (const c of ["Managerial", "Analytical", "Business"]) assert.ok(demoCats.includes(c), `demo category ${c}`);
+});
+
+test("a role of another manager's team does not count: someone who moved is in no role until their new manager gives one", async () => {
+  const demo = await getDb("demo");
+  const before = createEngine(await loadDatasetFrom(demo));
+  const from = before.activeEmployees.find((x) => x.teamName === "Reliability")!;
+  const to = before.activeEmployees.find((x) => x.teamName === "Identity")!;
+  const mover = before.directReportsOf(from.id)[0];
+  assert.ok(mover.roleIds.length > 0);
+  await demo.update(s.employee).set({ managerId: to.id }).where(eq(s.employee.id, mover.id));
+  const after = createEngine(await loadDatasetFrom(demo));
+  assert.deepEqual(after.empById.get(mover.id)!.roleIds, [], "the old team's role no longer applies");
+  assert.deepEqual(after.requiredSkillIds(after.empById.get(mover.id)!), []);
+  await demo.update(s.employee).set({ managerId: from.id }).where(eq(s.employee.id, mover.id));
 });
 
 test("a demo database from an older version is rebuilt on the next start; a current one is left alone", async () => {

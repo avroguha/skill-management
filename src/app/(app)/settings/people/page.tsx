@@ -1,5 +1,6 @@
-// Settings › People & access: everyone in the app (role, grade, manager, team name) and the
-// accounts that can sign in (administrators, leaders, local passwords).
+// Settings › People & access: everyone in the app (grade, manager, team name; their roles are
+// their manager's to give) and the accounts that can sign in (administrators, coordinators,
+// leaders, local passwords).
 import { asc, max } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
@@ -23,10 +24,9 @@ export default async function PeopleSettings() {
   ]);
   const name = new Map(people.map((p) => [p.id, p.name]));
   const personRows = people.map((p) => ({
-    id: p.id, name: p.name, email: p.email, title: p.title, location: p.location, roleId: p.roleId ?? "", gradeId: p.gradeId ?? "", managerId: p.managerId ?? "",
+    id: p.id, name: p.name, email: p.email, title: p.title, location: p.location, gradeId: p.gradeId ?? "", managerId: p.managerId ?? "",
     teamName: p.teamName, active: p.active,
-    role: engine.roleById.get(engine.empById.get(p.id)?.roleId ?? "")?.name ?? "",
-    roleFrom: (() => { const e = engine.empById.get(p.id); return !e?.roleId ? "" : !e.roleFrom ? "Own" : engine.teamLabel(e.roleFrom); })(),
+    role: (engine.empById.get(p.id)?.roleIds ?? []).map((id) => engine.roleById.get(id)?.name).filter(Boolean).join(", "),
     grade: engine.gradeById.get(p.gradeId ?? "")?.name ?? "",
     manager: p.managerId ? name.get(p.managerId) ?? "" : "", source: p.source === "directory" ? "ServiceNow" : "Manual",
     status: p.active ? "Active" : "Left",
@@ -52,15 +52,15 @@ export default async function PeopleSettings() {
   return (
     <>
       <PageHeader title="People & access"
-        description="Everyone in the app with their role, grade and manager, and the accounts that sign in. Access follows who people are: having people reporting to you makes you a manager." />
+        description="Everyone in the app with their manager, and the accounts that sign in. Access follows who people are: having people reporting to you makes you a manager. Coordinators, who approve new skills and categories, are named under Accounts." />
       <div className="grid gap-5">
         <Section title={`People (${people.filter((p) => p.active).length} active)`}
-          info="Usually from ServiceNow (Settings › ServiceNow), which keeps names, e-mails, designations and managers up to date. Role and grade are set here, by a people CSV, or by designation rules; the sync never overwrites them.">
+          info="Usually from ServiceNow (Settings › ServiceNow), which keeps names, e-mails, designations and managers up to date. A person's roles are not set here: their manager makes the team's roles and puts people in them (My team › People and roles).">
           <PeopleAdmin rows={personRows} readOnly={!!v?.demo}
-            roles={opts(engine.roles)} grades={opts(engine.grades)}
+            grades={opts(engine.grades)}
             managers={people.filter((p) => p.active).map((p) => ({ value: p.id, label: `${p.name}${p.title ? ` · ${p.title}` : ""}` }))} />
         </Section>
-        <Section title="Accounts" info="Who can sign in. People who sign in with single sign-on get an account by themselves on their first sign-in. The local admin account is kept for when single sign-on is down.">
+        <Section title="Accounts" info="Who can sign in, and what they are: an administrator (everything), a leader (reads the whole organisation), a coordinator (approves requests for new skills and categories) or an employee. People who sign in with single sign-on get an account by themselves on their first sign-in. The local admin account is kept for when single sign-on is down.">
           {v?.demo ? <p className="text-sm text-muted-foreground">Accounts are real, so they are not shown in demo mode.</p> : (
             <UsersAdmin rows={userRows}
               roles={ACCESS_ROLES.filter((r) => r.value !== "manager").map((r) => ({ value: r.value, label: `${r.label}: ${r.description}` }))}

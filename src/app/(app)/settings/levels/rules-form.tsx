@@ -15,6 +15,7 @@ export function SettingsForm({ initial }: { initial: Settings }) {
   return (
     <form className="grid max-w-xl gap-5" onSubmit={(e) => {
       e.preventDefault();
+      if (!Number.isInteger(s.fitPercent) || s.fitPercent < 1 || s.fitPercent > 100) { toast.error("The match needed is a positive whole number: 1 to 100."); return; }
       start(async () => {
         const r = await saveSettings({ ...s });
         if (r.ok) toast.success(r.message ?? "Saved"); else toast.error(r.error);
@@ -37,6 +38,14 @@ export function SettingsForm({ initial }: { initial: Settings }) {
           <Input id="amber" type="number" min={0} max={99} value={s.amberAt} onChange={(e) => setS({ ...s, amberAt: Number(e.target.value) })} />
         </Field>
       </div>
+      <Field label="Fits another team from (% of a role's skills)" htmlFor="fit" hint="A positive whole number, 1 to 100."
+        info="A manager sees where their people would also fit (My team › Fit in other teams): a person is listed for a role of another team when they hold at least this share of the skills that role asks for, at the level it asks for. 50 means half of them.">
+        <Input id="fit" type="number" min={1} max={100} step={1} className="w-32" value={s.fitPercent}
+          onChange={(e) => setS({ ...s, fitPercent: Number(e.target.value) })} />
+      </Field>
+      <ToggleField label="People see which other teams they would fit in" info="Off (the default): only a person's managers see where that person would also fit; the person does not. On: each person also sees it for themselves, on My skills and on their own page. It never shows anybody else's.">
+        <Switch id="fit-show" checked={!!s.membersSeeFit} onCheckedChange={(c) => setS({ ...s, membersSeeFit: c })} />
+      </ToggleField>
       <Button type="submit" className="justify-self-start" disabled={pending}>{pending && <Loader2 className="animate-spin" />}Save</Button>
     </form>
   );

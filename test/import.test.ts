@@ -86,7 +86,7 @@ test("first start of v2 imports v1: people, accounts, SSO, skills, ratings and h
   const people = await db.select().from(s.employee);
   assert.deepEqual(people.map((p) => p.id).sort(), ["e-ann", "e-bob", "e-cid", "e-dee"]);
   const bob = people.find((p) => p.id === "e-bob")!;
-  assert.deepEqual([bob.managerId, bob.userId, bob.roleId, bob.gradeId, bob.externalId, bob.userName], ["e-ann", "u-bob", "r-eng", "g-sr", "sys-bob", "bob.ray"]);
+  assert.deepEqual([bob.managerId, bob.userId, bob.gradeId, bob.externalId, bob.userName], ["e-ann", "u-bob", "g-sr", "sys-bob", "bob.ray"]);
   assert.deepEqual(people.find((p) => p.id === "e-ann")!.attributes, { employee_number: "1" });
   const users = await db.select().from(s.user);
   assert.deepEqual(users.map((u) => u.username ?? u.id).sort(), ["admin", "u-ann", "u-bob"], "no second admin seeded over the imported one");
@@ -98,7 +98,6 @@ test("first start of v2 imports v1: people, accounts, SSO, skills, ratings and h
   assert.deepEqual([r.validatedLevel, r.status, r.interest], [4, "validated", true]);
   assert.equal((await db.select().from(s.ratingEvent)).length, 1);
   assert.equal((await db.select().from(s.groupMember)).length, 1);
-  assert.equal((await db.select().from(s.roleSkill)).length, 1);
   assert.equal((await db.select().from(s.auditLog)).filter((a) => a.action === "save_sso").length, 1);
 });
 
@@ -112,6 +111,20 @@ test("units become teams: their needs go to the unit's manager, a hand-made unit
   const e = createEngine(await loadDatasetFrom(db));
   assert.deepEqual(e.membersOf("e-cid").map((x) => x.id), ["e-cid", "e-dee"]);
   assert.equal(e.teamLabel("e-cid"), "Cid Ng's team");
+});
+
+test("a v1 role becomes a role of the person's manager's team, with the skills it asked for", async () => {
+  const db = await getDb("live");
+  const e = createEngine(await loadDatasetFrom(db));
+  const bob = e.empById.get("e-bob")!;
+  assert.equal(bob.roleIds.length, 1);
+  const role = e.roleById.get(bob.roleIds[0])!;
+  assert.equal(role.managerId, "e-ann", "a role of Ann's team: Bob reports to her");
+  assert.ok(role.name.length > 0);
+  assert.ok(e.roleSkillsOf(role.id).length >= 1, "with the skills the v1 role asked for");
+  assert.ok(e.requiredSkillIds(bob).length >= 1);
+  const [row] = await db.select().from(s.appSetting).where(eq(s.appSetting.key, IMPORT_KEY));
+  assert.ok((row.value as { converted: { teamRoles: number } }).converted.teamRoles >= 1);
 });
 
 test("settings come across (single sign-on, ServiceNow, rules); v1 bookkeeping does not", async () => {

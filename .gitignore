@@ -40,5 +40,6 @@ id_ed25519*
 # --- never published: dependencies, caches, secrets, keys, local databases
 *.sqlite
 
-# the site skill catalogue names its teams: kept on the machine, never committed
-/docs/skills-catalogue.csv
+# a site's own skill lists (its catalogue, lists handed over to load): kept on the machine,
+# never committed. They are uploaded in Settings > Skills.
+/docs/skills-*.csv

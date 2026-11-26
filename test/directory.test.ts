@@ -11,7 +11,7 @@ delete process.env.DATABASE_URL;
 const { getDb, closeDb, schema: s } = await import("../src/db/index.ts");
 const { createServiceNow } = await import("../src/lib/directory/servicenow.ts");
 const { fetchDirectory, applyDirectory, runSync } = await import("../src/lib/directory/sync.ts");
-const { DEFAULT_DIRECTORY, photoUrl, sealPassword, directoryPassword, matchRoleRule } = await import("../src/lib/directory/config.ts");
+const { DEFAULT_DIRECTORY, photoUrl, sealPassword, directoryPassword, readDirectoryConfig } = await import("../src/lib/directory/config.ts");
 const { open } = await import("../src/lib/secret-box.ts");
 
 type Row = Record<string, string>;
@@ -134,46 +134,17 @@ test("a second run updates and deactivates people who left (never deletes)", asy
   reset();
 });
 
-test("designation rules: first match wins; they fill empty roles and keep hand-set ones unless told otherwise", async () => {
+test("the sync gives nobody a role: roles are each team's own, and settings that still hold designation rules lose them", async () => {
   const db = await getDb();
-  const [mgr] = await db.insert(s.jobRole).values({ name: "Manager" }).returning();
-  const [dev] = await db.insert(s.jobRole).values({ name: "Developer" }).returning();
-  const [senior] = await db.insert(s.grade).values({ name: "Senior", rank: 3 }).returning();
-  const rules = [
-    { op: "is" as const, text: "  engineering   MANAGER ", roleId: mgr.id, gradeId: senior.id },
-    { op: "contains" as const, text: "engineer", roleId: dev.id, gradeId: "" },
-  ];
-  assert.equal(matchRoleRule(rules, "Engineering Manager")?.roleId, mgr.id, "the first match wins; case and spacing are ignored");
-  assert.equal(matchRoleRule(rules, "Senior Engineer")?.roleId, dev.id);
-  assert.equal(matchRoleRule(rules, "CEO"), null);
-  assert.equal(matchRoleRule([{ op: "starts", text: "eng", roleId: dev.id, gradeId: "" }], "Senior Engineer"), null, "starts with means the start");
-  assert.equal(matchRoleRule([{ op: "starts", text: "senior", roleId: dev.id, gradeId: "" }], "Senior Engineer")?.roleId, dev.id);
-
-  const people = async () => Object.fromEntries((await db.select().from(s.employee)).map((p) => [p.userName, p]));
-  await db.update(s.employee).set({ roleId: mgr.id }).where(eq(s.employee.userName, "ben")); // set by hand
-  const withRules = { ...config, roleRules: rules };
-  const run = await runSync(db, sn, withRules, "manual", "tester");
+  await db.insert(s.appSetting).values({ key: "directory", value: { ...config, roleRules: [{ op: "is", text: "CEO", roleId: "gone", gradeId: "" }], roleRulesOverwrite: true } as never })
+    .onConflictDoUpdate({ target: s.appSetting.key, set: { value: { ...config, roleRules: [{ op: "is", text: "CEO", roleId: "gone", gradeId: "" }], roleRulesOverwrite: true } as never } });
+  const read = await readDirectoryConfig(db);
+  assert.ok(!("roleRules" in read) && !("roleRulesOverwrite" in read), "old designation rules are dropped when the settings are read");
+  const run = await runSync(db, sn, read, "manual", "tester");
   assert.equal(run.status, "ok", run.message);
-  let p = await people();
-  assert.equal(p.ana.roleId, mgr.id, "Engineering Manager matches the first rule");
-  assert.equal(p.ana.gradeId, senior.id, "with its grade");
-  assert.equal(p.bea.roleId, dev.id, "Engineer matches the second rule");
-  assert.equal(p.bea.gradeId, null, "a rule without a grade leaves the grade alone");
-  assert.equal(p.ben.roleId, mgr.id, "a role set by hand is kept by default");
-  assert.equal(p.boss.roleId, null, "no rule matches CEO");
-  assert.match(run.message ?? "", /2 roles set from designations/);
-
-  const again = await runSync(db, sn, withRules, "manual", "tester");
-  assert.doesNotMatch(again.message ?? "", /set from designations/, "nothing to change on the next run");
-
-  await runSync(db, sn, { ...withRules, roleRulesOverwrite: true }, "manual", "tester");
-  p = await people();
-  assert.equal(p.ben.roleId, dev.id, "with overwrite on, the rule replaces the hand-set role");
-
-  const stale = await runSync(db, sn, { ...config, roleRules: [{ op: "is", text: "CEO", roleId: "a-deleted-role", gradeId: "" }] }, "manual", "tester");
-  assert.equal(stale.status, "ok");
-  assert.match(stale.message ?? "", /no longer exists/, "a rule naming a deleted role is reported, not applied");
-  assert.equal((await people()).boss.roleId, null);
+  assert.doesNotMatch(run.message ?? "", /role/i);
+  assert.equal((await db.select().from(s.teamRoleMember)).length, 0, "nobody is put in a role by the sync");
+  await db.delete(s.appSetting).where(eq(s.appSetting.key, "directory"));
   reset();
 });
 

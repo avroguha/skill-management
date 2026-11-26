@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { FindBox, MenuButton, MenuTrail } from "@/components/menu-bar";
+import { FindBox, MenuTrail } from "@/components/menu-bar";
+import { MenuButton } from "@/components/menu-button";
 import { ViewAsBanner } from "@/components/view-as";
 import { DemoBanner, DemoSwitch } from "@/components/demo";
 import { requireViewer, getEngine, ACCESS_ROLES, DEMO_PERSONAS } from "@/lib/server";
@@ -23,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   // what they are, in a few words: a manager is anyone with people reporting to them
   const roleLabel = v.demo ? `Demo · ${v.demo.label}`
+    : v.assignedRole === "coordinator" ? `Coordinator${me && v.role === "manager" ? ` · ${engine.teamLabel(me.id)}` : ""}`
     : v.role === "manager" && me ? `Manager · ${engine.teamLabel(me.id)}`
       : v.role === "employee" && me?.managerId ? `Team member · ${engine.teamLabel(me.managerId)}`
         : ACCESS_ROLES.find((r) => r.value === v.role)?.label ?? v.role;
@@ -39,7 +41,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {v.demo && <DemoBanner persona={v.demo.persona} canReset={v.demo.canReset} personas={DEMO_PERSONAS.map((p) => ({ key: p.key, label: p.label, description: p.description }))} />}
           {v.viewAs && <ViewAsBanner name={v.name} role={roleLabel} by={v.viewAs.byName} expiresAt={v.viewAs.expiresAt} />}
           <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur">
-            <MenuButton />
+            {/* on a phone the menu is closed until asked for, so its button is here too */}
+            <MenuButton className="-ml-1 md:hidden" />
             <MenuTrail groups={menu} />
             <div className="ml-auto flex min-w-0 items-center gap-2">
               <FindBox groups={menu} tasks={tasks} />

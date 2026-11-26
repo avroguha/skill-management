@@ -2,18 +2,20 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Search, Send, Save, Star, X, MessageSquarePlus, Plus, Undo2, CircleCheck, Hourglass } from "lucide-react";
+import Link from "next/link";
+import { Search, Send, Save, Star, X, MessageSquarePlus, Undo2, CircleCheck, Hourglass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Info } from "@/components/info";
 import { cn } from "@/lib/utils";
 import { LevelPicker, type Level } from "@/components/level-picker";
 import { saveMySkills } from "@/app/actions/assessment";
-import { suggestSkill } from "@/app/actions/team";
 import { matchScore, sameName } from "@/lib/similar";
+import { AskDialog, type AskCatalogue } from "@/components/ask-dialog";
+import { ActionMenu } from "@/components/action-menu";
+import { skillActions } from "@/components/menus";
 
 export interface Row {
   skillId: string; skill: string; category: string; categorySort: number; required: boolean; target: number | null;
@@ -26,9 +28,9 @@ type Entry = { level: number | null; comment: string; interest: boolean };
 const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
 const PAGE = 40;
 
-export function MySkillsForm({ rows: initial, catalogue, levels, categories, required, managerName }: {
+export function MySkillsForm({ rows: initial, catalogue, levels, categories, required, managerName, ask, openRequests }: {
   rows: Row[]; catalogue: CatalogueItem[]; levels: Level[]; categories: { id: string; name: string }[];
-  required: number; managerName: string | null;
+  required: number; managerName: string | null; ask: AskCatalogue; openRequests: number;
 }) {
   const router = useRouter();
   const [busy, start] = useTransition();
@@ -95,9 +97,9 @@ export function MySkillsForm({ rows: initial, catalogue, levels, categories, req
 
       <LevelGuide levels={levels} />
 
-      <Group title="Your role asks for" count={asked.length}
-        info="The skills your job role (and grade) expects, with the level it expects: the target. Skills your team needs are listed here too. Rate every one; 0 is fine if you have never used it."
-        empty="Your role asks for no particular skills yet. Add the skills you have below.">
+      <Group title="Your roles ask for" count={asked.length}
+        info="The skills the roles you are in ask for, with the level they ask for: the target. Your manager made those roles and put you in them. Skills your team needs are listed here too. Rate every one; 0 is fine if you have never used it."
+        empty="Your roles ask for no particular skills yet. Add the skills you have below.">
         {asked.map((r) => <RowItem key={r.skillId} row={r} entry={entries[r.skillId]} levels={levels} onChange={(p) => set(r.skillId, p)} />)}
       </Group>
 
@@ -108,7 +110,7 @@ export function MySkillsForm({ rows: initial, catalogue, levels, categories, req
       </Group>
 
       <AddSkills catalogue={catalogue} have={new Set(rows.filter((r) => entries[r.skillId]?.level != null).map((r) => r.skillId))}
-        categories={categories} levels={levels} onAdd={add} />
+        categories={categories} levels={levels} onAdd={add} ask={ask} openRequests={openRequests} />
     </div>
   );
 }
@@ -154,6 +156,12 @@ function RowItem({ row, entry, levels, onChange, onRemove }: { row: Row; entry: 
   const [note, setNote] = useState(!!entry?.comment);
   const e = entry ?? { level: null, comment: "", interest: false };
   return (
+    <ActionMenu title={row.skill} actions={[
+      { key: "note", label: note ? "Hide the note" : "Add a note for your manager", icon: MessageSquarePlus, onSelect: () => setNote((x) => !x) },
+      { key: "star", label: e.interest ? "I no longer want to grow in this" : "I want to grow in this", icon: Star, onSelect: () => onChange({ interest: !e.interest }) },
+      ...(onRemove ? [{ key: "remove", label: "Remove this skill from my list", icon: X, destructive: true, onSelect: onRemove }] : []),
+      ...skillActions({ id: row.skillId, name: row.skill }).map((a, i) => (i === 0 ? { ...a, separator: true } : a)),
+    ]}>
     <li className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
       <div className="min-w-0">
         <div className="text-sm font-medium leading-snug break-words">{row.skill}</div>
@@ -182,19 +190,18 @@ function RowItem({ row, entry, levels, onChange, onRemove }: { row: Row; entry: 
         )}
       </div>
     </li>
+    </ActionMenu>
   );
 }
 
-function AddSkills({ catalogue, have, categories, levels, onAdd }: {
+function AddSkills({ catalogue, have, categories, levels, onAdd, ask, openRequests }: {
   catalogue: CatalogueItem[]; have: Set<string>; categories: { id: string; name: string }[]; levels: Level[];
-  onAdd: (item: CatalogueItem, level: number) => void;
+  onAdd: (item: CatalogueItem, level: number) => void; ask: AskCatalogue; openRequests: number;
 }) {
-  const router = useRouter();
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
   const [shown, setShown] = useState(PAGE);
-  const [busy, start] = useTransition();
-  const [newCat, setNewCat] = useState(categories[0]?.id ?? "");
+  const [asking, setAsking] = useState(false);
   // every word typed is looked for anywhere in the name, its category and its other names, in
   // any order; the skills that hold more of what was typed come first
   const results = useMemo(() => {
@@ -205,12 +212,6 @@ function AddSkills({ catalogue, have, categories, levels, onAdd }: {
   }, [catalogue, have, q, cat]);
   const exists = useMemo(() => catalogue.some((c) => sameName(c.name, q) || sameName(c.name.split(" › ").pop() ?? "", q) || (c.aliases ?? []).some((a) => sameName(a, q))), [catalogue, q]);
   useEffect(() => setShown(PAGE), [q, cat]);
-  const suggest = () => start(async () => {
-    const r = await suggestSkill({ name: q.trim(), categoryId: newCat });
-    if (!r.ok) { toast.error(r.error); return; }
-    toast.success(r.message ?? "Added.");
-    router.refresh();
-  });
   return (
     <section className="min-w-0 rounded-lg border bg-card">
       <h2 className="flex items-center gap-1.5 border-b px-4 py-3 text-sm font-semibold">Add skills you have
@@ -242,20 +243,17 @@ function AddSkills({ catalogue, have, categories, levels, onAdd }: {
               <span>{results.length ? "Not one of these?" : "Not in the catalogue."}</span>
               {q.trim().length >= 2 && !exists && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">Add “{q.trim()}” to</span>
-                  <Select value={newCat} onValueChange={setNewCat}>
-                    <SelectTrigger className="w-56" aria-label="Category for the new skill"><SelectValue /></SelectTrigger>
-                    <SelectContent>{categories.map((x) => <SelectItem key={x.id} value={x.id}>{x.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <Button size="sm" variant="outline" disabled={busy || !newCat} onClick={suggest}><Plus />Add it</Button>
-                  <Info label="About adding a new skill">Skill names are unique: look at what the search lists first. A manager&apos;s new skill joins the catalogue at once. Anyone else&apos;s waits for an administrator to approve it, then you can rate it.</Info>
+                  <Button size="sm" variant="outline" onClick={() => setAsking(true)}><Send />Ask for “{q.trim()}” as a new skill</Button>
+                  <Info label="About asking for a new skill">Skills are the same for everyone, so a new one is approved first by a coordinator. Look at what the search lists before asking: the skill may be there under another name. Once it is approved you can rate it.</Info>
                 </div>
               )}
             </li>
           )}
         </ul>
         {results.length > shown && <Button variant="outline" onClick={() => setShown((n) => n + PAGE * 2)}>Show more ({results.length - shown} left)</Button>}
+        {openRequests > 0 && <p className="text-xs text-muted-foreground">You asked for {openRequests} new skill{openRequests === 1 ? "" : "s"} that {openRequests === 1 ? "is" : "are"} not decided yet. <Link href="/requests" className="font-medium text-foreground underline-offset-2 hover:underline">See where {openRequests === 1 ? "it is" : "they are"}</Link>.</p>}
       </div>
+      {asking && <AskDialog catalogue={ask} initial={{ kind: "skill", name: q.trim(), categoryId: cat || undefined }} onClose={() => setAsking(false)} />}
     </section>
   );
 }

@@ -13,22 +13,20 @@ import {
   type DirectoryForm as Form, type TestResult,
 } from "@/app/actions/directory";
 import { cn } from "@/lib/utils";
-import type { RoleRule } from "@/lib/directory/config";
-import { RoleRules, type Option } from "./role-rules";
 
 interface Initial {
   enabled: boolean; instanceUrl: string; username: string; hasPassword: boolean; table: string; rootUserName: string;
   typeField: string; typeValues: string[]; extraQuery: string;
   fields: { userName: string; name: string; email: string; manager: string; title: string };
   extraFields: string[]; syncEveryHours: number;
-  roleRules: RoleRule[]; roleRulesOverwrite: boolean; importGroups: boolean; groupQuery: string;
+  importGroups: boolean; groupQuery: string;
 }
 
 function Field({ label, help, info, children, className }: { label: string; help?: string; info: string; children: React.ReactNode; className?: string }) {
   return <InfoField label={label} info={info} hint={help} className={className}>{children}</InfoField>;
 }
 
-export function DirectoryForm({ initial, roles, grades }: { initial: Initial; roles: Option[]; grades: Option[] }) {
+export function DirectoryForm({ initial }: { initial: Initial }) {
   const router = useRouter();
   const [f, setF] = useState({ ...initial, password: "", extraFieldsText: initial.extraFields.join(", ") });
   const [values, setValues] = useState<{ value: string; count: number }[] | null>(null);
@@ -42,7 +40,7 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
     enabled: f.enabled, instanceUrl: f.instanceUrl, username: f.username, password: f.password, table: f.table,
     rootUserName: f.rootUserName, typeField: f.typeField, typeValues: f.typeValues, extraQuery: f.extraQuery, fields: f.fields,
     extraFields: f.extraFieldsText.split(",").map((x) => x.trim()).filter(Boolean),
-    syncEveryHours: f.syncEveryHours, roleRules: f.roleRules, roleRulesOverwrite: f.roleRulesOverwrite,
+    syncEveryHours: f.syncEveryHours,
     importGroups: f.importGroups, groupQuery: f.groupQuery,
   });
   const run = (name: string, fn: () => Promise<void>) => start(async () => { setBusy(name); try { await fn(); } finally { setBusy(null); } });
@@ -93,7 +91,7 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
           <Field label="Display name" info="The field holding the person's name."><Input value={f.fields.name} onChange={(e) => setField("name", e.target.value)} /></Field>
           <Field label="E-mail" info="The field holding the e-mail address: how single sign-on and CSV files find people."><Input value={f.fields.email} onChange={(e) => setField("email", e.target.value)} /></Field>
           <Field label="Manager" info="The reference to the person's manager. The reporting lines are the teams."><Input value={f.fields.manager} onChange={(e) => setField("manager", e.target.value)} /></Field>
-          <Field label="Designation" info="The job title. Roles from designation (below) can give a role from it."><Input value={f.fields.title} onChange={(e) => setField("title", e.target.value)} /></Field>
+          <Field label="Designation" info="The job title, shown with the person everywhere."><Input value={f.fields.title} onChange={(e) => setField("title", e.target.value)} /></Field>
           <Field label="Also keep" help="Comma-separated, e.g. employee_number for the photo URL" info="More sys_user fields to store with each person, for the photo address below and the person's details."><Input value={f.extraFieldsText} onChange={(e) => set("extraFieldsText", e.target.value)} /></Field>
         </div>
       </div>
@@ -113,11 +111,6 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
         <label className="flex items-center gap-2 text-sm">every
           <Input type="number" min={0} max={168} className="h-8 w-20" value={f.syncEveryHours} onChange={(e) => set("syncEveryHours", Number(e.target.value))} />hours
         </label>
-      </div>
-
-      <div className="border-t pt-5">
-        <RoleRules rules={f.roleRules} overwrite={f.roleRulesOverwrite} roles={roles} grades={grades}
-          onChange={(r) => set("roleRules", r)} onOverwrite={(v) => set("roleRulesOverwrite", v)} />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -146,8 +139,7 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
           <div className="text-sm">
             <b>Connected.</b> Top-level user <b>{result.root.name}</b>{result.root.title && ` (${result.root.title})`}.{" "}
             <b className="tabular">{result.included}</b> people would come in, <b className="tabular">{result.excluded}</b> left out by the type filter
-            {result.truncated && " - stopped at the test limit"}.
-            {f.roleRules.length > 0 && <> Designation rules give <b className="tabular">{result.ruleHits}</b> of them a role.</>} Nothing was saved.
+            {result.truncated && " - stopped at the test limit"}. Nothing was saved.
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
             {Object.entries(result.byType).map(([t, n]) => (
@@ -161,7 +153,6 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
                 <th className="px-2 text-left font-medium">user_name</th><th className="px-2 text-left font-medium">Name</th>
                 <th className="px-2 text-left font-medium">Designation</th><th className="px-2 text-left font-medium">Manager</th>
                 <th className="px-2 text-left font-medium">E-mail</th><th className="px-2 text-left font-medium">Type</th>
-                <th className="px-2 text-left font-medium">Role from rules</th>
               </tr></thead>
               <tbody>
                 {result.sample.map((p) => (
@@ -170,7 +161,6 @@ export function DirectoryForm({ initial, roles, grades }: { initial: Initial; ro
                     <td className="px-2 tabular">{p.depth >= 0 ? p.depth : "–"}</td>
                     <td className="px-2 font-mono">{p.userName}</td><td className="px-2">{p.name}</td><td className="px-2">{p.title}</td>
                     <td className="px-2">{p.manager}</td><td className="px-2">{p.email}</td><td className="px-2">{p.userType}</td>
-                    <td className="px-2">{p.role || <span className="text-muted-foreground">–</span>}</td>
                   </tr>
                 ))}
               </tbody>

@@ -20,7 +20,8 @@ async function setCookie(userId: string, persona: DemoPersona) {
 }
 
 /** The demo person closest to someone's own role: a team member sees a team member first. */
-function startingPersona(real: { role: string }): DemoPersona {
+function startingPersona(real: { role: string; assignedRole?: string }): DemoPersona {
+  if (real.assignedRole === "coordinator") return "coordinator";
   return real.role === "admin" ? "admin" : real.role === "leader" ? "top" : real.role === "manager" ? "manager" : "member";
 }
 

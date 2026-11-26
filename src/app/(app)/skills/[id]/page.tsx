@@ -74,7 +74,7 @@ export default async function SkillPage({ params, searchParams }: { params: Prom
     });
   const coverage = stats.coverage.map((c) => ({
     team: engine.teamLabel(c.managerId), href: withParams("/team", { scope: c.managerId, tab: "needs" }),
-    level: c.level, have: c.count, need: c.headcount, kind: c.explicit ? "Set by the manager" : "Implied by roles",
+    level: c.level, have: c.count, need: c.headcount, kind: c.explicit ? "Set by the manager" : "From the roles",
     state: c.critical ? "Nobody" : c.shortfall ? `Short ${c.shortfall}` : c.spof ? "One holder" : "Covered",
   }));
 
@@ -83,7 +83,7 @@ export default async function SkillPage({ params, searchParams }: { params: Prom
       {header}
       <FilterBar><UnitPicker units={scopeOptions(engine, v).map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" /></FilterBar>
       <KpiTiles items={[
-        { label: "Role asks for it", value: String(required.length), hint: "people here", info: "People here whose role (and grade) asks for this skill." },
+        { label: "Role asks for it", value: String(required.length), hint: "people here", info: "People here who are in a role that asks for this skill." },
         { label: "On target", value: required.length ? `${Math.round((met / required.length) * 100)}%` : "–", hint: `${met} of ${required.length}`, info: "Of those, the share whose confirmed level reaches their target." },
         { label: "3 or above", value: String(holders3), hint: "confirmed", info: "People here confirmed at Proficient (3) or above, whether their role asks for it or not." },
         { label: "Not rated", value: String(stats.unassessed), hint: "of those whose role asks", info: "People whose role asks for it who have no confirmed level yet." },

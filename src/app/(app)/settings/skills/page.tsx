@@ -1,4 +1,5 @@
-import { asc, count } from "drizzle-orm";
+import Link from "next/link";
+import { asc, count, eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { Section } from "@/components/kpi";
@@ -28,7 +29,7 @@ export default async function SkillsSettings() {
     return p ? `${p.name} › ${s.name}` : s.name;
   };
   const rated = new Map(ratingCounts.map((r) => [r.skillId, r.n]));
-  const drafts = skills.filter((s) => s.status === "draft").length;
+  const waiting = (await db.select({ id: schema.catalogueRequest.id }).from(schema.catalogueRequest).where(eq(schema.catalogueRequest.status, "pending"))).length;
 
   return (
     <>
@@ -42,8 +43,10 @@ export default async function SkillsSettings() {
             <Button asChild variant="outline" size="sm"><a href="/api/export/starter-skills"><Download />Download the starter catalogue</a></Button>
             <Info label="About the two downloads">
               <b>The catalogue</b> is every skill here now: the easiest template, and a backup before a big change.
-              <b> The starter catalogue</b> is 96 common IT and professional skills, loaded by itself on a fresh
-              install. Upload it here to add any you do not have yet; skills you already have are updated, nothing is removed.
+              <b> The starter catalogue</b> is what the app ships with: technical skills grouped by technology (cloud,
+              software, data, security, operations) and three categories every kind of work needs: Managerial, Analytical
+              and Business. It is loaded by itself on a fresh install. Upload it here to add any you do not have yet;
+              skills you already have are updated, nothing is removed. To go back to it entirely, use Reset in Data &amp; backups.
             </Info>
           </div>
           <ImportForm kinds={[{ kind: "skills", columns: COLUMNS.skills, description: DESCRIPTIONS.skills }]} />
@@ -54,8 +57,8 @@ export default async function SkillsSettings() {
           </ul>
         </Section>
         <Section title={`Skills (${skills.filter((x) => x.status === "active").length} active)`}
-          description={drafts ? `${drafts} suggested by people, waiting for you (status: draft). Approve with ✓, or merge into an existing skill.` : undefined}
-          info="Every skill in the catalogue. Only skills without active sub-skills are rated; a skill with sub-skills is a heading. Retire a skill rather than deleting it: its history stays. Merge folds a duplicate into another skill, ratings and all.">
+          description={waiting ? <>{waiting} request{waiting === 1 ? "" : "s"} for a new skill or category {waiting === 1 ? "waits" : "wait"} for a decision: <Link href="/requests?tab=approve" className="font-medium text-foreground underline-offset-2 hover:underline">open Requests</Link>.</> : undefined}
+          info="Every skill in the catalogue: the same for every team. Administrators add and change skills here; everyone else asks for a new one under Requests, and a coordinator approves it. Only skills without active sub-skills are rated; a skill with sub-skills is a heading. Retire a skill rather than deleting it: its history stays. Merge folds a duplicate into another skill, ratings and all.">
           <SkillsAdmin
             rows={skills.map((s) => ({
               id: s.id, name: s.name, categoryId: s.categoryId, parentId: s.parentId ?? "none", description: s.description,
@@ -69,7 +72,7 @@ export default async function SkillsSettings() {
               { key: "aliases", header: "Also known as", kind: "muted", info: "Other names for it: search finds the skill by these too." },
               { key: "subs", header: "Sub-skills", kind: "number", align: "right" },
               { key: "ratings", header: "Ratings", kind: "number", align: "right", info: "How many people have rated it. A skill with ratings cannot be deleted, only retired or merged." },
-              { key: "status", header: "Status", kind: "badge", facet: true, info: "Active: people can rate it. Draft: suggested by someone, waiting for approval. Retired: no longer offered; history stays." },
+              { key: "status", header: "Status", kind: "badge", facet: true, info: "Active: people can rate it. Retired: no longer offered; history stays." },
             ]}
             fields={[
               { name: "name", label: "Name", info: "What people see and search for. Unique (within its skill, for a sub-skill): skills with a name like it are listed as you type.",
@@ -79,15 +82,15 @@ export default async function SkillsSettings() {
                 options: skills.filter((s) => !s.parentId && s.status !== "retired").map((s) => ({ value: s.id, label: `${s.name} (${catName.get(s.categoryId)})` })) },
               { name: "aliases", label: "Also known as", placeholder: "K8s, kube", info: "Other names, comma-separated. Search finds the skill by these, and the CSV upload uses them to spot duplicates." },
               { name: "description", label: "Description", type: "textarea", info: "One or two lines on what it covers, shown on the skill's page." },
-              { name: "status", label: "Status", type: "select", half: true, info: "Active: rated. Draft: suggested, waiting for approval. Retired: no longer offered; history stays.", options: [
-                { value: "active", label: "Active" }, { value: "draft", label: "Draft (suggested)" }, { value: "retired", label: "Retired" },
+              { name: "status", label: "Status", type: "select", half: true, info: "Active: rated. Retired: no longer offered; history stays.", options: [
+                { value: "active", label: "Active" }, { value: "retired", label: "Retired" },
               ] },
               { name: "sort", label: "Order", type: "number", half: true, info: "Position within its category; lower comes first." },
             ]}
             targets={skills.filter((s) => s.status === "active").map((s) => ({ value: s.id, label: label(s.id) })).sort((a, b) => a.label.localeCompare(b.label))}
           />
         </Section>
-        <Section title="Categories" info="The groups skills are shown in, in this order. A category with skills cannot be deleted.">
+        <Section title="Categories" info="The groups skills are shown in, in this order: the same for every team. A category with skills cannot be deleted. Everyone else asks for a new category under Requests.">
           <AdminCrud noun="category"
             rows={cats.map((c) => ({ id: c.id, name: c.name, description: c.description, sort: c.sort, skills: skills.filter((s) => s.categoryId === c.id).length }))}
             columns={[

@@ -46,7 +46,7 @@ export function KpiTiles({ items, className }: { items: Kpi[]; className?: strin
   );
 }
 
-export function Section({ title, description, info, actions, children, className, id }: {
+export function Section({ title, description, info, actions, children, className, id, style, headClassName }: {
   title: React.ReactNode;
   description?: React.ReactNode;
   /** what this section shows: the (i) next to the title */
@@ -55,10 +55,14 @@ export function Section({ title, description, info, actions, children, className
   children: React.ReactNode;
   className?: string;
   id?: string;
+  /** e.g. a role's tint (--tint), for the tint classes */
+  style?: React.CSSProperties;
+  /** for the band the title is in */
+  headClassName?: string;
 }) {
   return (
-    <section id={id} className={cn("min-w-0 scroll-mt-16 rounded-lg border bg-card", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
+    <section id={id} style={style} className={cn("min-w-0 scroll-mt-16 rounded-lg border bg-card", className)}>
+      <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3", headClassName)}>
         <div className="min-w-0">
           <h2 className="flex items-center gap-1.5 text-sm font-semibold">{title}{info ? <Info label="About this section">{info}</Info> : null}</h2>
           {description && <p className="text-xs text-muted-foreground">{description}</p>}

@@ -1,4 +1,4 @@
-// Skill and role names are unique: two names are the same when they differ only in case,
+// Skill names are unique: two names are the same when they differ only in case,
 // accents, spacing or punctuation. A sub-skill's name is unique within its skill (AWS > IAM
 // and Azure > IAM are two skills; two "IAM" under AWS are not).
 import { ne } from "drizzle-orm";
@@ -21,8 +21,3 @@ export async function anySkillNamed(db: DB, name: string) {
   return rows.find((r) => sameName(r.name, name)) ?? rows.find((r) => r.aliases.some((a) => sameName(a, name))) ?? null;
 }
 
-/** The role that already has this name, if any. */
-export async function roleNamed(db: DB, name: string, exceptId?: string) {
-  const roles = await db.select({ id: s.jobRole.id, name: s.jobRole.name }).from(s.jobRole);
-  return roles.find((r) => r.id !== exceptId && sameName(r.name, name)) ?? null;
-}

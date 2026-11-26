@@ -17,7 +17,7 @@ const r = (employeeId: string, skillId: string, status: Rating["status"], level 
   interest: false, status,
 });
 const emp = (id: string, managerId: string | null) =>
-  ({ id, name: id[0].toUpperCase() + id.slice(1), email: `${id}@x`, title: "", roleId: "eng", gradeId: null, managerId, active: true, teamName: "" });
+  ({ id, name: id[0].toUpperCase() + id.slice(1), email: `${id}@x`, title: "", roleIds: ["eng"], gradeId: null, managerId, active: true, teamName: "" });
 
 function engine(over: Partial<Dataset> = {}) {
   return createEngine({
@@ -29,11 +29,11 @@ function engine(over: Partial<Dataset> = {}) {
       { id: "ec2", name: "EC2", categoryId: "c", parentId: null, status: "active" },
       { id: "k8s", name: "Kubernetes", categoryId: "c", parentId: null, status: "active" },
     ],
-    roles: [{ id: "eng", name: "Engineer" }],
+    roles: [{ id: "eng", name: "Engineer", managerId: "ann" }],
     grades: [],
     roleSkills: [
-      { roleId: "eng", gradeId: null, skillId: "ec2", target: 3, mandatory: true },
-      { roleId: "eng", gradeId: null, skillId: "k8s", target: 2, mandatory: true },
+      { roleId: "eng", skillId: "ec2", target: 3, mandatory: true },
+      { roleId: "eng", skillId: "k8s", target: 2, mandatory: true },
     ],
     teamNeeds: [],
     ratings: [r("cat", "ec2", "submitted"), r("cat", "k8s", "submitted"), r("fay", "ec2", "validated"), r("fay", "k8s", "validated")],
@@ -78,12 +78,30 @@ test("a manager with a team need that nobody meets is pointed at it", () => {
   assert.ok(!keys(steps).includes("needs"));
 });
 
-test("a manager whose people have no role is asked to choose one for the team", () => {
-  const noRole = engine({ employees: [emp("tia", null), emp("ann", "tia"), { ...emp("bob", "ann"), roleId: null }, { ...emp("cat", "ann"), roleId: null }] });
-  const steps = nextSteps(noRole, as("ann", { role: "manager" }));
-  const step = steps.find((s) => s.key === "team-role")!;
-  assert.equal(step.title, "Choose a role for your team");
-  assert.ok(!keys(nextSteps(engine(), as("ann", { role: "manager" }))).includes("team-role"), "not when everyone has one");
+test("a manager whose team has no roles is asked to make them; with roles, to put the people without one in a role", () => {
+  const nobody = [emp("tia", null), emp("ann", "tia"), { ...emp("bob", "ann"), roleIds: [] }, { ...emp("cat", "ann"), roleIds: [] }];
+  const none = nextSteps(engine({ employees: nobody, roles: [], roleSkills: [] }), as("ann", { role: "manager" })).find((s) => s.key === "team-role")!;
+  assert.equal(none.title, "Make the roles of your team");
+  assert.equal(none.href, "/team?tab=people");
+  const some = nextSteps(engine({ employees: [emp("tia", null), emp("ann", "tia"), emp("bob", "ann"), { ...emp("cat", "ann"), roleIds: [] }] }), as("ann", { role: "manager" })).find((s) => s.key === "team-role")!;
+  assert.equal(some.title, "Put 1 person in a role");
+  assert.ok(!keys(nextSteps(engine(), as("ann", { role: "manager" }))).includes("team-role"), "not when everyone is in one");
+});
+
+test("changes to a team that are not confirmed yet come first for its manager", () => {
+  const steps = nextSteps(engine(), as("ann", { role: "manager" }), null, { teamChanges: 3 });
+  assert.equal(steps[0].key, "review");
+  assert.match(steps[0].title, /Confirm 3 changes to your team/);
+  assert.equal(steps[0].href, "/team?tab=review");
+  assert.ok(!keys(nextSteps(engine(), as("ann", { role: "manager" }))).includes("review"));
+});
+
+test("requests: a coordinator is told what waits for a decision; an asker what came back", () => {
+  const approve = nextSteps(engine(), as("fay"), null, { requestsToApprove: 2 });
+  assert.ok(keys(approve).includes("approve"));
+  assert.match(approve.find((s) => s.key === "approve")!.title, /Decide on 2 requests/);
+  const back = nextSteps(engine(), as("fay"), null, { requestsReturned: 1 });
+  assert.equal(back.find((s) => s.key === "returned")!.href, "/requests");
 });
 
 test("a leader sees how far the organisation has got", () => {
@@ -94,19 +112,13 @@ test("a leader sees how far the organisation has got", () => {
 test("an administrator is shown what the app still needs, and nothing once it is set up", () => {
   const e = engine();
   const admin = as(null, { role: "admin", allPeople: true });
-  const todo = nextSteps(e, admin, { ssoActive: false, emailOn: false, draftSkills: 2, skills: 10 });
-  assert.deepEqual(keys(todo), ["drafts", "sso", "email"]);
-  const empty = nextSteps(createEngine({ ...emptyDataset() }), admin, { ssoActive: true, emailOn: true, draftSkills: 0, skills: 0 });
+  const todo = nextSteps(e, admin, { ssoActive: false, emailOn: false, skills: 10 });
+  assert.deepEqual(keys(todo), ["sso", "email"]);
+  const empty = nextSteps(createEngine({ ...emptyDataset() }), admin, { ssoActive: true, emailOn: true, skills: 0 });
   assert.deepEqual(keys(empty), ["people", "skills"]);
-  const done = nextSteps(e, admin, { ssoActive: true, emailOn: true, draftSkills: 0, skills: 10 });
+  const done = nextSteps(e, admin, { ssoActive: true, emailOn: true, skills: 10 });
   assert.deepEqual(keys(done), ["explore"]);
   assert.equal(done[0].kind, "info");
-});
-
-test("people without a role are an administrator's step", () => {
-  const e = engine({ employees: [emp("tia", null), { ...emp("bob", "tia"), roleId: null }] });
-  const steps = nextSteps(e, as(null, { role: "admin", allPeople: true }), { ssoActive: true, emailOn: true, draftSkills: 0, skills: 10 });
-  assert.deepEqual(keys(steps), ["roles"]);
 });
 
 function emptyDataset(): Dataset {

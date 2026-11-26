@@ -1,13 +1,16 @@
-// My skills: rate your own skills (0-5) and send them to your manager. The skills your role
-// asks for first, then the others you have, then the whole catalogue to search and add from,
+// My skills: rate your own skills (0-5) and send them to your manager. The skills your roles
+// ask for first, then the others you have, then the whole catalogue to search and add from,
 // on the same page - nothing hidden behind a pop-up.
-import Link from "next/link";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { PageHeader } from "@/components/page-header";
 import { Empty } from "@/components/heatmap";
 import { requireViewer, getEngine } from "@/lib/server";
 import { getLevels } from "@/lib/levels";
+import { getAskCatalogue } from "@/lib/catalogue-view";
+import { Section } from "@/components/kpi";
+import { RoleChip } from "@/components/role-chip";
+import { withParams } from "@/lib/views";
 import { MySkillsForm, type Row, type CatalogueItem } from "./form";
 
 export const metadata = { title: "My skills" };
@@ -45,13 +48,19 @@ export default async function MySkillsPage() {
   const catalogue: CatalogueItem[] = [...engine.skillById.values()].filter((s) => engine.isRateable(s.id))
     .map((s) => ({ id: s.id, name: engine.skillLabel(s.id), category: cat(s.id)?.name ?? "", categoryId: s.categoryId, aliases: aliases.get(s.id) ?? [] }))
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  const manager = me.managerId ? engine.empById.get(me.managerId) : undefined;
   const progress = engine.progress(me);
   const assesses = engine.assesses(me);
-  const manager = me.managerId ? engine.empById.get(me.managerId) : undefined;
-  const role = me.roleId ? engine.roleById.get(me.roleId) : undefined;
-  const roleNote = role
-    ? <>Your role is <Link href={`/roles/${role.id}`} className="font-medium text-foreground hover:underline">{role.name}</Link>{me.roleFrom && me.roleFrom !== me.id ? ` (the role of ${engine.teamLabel(me.roleFrom)})` : ""}. </>
-    : assesses ? <>You have no role yet, so no particular skills are asked of you: your manager chooses the team&apos;s role. </> : null;
+  const roles = me.roleIds.map((id) => engine.roleById.get(id)).filter((r) => !!r);
+  const roleNote = roles.length
+    ? <>You are in {roles.length === 1 ? "the role" : "the roles"} {roles.map((r, i) => (
+      <span key={r.id}>{i > 0 ? (i === roles.length - 1 ? " and " : ", ") : ""}<RoleChip name={r.name} tint={engine.roleTint(r.id)} href={`${withParams("/roles", { team: me.managerId })}#${r.id}`} /></span>
+    ))} of {manager ? engine.teamLabel(manager.id) : "your team"}. </>
+    : assesses ? <>You are in no role yet, so no particular skills are asked of you: your manager puts you in one. You can already add the skills you have. </> : null;
+  const myRequests = await db.select({ id: schema.catalogueRequest.id }).from(schema.catalogueRequest)
+    .where(and(eq(schema.catalogueRequest.requestedById, v.viewAs ? v.viewAs.byUserId : v.userId), inArray(schema.catalogueRequest.status, ["pending", "returned"])));
+  // which other teams you would fit in: shown to you only when an administrator switched it on
+  const fits = engine.settings.membersSeeFit ? engine.roleFits(me, engine.settings.fitPercent, 6) : [];
 
   return (
     <>
@@ -61,7 +70,26 @@ export default async function MySkillsPage() {
           : "As a manager you are not asked to rate yourself. You can still add the skills you have: they count in your team's capability."}</>} />
       <MySkillsForm rows={rows} catalogue={catalogue} levels={levels}
         categories={[...engine.categoryById.values()].sort((a, b) => a.sort - b.sort).map((c) => ({ id: c.id, name: c.name }))}
-        required={progress.required} managerName={manager?.active ? manager.name : null} />
+        required={progress.required} managerName={manager?.active ? manager.name : null} ask={await getAskCatalogue()} openRequests={myRequests.length} />
+      {engine.settings.membersSeeFit && (
+        <Section className="mt-5" title="Where your skills would also fit"
+          info={`Roles of other teams whose skills you already hold at the level asked, from ${engine.settings.fitPercent}% of the role's skills upwards, counting the levels your manager confirmed. The manager named is the one you would be under. It shows capability only: whether anyone moves is a conversation. Only you and your managers see this.`}>
+          {fits.length ? (
+            <ul className="grid gap-2.5 text-sm sm:grid-cols-2">
+              {fits.map((f) => (
+                <li key={f.roleId} className="flex items-start justify-between gap-3 rounded-md border px-3 py-2">
+                  <div className="min-w-0">
+                    <div><RoleChip name={engine.roleById.get(f.roleId)?.name ?? ""} tint={engine.roleTint(f.roleId)} /> <span className="text-muted-foreground">in {engine.teamLabel(f.managerId)}</span></div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">under {engine.empById.get(f.managerId)?.name} · you have {f.matched.length} of its {f.matched.length + f.missing.length} skills
+                      {f.missing.length ? ` · not yet: ${f.missing.slice(0, 3).map((m) => engine.skillLabel(m.skillId)).join(", ")}${f.missing.length > 3 ? ` +${f.missing.length - 3}` : ""}` : ""}</div>
+                  </div>
+                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold tabular">{f.pct}%</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="text-sm text-muted-foreground">No role of another team matches your confirmed skills at {engine.settings.fitPercent}% or more yet.</p>}
+        </Section>
+      )}
     </>
   );
 }

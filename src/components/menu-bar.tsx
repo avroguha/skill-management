@@ -1,28 +1,16 @@
 "use client";
-// The top bar's part of the menu: the Menu button (opens and closes the menu), "you are
-// here" (menu entry › sub menu entry) and Find, which answers "where do I ...?" in the
-// person's own words. All three read the same menu the sidebar is drawn from.
+// The top bar's part of the menu: "you are here" (menu entry › sub menu entry) and Find,
+// which answers "where do I ...?" in the person's own words. Both read the same menu the
+// sidebar is drawn from. The Menu button itself is in components/menu-button.tsx.
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight, Menu, Search } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { useSidebar } from "@/components/ui/sidebar";
 import { MENU_ICONS } from "@/components/app-sidebar";
 import { locate, type MenuGroup, type Task } from "@/lib/menu";
 import { substringFilter } from "@/lib/search";
-
-export function MenuButton() {
-  const { toggleSidebar, state, isMobile, openMobile } = useSidebar();
-  const open = isMobile ? openMobile : state === "expanded";
-  return (
-    <Button variant="outline" size="sm" className="-ml-1 h-8 shrink-0" onClick={toggleSidebar} aria-expanded={open}
-      aria-label={open ? "Close the menu" : "Open the menu"} title={open ? "Close the menu (Ctrl+B)" : "Open the menu (Ctrl+B)"}>
-      <Menu />Menu
-    </Button>
-  );
-}
 
 /** Where you are: the menu entry, then the sub menu entry. */
 export function MenuTrail({ groups }: { groups: MenuGroup[] }) {
