@@ -61,7 +61,7 @@ export function Section({ title, description, info, actions, children, className
   headClassName?: string;
 }) {
   return (
-    <section id={id} style={style} className={cn("min-w-0 scroll-mt-16 rounded-lg border bg-card", className)}>
+    <section id={id} style={style} className={cn("min-w-0 scroll-mt-[calc(var(--app-top,3rem)+1rem)] rounded-lg border bg-card", className)}>
       <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3", headClassName)}>
         <div className="min-w-0">
           <h2 className="flex items-center gap-1.5 text-sm font-semibold">{title}{info ? <Info label="About this section">{info}</Info> : null}</h2>

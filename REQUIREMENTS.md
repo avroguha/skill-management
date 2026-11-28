@@ -130,6 +130,30 @@ The owner's handwritten notes and what was built for each. This replaces the 202
 | An admin option to revert all changes back to out-of-the-box data; also reset a particular data point such as assessments or a team | Settings › Data & backups › Reset |
 | A manager sees if someone fits in a different team, and under whom, at a 50% skills match; the 50% is a setting, positive numbers only | My team › Fit in other teams; Settings › Levels & rules |
 
+## Usability pass (owner, 2026-11-28: "relook at the UI", then "Build all 17")
+
+Found by walking the demo as a team member, a manager and an administrator, at 1440×900 and on a phone.
+
+| What was wrong or slow | What changed |
+|---|---|
+| My skills: the Save / Send bar slid under the demo bar | The top bars report their height (`--app-top`, `StickyTop` in `menu-bar.tsx`); the bar sticks below them |
+| No page while loading, a bare error page on a failure | `(app)/loading.tsx`, `error.tsx` (Try again, Home) and `not-found.tsx`, all inside the menu; an address that matches no page (`app/not-found.tsx`, a real 404) and a failure of the frame itself, e.g. the database not answering (`app/global-error.tsx`) get their own plain pages |
+| 0% on target for people whose ratings only wait for their manager | `engine.onTargetOf`: empty until something of theirs is confirmed (People, My team, the grid, a person's page, Home); test in `engine.test.ts` |
+| Settings › Overview ticked coordinators while saying there were none (demo) | The demo says it has its own coordinator |
+| People: two searches, two team and two role filters | One row: the page's search and filters inside the table's row; the table's own search is off (`search={false}`) |
+| My skills: every note an open box, four skills a screen | A note is one line under the skill, a box only while written |
+| Send always the main button | It counts what it would send; with nothing new it steps back and the bar says *Sent* or *Nothing new to send* |
+| The draft banner on every team section, and the Next button on the page it points to | The banner only on People and roles and Team needs; the Next button hides on its own page (`HideHere`) |
+| The menu did not fit a laptop screen | Tighter rows; under 976px of height only the open entry keeps its second line (the rest show it on hover) |
+| Insights one 5,100px page, cells and tiles not clickable | *On this page* line, the worst 5 shortfalls with *Show all*, tiles and cells open their detail (now ~3,100px) |
+| Small buttons on a phone; the team's section strip hid four sections | 44px on touch screens (`@media (pointer: coarse)`); the strip fades on the side with more |
+| A team member's Home had no numbers | Rated, Confirmed and On target tiles, each to My skills |
+| No Remind on a person's page; the Role tile repeated the header | Remind for their own manager; the grade moved into the header; the Role tile only when they are in none |
+| The confirm page explained one of its three marks | Filled, dashed and the line under, all said |
+| Waiting ratings faint and italic on hatching; *Not assessed* drawn through | A plain cell with their own number; a dashed label, *Waiting to confirm* when it is |
+| No way past the menu by keyboard | *Skip to the page*, the first Tab stop |
+| Menu second lines too pale (4.2:1) | Darker (above 4.5:1) |
+
 ## The Menu button, role colours, who sees what (owner, 2026-11-26)
 
 | What the owner asked | Where it is |

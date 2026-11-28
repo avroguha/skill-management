@@ -2,7 +2,7 @@
 // The top bar's part of the menu: "you are here" (menu entry › sub menu entry) and Find,
 // which answers "where do I ...?" in the person's own words. Both read the same menu the
 // sidebar is drawn from. The Menu button itself is in components/menu-button.tsx.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, Search } from "lucide-react";
@@ -11,6 +11,32 @@ import { Command, CommandDialog, CommandEmpty, CommandGroup, CommandInput, Comma
 import { MENU_ICONS } from "@/components/app-sidebar";
 import { locate, type MenuGroup, type Task } from "@/lib/menu";
 import { substringFilter } from "@/lib/search";
+
+/** The bars that stay at the top (demo, view-as, the header). Their height differs (the demo bar
+ *  wraps on a phone), so it is measured and given to the page as --app-top: whatever sticks
+ *  below them (the Save bar of My skills) sticks at that height, never under them. */
+export function StickyTop({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty("--app-top", `${el.offsetHeight}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    set();
+    return () => ro.disconnect();
+  }, []);
+  return <div ref={ref} className="sticky top-0 z-20">{children}</div>;
+}
+
+/** Hides what it holds on the page `href` leads to (same path, and every parameter it names). */
+export function HideHere({ href, children }: { href: string; children: React.ReactNode }) {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const [p, q = ""] = href.split("?");
+  const here = pathname === p && [...new URLSearchParams(q)].every(([k, v]) => params.get(k) === v);
+  return here ? null : <>{children}</>;
+}
 
 /** Where you are: the menu entry, then the sub menu entry. */
 export function MenuTrail({ groups }: { groups: MenuGroup[] }) {

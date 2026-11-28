@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -63,6 +63,14 @@ export function MySkillsForm({ rows: initial, catalogue, levels, categories, req
   const asked = rows.filter((r) => r.required || r.teamNeed).sort((a, b) => a.categorySort - b.categorySort || a.skill.localeCompare(b.skill));
   const other = rows.filter((r) => !r.required && !r.teamNeed && (entries[r.skillId]?.level != null || r.confirmed != null));
   const ratedRequired = rows.filter((r) => r.required && entries[r.skillId]?.level != null).length;
+  // what Send would send: a level not sent yet, saved as a draft, sent back, or changed since
+  const toSend = rows.filter((r) => {
+    const e = entries[r.skillId];
+    if (e?.level == null) return false;
+    return e.level !== r.level || e.comment !== r.comment || r.status == null || r.status === "draft" || r.status === "returned";
+  }).length;
+  const waiting = rows.filter((r) => r.status === "submitted").length;
+  const first = managerName?.split(" ")[0];
 
   const submit = (send: boolean) => start(async () => {
     const list = rows.map((r) => ({ skillId: r.skillId, ...(entries[r.skillId] ?? { level: null, comment: "", interest: false }) }));
@@ -76,7 +84,7 @@ export function MySkillsForm({ rows: initial, catalogue, levels, categories, req
   return (
     <div className="grid gap-5">
       {/* the bar that stays in view: how far, save, send */}
-      <div className="sticky top-12 z-10 -mx-4 flex flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2.5 backdrop-blur md:-mx-6 md:px-6">
+      <div className="sticky top-[var(--app-top,3rem)] z-10 -mx-4 flex flex-wrap items-center gap-3 border-b bg-background/95 px-4 py-2.5 backdrop-blur md:-mx-6 md:px-6">
         {required > 0 && (
           <div className="flex min-w-48 flex-1 items-center gap-2 text-sm">
             <Progress value={(ratedRequired / required) * 100} className="h-2 max-w-60 flex-1" aria-label="Skills rated" />
@@ -85,9 +93,11 @@ export function MySkillsForm({ rows: initial, catalogue, levels, categories, req
           </div>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {dirty && <span className="text-xs text-muted-foreground">Not saved yet</span>}
+          {dirty ? <span className="text-xs text-muted-foreground">Not saved yet</span>
+            : !toSend && <span className="flex items-center gap-1 text-xs text-muted-foreground">{waiting ? <><Hourglass className="size-3.5" />Sent: {waiting} waiting for {first ?? "your manager"}</> : <><CircleCheck className="size-3.5" />Nothing new to send</>}</span>}
           <Button variant="outline" disabled={busy || !dirty} onClick={() => submit(false)}><Save />Save</Button>
-          <Button disabled={busy} onClick={() => submit(true)}><Send />{managerName ? `Send to ${managerName.split(" ")[0]}` : "Save and finish"}</Button>
+          {/* the main button only while there is something to send; otherwise it stays for a stale rating to be sent again */}
+          <Button variant={toSend ? "default" : "outline"} disabled={busy} onClick={() => submit(true)}><Send />{managerName ? (toSend ? `Send ${toSend} to ${first}` : `Send again to ${first}`) : "Save and finish"}</Button>
           <Info label="About sending" side="bottom">
             <b>Save</b> keeps your levels as a draft only you see. <b>Send</b> gives every changed level to your manager, who agrees,
             changes it, or sends it back with a note. You get an e-mail either way. The confirmed level is the one that counts.
@@ -153,11 +163,16 @@ function StatusLine({ row, entry }: { row: Row; entry: Entry | undefined }) {
 }
 
 function RowItem({ row, entry, levels, onChange, onRemove }: { row: Row; entry: Entry | undefined; levels: Level[]; onChange: (p: Partial<Entry>) => void; onRemove?: () => void }) {
-  const [note, setNote] = useState(!!entry?.comment);
+  // the note: one line under the skill, a box only while it is being written
+  const [note, setNote] = useState(false);
+  // only ever opens: clicking away closes it. From the right-click menu the menu takes focus
+  // back as it closes, so the cursor is put in the box once it has
+  const box = useRef<HTMLTextAreaElement>(null);
+  const openNote = () => { setNote(true); setTimeout(() => box.current?.focus(), 50); };
   const e = entry ?? { level: null, comment: "", interest: false };
   return (
     <ActionMenu title={row.skill} actions={[
-      { key: "note", label: note ? "Hide the note" : "Add a note for your manager", icon: MessageSquarePlus, onSelect: () => setNote((x) => !x) },
+      { key: "note", label: entry?.comment ? "Change the note for your manager" : "Add a note for your manager", icon: MessageSquarePlus, onSelect: openNote },
       { key: "star", label: e.interest ? "I no longer want to grow in this" : "I want to grow in this", icon: Star, onSelect: () => onChange({ interest: !e.interest }) },
       ...(onRemove ? [{ key: "remove", label: "Remove this skill from my list", icon: X, destructive: true, onSelect: onRemove }] : []),
       ...skillActions({ id: row.skillId, name: row.skill }).map((a, i) => (i === 0 ? { ...a, separator: true } : a)),
@@ -171,22 +186,27 @@ function RowItem({ row, entry, levels, onChange, onRemove }: { row: Row; entry: 
           {row.teamNeed && <span>{row.teamNeed}</span>}
           <StatusLine row={row} entry={entry} />
         </div>
-        {note && (
-          <Textarea className="mt-2 min-h-14 text-sm" placeholder="A line for your manager: where you used it, a certificate…" maxLength={1000}
-            value={e.comment} onChange={(x) => onChange({ comment: x.target.value })} aria-label={`Note for ${row.skill}`} />
-        )}
+        {note ? (
+          <Textarea ref={box} autoFocus className="mt-2 min-h-14 text-sm" placeholder="A line for your manager: where you used it, a certificate…" maxLength={1000}
+            value={e.comment} onChange={(x) => onChange({ comment: x.target.value })} onBlur={() => setNote(false)} aria-label={`Note for ${row.skill}`} />
+        ) : e.comment ? (
+          <button type="button" onClick={() => setNote(true)} title="Change the note"
+            className="mt-1 block max-w-full truncate text-left text-xs text-muted-foreground hover:text-foreground">Your note: “{e.comment}”</button>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
         <LevelPicker value={e.level} onChange={(n) => onChange({ level: n })} levels={levels} label={`Your level in ${row.skill}`} target={row.target} />
         <Button type="button" size="icon" variant="ghost" className="size-9" aria-pressed={e.interest}
-          title={e.interest ? "You want to grow in this (click to undo)" : "I want to grow in this"} onClick={() => onChange({ interest: !e.interest })}>
+          title={e.interest ? "You want to grow in this (click to undo)" : "I want to grow in this"} aria-label={`I want to grow in ${row.skill}`} onClick={() => onChange({ interest: !e.interest })}>
           <Star className={cn("size-4", e.interest && "fill-amber-400 text-amber-500")} />
         </Button>
-        <Button type="button" size="icon" variant="ghost" className="size-9" title="Add a note for your manager" onClick={() => setNote((x) => !x)}>
+        <Button type="button" size="icon" variant="ghost" className="size-9" title={e.comment ? "Change the note for your manager" : "Add a note for your manager"} aria-label={e.comment ? `Change the note for ${row.skill}` : `Add a note for ${row.skill}`} aria-expanded={note}
+          // pressing it keeps the cursor in an open note, so the click can close it (instead of the blur closing and the click reopening)
+          onMouseDown={(x) => { if (note) x.preventDefault(); }} onClick={() => (note ? setNote(false) : openNote())}>
           <MessageSquarePlus className="size-4" />
         </Button>
         {onRemove && (
-          <Button type="button" size="icon" variant="ghost" className="size-9" title="Remove this skill" onClick={onRemove}><X className="size-4" /></Button>
+          <Button type="button" size="icon" variant="ghost" className="size-9" title="Remove this skill" aria-label={`Remove ${row.skill}`} onClick={onRemove}><X className="size-4" /></Button>
         )}
       </div>
     </li>

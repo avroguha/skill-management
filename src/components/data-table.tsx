@@ -144,7 +144,7 @@ function toCsv(columns: ColSpec[], rows: Row[]): string {
 
 export function DataTable({
   columns, rows, searchKeys, searchPlaceholder = "Search…", pageSize = 25, initialSort, emptyText = "Nothing to show.",
-  csvName, toolbar, dense, actions, rowMenu,
+  csvName, toolbar, dense, actions, rowMenu, search: showSearch = true,
 }: {
   columns: ColSpec[];
   rows: Row[];
@@ -160,6 +160,8 @@ export function DataTable({
   actions?: (row: Row) => React.ReactNode;
   /** more right-click actions for a row, shown first (from a client component) */
   rowMenu?: (row: Row) => MenuAction[];
+  /** its own search box; off where the page already searches */
+  search?: boolean;
 }) {
   const [sorting, setSorting] = useState<SortingState>(initialSort ? [{ id: initialSort.key, desc: !!initialSort.desc }] : []);
   const [filters, setFilters] = useState<ColumnFiltersState>([]);
@@ -233,12 +235,16 @@ export function DataTable({
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-2.5 left-2.5 size-3.5 text-muted-foreground" />
-          <Input value={search} onChange={(e) => { setSearch(e.target.value); table.setPageIndex(0); }} placeholder={searchPlaceholder} className="h-8 w-56 pl-8" aria-label="Search" />
-        </div>
+        {showSearch && (
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-2.5 left-2.5 size-3.5 text-muted-foreground" />
+            <Input value={search} onChange={(e) => { setSearch(e.target.value); table.setPageIndex(0); }} placeholder={searchPlaceholder} className="h-8 w-56 pl-8" aria-label="Search" />
+          </div>
+        )}
+        {/* without a search box of its own the page's filters come first, then the column filters */}
+        {!showSearch && toolbar}
         {columns.filter((c) => c.facet).map((c) => <Facet key={c.key} title={c.header} column={table.getColumn(c.key)!} />)}
-        {toolbar}
+        {showSearch && toolbar}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-muted-foreground tabular">{filtered.length} of {rows.length}</span>
           {csvName && <Button variant="ghost" size="sm" className="h-8" onClick={download}><Download className="size-3.5" />CSV</Button>}

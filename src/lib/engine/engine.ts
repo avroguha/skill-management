@@ -432,6 +432,12 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
    * How far a person's self-assessment has got: required skills rated, sent, confirmed,
    * and whether something still waits for them (not started, drafts, sent back, missing).
    */
+  /** A person's share of required skills on target; null while nothing of theirs is confirmed
+   *  (0% would read as failing when they are only waiting for their manager). */
+  function onTargetOf(emp: Employee): number | null {
+    return progress(emp).confirmed ? aggregate([emp]).pct : null;
+  }
+
   function progress(emp: Employee) {
     const req = requiredSkillIds(emp);
     const rs = ratingsByEmp.get(emp.id) ?? [];
@@ -706,7 +712,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       || (a.sort ?? 0) - (b.sort ?? 0) || skillLabel(a.id).localeCompare(skillLabel(b.id)));
     const rows = emps.map((e) => {
       const cells = Object.fromEntries(skills.map((s) => [s.id, cell(e, s.id)])) as Record<string, Cell>;
-      return { employee: e, cells, onTargetPct: aggregate([e]).pct, worst: Object.values(cells).filter((c) => c.target != null && !c.met).length };
+      return { employee: e, cells, onTargetPct: onTargetOf(e), worst: Object.values(cells).filter((c) => c.target != null && !c.met).length };
     }).sort((a, b) => b.worst - a.worst || a.employee.name.localeCompare(b.employee.name));
     const columns = skills.map((s) => ({
       id: s.id, name: skillLabel(s.id), categoryId: s.categoryId,
@@ -863,6 +869,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     cell,
     aggregate,
     progress,
+    onTargetOf,
     demands,
     impliedDemands,
     coverage,

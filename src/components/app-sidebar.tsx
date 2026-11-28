@@ -71,12 +71,13 @@ export function AppSidebar({ groups, user, canChangePassword = true }: {
     return (
       <SidebarMenuItem key={item.key}>
         <SidebarMenuButton asChild isActive={exact} tooltip={{ children: <><b className="font-medium">{item.label}</b><span className="block opacity-80">{item.hint}</span></> }}
-          className={cn("h-auto items-start gap-2.5 py-1.5", current && !exact && "font-medium text-sidebar-accent-foreground")}>
-          <Link href={item.href} onClick={close} aria-current={exact ? "page" : undefined}>
+          className={cn("h-auto items-start gap-2.5 py-1", current && !exact && "font-medium text-sidebar-accent-foreground")}>
+          <Link href={item.href} onClick={close} aria-current={exact ? "page" : undefined} title={item.hint}>
             <Icon className="mt-0.5 group-data-[collapsible=icon]:mt-0" />
             <span className="grid min-w-0 flex-1 leading-snug">
               <span className="flex min-w-0 items-center gap-2"><span className="truncate">{item.label}</span>{badge && !open ? <Count value={badge} attention /> : null}</span>
-              <span className="truncate text-xs font-normal text-sidebar-foreground/60">{item.hint}</span>
+              {/* on a short screen only the open entry keeps its second line (the rest show it on hover) */}
+              <span className={cn("truncate text-xs font-normal text-sidebar-foreground/75", !current && "[@media(max-height:61rem)]:hidden")}>{item.hint}</span>
             </span>
           </Link>
         </SidebarMenuButton>
@@ -133,8 +134,8 @@ export function AppSidebar({ groups, user, canChangePassword = true }: {
           {groups.map((g, i) => (
             <Fragment key={g.key}>
               {i > 0 && <SidebarSeparator className="mx-3 w-auto data-horizontal:w-auto" />}
-              <SidebarGroup className="py-1.5">
-                <SidebarGroupLabel className={cn("h-7 text-[11px] font-semibold tracking-wider uppercase", i === 0 && "text-sidebar-foreground")}>{g.label}</SidebarGroupLabel>
+              <SidebarGroup className="py-1">
+                <SidebarGroupLabel className={cn("h-6 text-[11px] font-semibold tracking-wider uppercase", i === 0 && "text-sidebar-foreground")}>{g.label}</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu className="gap-0.5">{g.items.map(entry)}</SidebarMenu>
                 </SidebarGroupContent>

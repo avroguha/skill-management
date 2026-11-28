@@ -21,15 +21,17 @@ export interface UnitHeatmapData {
   total: Agg;
 }
 
-function AggCell({ a, thresholds, label }: { a: Agg; thresholds: Thresholds; label: string }) {
+function AggCell({ a, thresholds, label, href }: { a: Agg; thresholds: Thresholds; label: string; href?: string | null }) {
   const band = pctBand(a.pct, thresholds);
   if (a.required === 0) return <div className="flex h-9 items-center justify-center rounded-sm bg-status-none text-xs text-status-none-fg" aria-label={`${label}: nothing required`}>·</div>;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className={cn("flex h-9 items-center justify-center rounded-sm text-xs font-medium tabular", BAND_CLASS[band])}>
-          {a.pct}%
-        </div>
+        {href ? (
+          <Link href={href} aria-label={`${label}: ${a.pct}%`} className={cn("flex h-9 items-center justify-center rounded-sm text-xs font-medium tabular hover:ring-2 hover:ring-ring/40", BAND_CLASS[band])}>{a.pct}%</Link>
+        ) : (
+          <div className={cn("flex h-9 items-center justify-center rounded-sm text-xs font-medium tabular", BAND_CLASS[band])}>{a.pct}%</div>
+        )}
       </TooltipTrigger>
       <TooltipContent side="top" className="flex-col items-start gap-0.5 text-xs">
         <div className="font-medium">{label}</div>
@@ -67,15 +69,15 @@ export function UnitHeatmap({ data, thresholds }: { data: UnitHeatmapData; thres
                   <span className="shrink-0 text-xs text-muted-foreground tabular">{r.people}</span>
                 </div>
               </th>
-              {data.columns.map((c) => <td key={c.id}><AggCell a={r.cells[c.id]} thresholds={thresholds} label={`${r.name} · ${c.name}`} /></td>)}
-              <td><AggCell a={r.total} thresholds={thresholds} label={`${r.name} · all`} /></td>
+              {data.columns.map((c) => <td key={c.id}><AggCell a={r.cells[c.id]} thresholds={thresholds} label={`${r.name} · ${c.name}`} href={r.href} /></td>)}
+              <td><AggCell a={r.total} thresholds={thresholds} label={`${r.name} · all`} href={r.href} /></td>
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr>
             <th scope="row" className="pt-1 text-left text-xs font-semibold">All</th>
-            {data.columns.map((c) => <td key={c.id} className="pt-1"><AggCell a={c.total} thresholds={thresholds} label={`All · ${c.name}`} /></td>)}
+            {data.columns.map((c) => <td key={c.id} className="pt-1"><AggCell a={c.total} thresholds={thresholds} label={`All · ${c.name}`} href={c.href} /></td>)}
             <td className="pt-1"><AggCell a={data.total} thresholds={thresholds} label="All" /></td>
           </tr>
         </tfoot>
@@ -96,14 +98,16 @@ export interface PeopleHeatmapData {
 const SOURCE_LABEL: Record<string, string> = { role: "their roles" };
 
 function PersonCell({ c, levels, label }: { c: PeopleCell; levels: string[]; label: string }) {
-  const cls = c.target == null && c.level != null ? "bg-status-none text-foreground/70" : GAP_CLASS[c.category];
+  const cls = c.target == null && c.level != null ? "bg-status-none text-foreground/70"
+    // sent and waiting: a plain cell, not the hatch of "nothing there"
+    : c.level == null && c.pending ? "bg-muted text-foreground/75" : GAP_CLASS[c.category];
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className={cn("relative flex size-8 items-center justify-center rounded-sm text-xs font-medium tabular", cls, c.stale && "opacity-55 ring-1 ring-inset ring-current/40")}>
           {c.level != null ? c.level
             // sent, not confirmed yet: their own level, in grey, with the dot
-            : c.pending && c.selfLevel != null ? <span className="italic opacity-60">{c.selfLevel}</span>
+            : c.pending && c.selfLevel != null ? <span>{c.selfLevel}</span>
               : c.target != null ? "–" : ""}
           {c.pending && <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary" aria-label="waiting for the manager to confirm" />}
         </div>
@@ -226,7 +230,7 @@ export function HeatLegend({ mode }: { mode: "people" | "units"; }) {
           {item(GAP_CLASS.critical, "Critical", "0")}
           {item(GAP_CLASS.not_required, "Not required")}
           {item(GAP_CLASS.unassessed, "Not rated or not confirmed", "–")}
-          <span className="flex items-center gap-1.5"><span className="relative inline-flex size-4 items-center justify-center rounded-[3px] bg-muted text-[9px] italic text-muted-foreground">3<span className="absolute top-0 right-0 size-1.5 rounded-full bg-primary" /></span>Blue dot = sent, waiting for the manager (their own level in grey)</span>
+          <span className="flex items-center gap-1.5"><span className="relative inline-flex size-4 items-center justify-center rounded-[3px] bg-muted text-[9px] text-foreground/75">3<span className="absolute top-0 right-0 size-1.5 rounded-full bg-primary" /></span>Blue dot = sent, waiting for the manager (their own level in grey)</span>
           <span className="flex items-center gap-1.5"><Clock className="size-3.5" />Faded = stale</span>
           <span>The number is the confirmed level; the colour is how far it is from the person&apos;s target</span>
         </>

@@ -185,6 +185,22 @@
 }
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* a strip that scrolls sideways: the edge with more behind it fades (components/sub-menu.tsx) */
+.fade-right { mask-image: linear-gradient(to right, black calc(100% - 2.5rem), transparent); }
+.fade-left { mask-image: linear-gradient(to left, black calc(100% - 2.5rem), transparent); }
+.fade-left.fade-right { mask-image: linear-gradient(to right, transparent, black 2.5rem, black calc(100% - 2.5rem), transparent); }
+
+/* A finger needs more room than a mouse pointer: on a touch screen every button, field, level
+   and section link is at least 44px, and the small (i) buttons get a larger invisible area. */
+@media (pointer: coarse) {
+  [data-slot="button"], [data-slot="input"], [data-slot="select-trigger"], [role="radiogroup"] > button,
+  .sub-menu-page a { min-height: 2.75rem; }
+  [data-slot="button"]:not(:has(span)), [role="radiogroup"] > button { min-width: 2.75rem; }
+  [data-info] { position: relative; }
+  /* up and down only: sideways it would cover the end of the label it follows (4px away) */
+  [data-info]::after { content: ""; position: absolute; inset: -0.75rem -0.25rem; }
+}
+
 /* A page's own copy of its sub menu (components/sub-menu.tsx): shown where the menu's sub
    menu is out of sight - on a phone, where the menu is a drawer, and when the menu is
    closed to icons - and hidden while the menu shows it. */

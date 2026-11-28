@@ -6,6 +6,8 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { PencilLine, Star } from "lucide-react";
 import { getDb, schema } from "@/db";
+import { readEmailSettings } from "@/lib/mail/notify";
+import { RemindTeam } from "@/app/(app)/team/remind";
 import { PageHeader } from "@/components/page-header";
 import { ViewAsButton } from "@/components/view-as";
 import { KpiTiles, Section } from "@/components/kpi";
@@ -60,28 +62,32 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const rolesHref = (roleId: string) => `${withParams("/roles", { team: e.managerId })}#${roleId}`;
   const mayPutInRole = e.active && !self && !!e.managerId && (v.isAdmin || v.manageIds.has(e.managerId));
   const chain = engine.chainOf(id).filter((m) => canSeeEmployee(v, m.id) && engine.isManager(m));
+  // their own manager can remind them from here, as from My team
+  const remind = canConfirm && progress.needsAction && (v.demo || (await readEmailSettings(db)).enabled)
+    ? [{ id: e.id, name: e.name, state: progress.state === "sent_back" ? "Sent back" : progress.state === "not_started" ? "Not started" : "In progress", progress: progress.required ? `${progress.rated} of ${progress.required} rated` : "" }] : [];
+  const nothingConfirmed = profile.required > 0 && !progress.confirmed;
 
   return (
     <>
       <PageHeader
         title={<span className="flex items-center gap-3"><PersonAvatar name={e.name} src={(await photoUrls()).get(id) ?? null} size="lg" />{e.name}</span>}
-        description={<span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{[e.title, e.location, e.active ? null : "has left"].filter(Boolean).join(" · ")}
+        description={<span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">{[e.title, grade ? `grade ${grade.name}` : null, e.location, e.active ? null : "has left"].filter(Boolean).join(" · ")}
           {roles.map((r) => <RoleChip key={r.id} name={r.name} tint={engine.roleTint(r.id)} href={rolesHref(r.id)} />)}</span>}
         crumbs={v.canSeeTeams && chain.length ? [...chain.map((m) => ({ label: engine.teamLabel(m.id), href: withParams("/team", { scope: m.id }) })), { label: e.name }] : undefined}
         actions={self ? <Button asChild><Link href="/my-skills"><PencilLine />Update my skills</Link></Button>
-          : v.isAdmin && e.active && !v.demo ? <ViewAsButton employeeId={e.id} name={e.name} /> : undefined}
+          : (remind.length || (v.isAdmin && e.active && !v.demo)) ? <>{remind.length > 0 && <RemindTeam people={remind} label="Remind" />}{v.isAdmin && e.active && !v.demo && <ViewAsButton employeeId={e.id} name={e.name} />}</> : undefined}
       />
       <KpiTiles items={[
-        { label: "On target", value: fmtPct(profile.fitPct), hint: profile.required ? `${profile.met} of ${profile.required} skills their roles ask for` : roles.length ? "their roles ask for no skills" : "in no role yet",
-          tone: profile.fitPct == null ? "default" : profile.fitPct >= engine.settings.greenAt ? "good" : profile.fitPct >= engine.settings.amberAt ? "warn" : "bad",
+        { label: "On target", value: nothingConfirmed ? "–" : fmtPct(profile.fitPct),
+          hint: nothingConfirmed ? (progress.waiting ? "waiting for their manager to confirm" : "nothing confirmed yet") : profile.required ? `${profile.met} of ${profile.required} skills their roles ask for` : roles.length ? "their roles ask for no skills" : "in no role yet",
+          tone: nothingConfirmed || profile.fitPct == null ? "default" : profile.fitPct >= engine.settings.greenAt ? "good" : profile.fitPct >= engine.settings.amberAt ? "warn" : "bad",
           info: "Of the skills this person's roles ask for, the share where their confirmed level reaches the level asked." },
         { label: "Their skills", value: progress.state === "not_asked" ? "Optional" : progress.state === "done" ? "Done" : progress.state === "waiting" ? "Waiting" : progress.state === "sent_back" ? "Sent back" : progress.state === "not_started" ? "Not started" : "In progress",
           hint: progress.required ? `${progress.rated} of ${progress.required} rated` : "manages people",
           info: "How far their self-assessment has got. Managers are not asked to rate themselves, but may." },
-        { label: roles.length > 1 ? "Roles" : "Role", value: roles.length ? roles.map((r) => r.name).join(", ") : "–",
-          href: mayPutInRole && manager ? withParams("/team", { scope: manager.id, tab: "people" }) : roles.length ? rolesHref(roles[0]!.id) : undefined,
-          hint: [roles.length ? `in ${manager ? engine.teamLabel(manager.id) : "their team"}` : "in no role yet", grade ? `grade ${grade.name}` : null].filter(Boolean).join(" · "),
-          info: "The roles of their manager's team this person is in. What those roles ask for is what they are asked to rate, and at what level. Their manager puts them in a role (My team › People and roles); a person can be in several." },
+        ...(roles.length ? [] : [{ label: "Role", value: "None yet", href: mayPutInRole && manager ? withParams("/team", { scope: manager.id, tab: "people" }) : undefined,
+          hint: mayPutInRole ? "put them in one on My team" : "their manager puts them in one",
+          info: "A person is asked to rate the skills of the roles they are in. Their manager puts them in a role (My team › People and roles); a person can be in several." }]),
         { label: "Manager", value: manager?.name ?? "–", person: manager ? { name: manager.name, src: (await photoUrls()).get(manager.id) ?? null } : undefined, hint: manager ? engine.teamLabel(manager.id) : "",
           info: "Who confirms this person's ratings: their direct manager.", href: manager && canSeeEmployee(v, manager.id) ? `/people/${manager.id}` : undefined },
         { label: "To confirm", value: String(waiting), hint: canConfirm ? "on My team" : "with their manager",
@@ -117,7 +123,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                         <td className="px-2 py-2 text-center"><Lvl n={c.target} /></td>
                         <td className="px-2 py-2 text-center"><Lvl n={c.selfLevel} /></td>
                         <td className="px-2 py-2 text-center"><Lvl n={c.validatedLevel} /></td>
-                        <td className="px-2 py-2">{c.target != null ? <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", GAP_CLASS[c.category])}>{GAP_LABEL[c.category]}</span> : <span className="text-xs text-muted-foreground">beyond their roles</span>}</td>
+                        <td className="px-2 py-2">{c.target != null ? <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap", c.category === "unassessed" ? "border border-dashed text-muted-foreground" : GAP_CLASS[c.category])}>{c.category === "unassessed" && c.status === "submitted" ? "Waiting to confirm" : GAP_LABEL[c.category]}</span> : <span className="text-xs text-muted-foreground">beyond their roles</span>}</td>
                       </tr>
                     );
                   })}

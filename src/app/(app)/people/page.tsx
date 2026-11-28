@@ -1,6 +1,6 @@
 // People: everyone the viewer may see, and the finder ("who has Kubernetes at 3 or above?").
 import { PageHeader } from "@/components/page-header";
-import { FilterBar, UnitPicker, SelectFilter, ClearFilters, SearchParamInput } from "@/components/filter-bar";
+import { UnitPicker, SelectFilter, ClearFilters, SearchParamInput } from "@/components/filter-bar";
 import { Section } from "@/components/kpi";
 import { DataTable } from "@/components/data-table";
 import { Empty } from "@/components/heatmap";
@@ -41,8 +41,9 @@ export default async function PeoplePage({ searchParams }: { searchParams: Searc
   // the roles to filter by: those of the people this viewer may see here, not every team's
   const roleOptions = [...new Set(engine.membersOf(scope).filter((e) => v.allPeople || v.employeeIds.has(e.id)).flatMap((e) => e.roleIds.map((id) => engine.roleById.get(id)?.name ?? "")).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
+  // one row of filters, inside the table's own row: search, team, role, skill, then the column filters
   const toolbar = (
-    <FilterBar>
+    <>
       <SearchParamInput value={param(sp, "q") ?? null} placeholder="Find anyone by name or e-mail…" />
       <UnitPicker units={scopeOptions(engine, v).map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" />
       <SelectFilter name="role" label="Role" allLabel="All roles" value={roleName} options={roleOptions.map((name) => ({ id: name, name }))} />
@@ -53,7 +54,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Searc
       )}
       <ClearFilters keys={["role", "skill", "min", "q"]} />
       <Info label="About finding people">Pick a skill to find who has it at a level or above (confirmed by their manager), across the team you chose. Search finds a person by name or e-mail.</Info>
-    </FilterBar>
+    </>
   );
 
   if (skillId && engine.skillById.has(skillId)) {
@@ -66,14 +67,13 @@ export default async function PeoplePage({ searchParams }: { searchParams: Searc
     return (
       <>
         <PageHeader title="People" description={`Who has ${engine.skillLabel(skillId)} at ${min} or above, confirmed by their manager`} />
-        {toolbar}
         <Section title={`${all.length.toLocaleString("en-GB")} ${all.length === 1 ? "person" : "people"}`}
           description={all.length > found.length ? `Showing the highest ${found.length} levels first. Choose a team or role to narrow it down.` : undefined}>
-          <DataTable csvName="people-with-skill" rows={found} initialSort={{ key: "level", desc: true }} emptyText="Nobody here has a confirmed rating at that level."
+          <DataTable csvName="people-with-skill" rows={found} initialSort={{ key: "level", desc: true }} emptyText="Nobody here has a confirmed rating at that level." search={false} toolbar={toolbar}
             columns={[
               { key: "name", header: "Name", kind: "person", hrefKey: "href", photoKey: "photo" },
               { key: "title", header: "Designation", kind: "muted" },
-              { key: "team", header: "Team", facet: true },
+              { key: "team", header: "Team" },
               { key: "location", header: "Location", kind: "muted", facet: true },
               { key: "level", header: "Level", kind: "level", align: "center", info: "Their confirmed level in this skill." },
               { key: "target", header: "Their target", kind: "level", align: "center", info: "What their own roles ask for in this skill; empty when they ask for nothing." },
@@ -91,7 +91,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Searc
     return {
       name: e.name, href: `/people/${e.id}`, photo: photos.get(e.id) ?? null, title: e.title, team: team(e.managerId),
       role: rolesOf(e), roleTags: roleTags(e), grade: engine.gradeById.get(e.gradeId ?? "")?.name ?? "", location: e.location ?? "",
-      onTarget: engine.aggregate([e]).pct, rated: p.required ? `${p.rated} / ${p.required}` : "–",
+      onTarget: engine.onTargetOf(e), rated: p.required ? `${p.rated} / ${p.required}` : "–",
       skills: engine.ratingsOf(e.id).filter((r) => r.validatedLevel != null && engine.isRateable(r.skillId)).length,
     };
   });
@@ -99,21 +99,20 @@ export default async function PeoplePage({ searchParams }: { searchParams: Searc
   return (
     <>
       <PageHeader title="People" description={`${visible.length.toLocaleString("en-GB")} people`} />
-      {toolbar}
       {visible.length > rows.length && (
         <p className="mb-3 text-sm text-muted-foreground">Showing the first {rows.length.toLocaleString("en-GB")} of {visible.length.toLocaleString("en-GB")} by name. Search, or choose a team or role, to narrow it down.</p>
       )}
-      <DataTable csvName="people" rows={rows} initialSort={{ key: "name" }} searchPlaceholder="Filter this list…"
+      <DataTable csvName="people" rows={rows} initialSort={{ key: "name" }} search={false} toolbar={toolbar}
         columns={[
           { key: "name", header: "Name", kind: "person", hrefKey: "href", photoKey: "photo" },
           { key: "title", header: "Designation", kind: "muted" },
-          { key: "team", header: "Team", facet: true, info: "The team of their manager." },
-          { key: "role", header: "Roles", kind: "roles", chipsKey: "roleTags", facet: true, info: "The roles of their manager's team they are in, each in its own colour. A role with the same name in another team is another role." },
+          { key: "team", header: "Team", info: "The team of their manager." },
+          { key: "role", header: "Roles", kind: "roles", chipsKey: "roleTags", info: "The roles of their manager's team they are in, each in its own colour. A role with the same name in another team is another role." },
           { key: "grade", header: "Grade", kind: "muted", facet: true },
           { key: "location", header: "Location", kind: "muted", facet: true },
           { key: "skills", header: "Skills", kind: "number", align: "right", info: "Skills with a confirmed level." },
           { key: "rated", header: "Rated", align: "right", info: "Of the skills their roles ask for, how many they rated." },
-          { key: "onTarget", header: "On target", kind: "pct", align: "right", info: "Of the skills their roles ask for, the share where the confirmed level reaches the level asked." },
+          { key: "onTarget", header: "On target", kind: "pct", align: "right", info: "Of the skills their roles ask for, the share where the confirmed level reaches the level asked. Empty (–) while none of their ratings is confirmed yet." },
         ]} />
     </>
   );

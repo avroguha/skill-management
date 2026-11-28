@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { FindBox, MenuTrail } from "@/components/menu-bar";
+import { FindBox, HideHere, MenuTrail, StickyTop } from "@/components/menu-bar";
 import { MenuButton } from "@/components/menu-button";
 import { ViewAsBanner } from "@/components/view-as";
 import { DemoBanner, DemoSwitch } from "@/components/demo";
@@ -32,12 +32,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const [next] = await getNextSteps();
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
+      {/* the first stop of the Tab key: past the menu, to the page */}
+      <a href="#content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:border focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:shadow-md">Skip to the page</a>
       <AppSidebar groups={menu}
         user={{ name: v.name, role: roleLabel, photo: me ? (await photoUrls()).get(me.id) ?? null : null,
           detail: v.demo ? `signed in as ${v.demo.realName}` : v.username ? `@${v.username} · ${v.email}` : v.email }}
         canChangePassword={!v.demo} />
       <SidebarInset className="min-w-0">
-        <div className="sticky top-0 z-20">
+        <StickyTop>
           {v.demo && <DemoBanner persona={v.demo.persona} canReset={v.demo.canReset} personas={DEMO_PERSONAS.map((p) => ({ key: p.key, label: p.label, description: p.description }))} />}
           {v.viewAs && <ViewAsBanner name={v.name} role={roleLabel} by={v.viewAs.byName} expiresAt={v.viewAs.expiresAt} />}
           <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur">
@@ -46,12 +48,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <MenuTrail groups={menu} />
             <div className="ml-auto flex min-w-0 items-center gap-2">
               <FindBox groups={menu} tasks={tasks} />
-              <NextStepButton step={next} />
+              {/* not on the page it leads to: that page says it itself */}
+              {next && <HideHere href={next.href}><NextStepButton step={next} /></HideHere>}
               {v.canDemo && !v.demo && !v.viewAs && <DemoSwitch />}
             </div>
           </header>
-        </div>
-        <div className="mx-auto w-full min-w-0 max-w-[1600px] p-4 md:p-6">{children}</div>
+        </StickyTop>
+        <div id="content" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-[1600px] p-4 outline-none md:p-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

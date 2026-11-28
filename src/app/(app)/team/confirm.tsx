@@ -54,7 +54,7 @@ export function ConfirmQueue({ people: initial, levels, focus }: { people: Confi
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <p className="flex-1 basis-72 text-sm text-muted-foreground">
-          Each level starts at what the person chose (dashed outline). Tap another level to change it. To send one back, write what to look at again, then <b>Send back</b>.
+          <b>Filled</b>: the level you confirm, at first what the person said. Tap another to change it; what they said then shows <b>dashed</b>. A <b>line under</b> a level is what their role asks for. To send one back, write what to look at again, then <b>Send back</b>.
         </p>
         <Button disabled={pending} onClick={() => accept(people.flatMap((p) => p.items.map((it) => ({ p, it }))))}>
           {pending ? <Loader2 className="animate-spin" /> : <CheckCheck />}Confirm all {total} as shown

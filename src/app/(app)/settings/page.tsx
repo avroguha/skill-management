@@ -50,7 +50,7 @@ export default async function SettingsHome() {
       text: skills ? `${skills} skills.` : "Empty: upload a CSV of skills, or go back to the starter catalogue in Data & backups.",
       info: "Categories, skills and sub-skills people rate themselves on: the same for everyone. Upload a CSV, or add them one by one. Managers and everyone else ask for what is missing (Requests)." },
     { done: coordinators > 0 || !!v?.demo, href: "/settings/people", title: "Coordinators for new skills",
-      text: `${coordinators ? `${coordinators} coordinator${coordinators === 1 ? "" : "s"}` : "No coordinator yet: only administrators can approve"} · ${requests} request${requests === 1 ? "" : "s"} waiting.`,
+      text: `${coordinators ? `${coordinators} coordinator${coordinators === 1 ? "" : "s"}` : v?.demo ? "The demo has a coordinator (switch to them in the orange bar)" : "No coordinator yet: only administrators can approve"} · ${requests} request${requests === 1 ? "" : "s"} waiting.`,
       info: "A coordinator approves requests for new skills and categories, sends them back with a note, or says no with a reason. Name one or a few under People & access › Accounts: set their access to Coordinator. Administrators can always decide too." },
     { done: withRole > 0, href: "/team", title: "Teams have made their roles",
       text: `${teamsWithRoles} of ${managers} teams have roles (${engine.roles.length} in all) · ${withRole} of ${asked.length} people who rate themselves are in a role.`,

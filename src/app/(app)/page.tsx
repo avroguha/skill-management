@@ -49,11 +49,25 @@ export default async function Home() {
       info: "Team needs covered by exactly one person: if they are away or leave, the team has nobody at that level." },
   ] : [];
 
+  // someone with no team of their own: their own numbers, each one click from where to act
+  const me = v.employee;
+  const p = !k && me ? engine.progress(me) : null;
+  const myPct = p && me ? engine.onTargetOf(me) : null;
+  const mine: Kpi[] = p && me && p.required ? [
+    { label: "Rated", value: `${p.rated} of ${p.required}`, hint: p.rated < p.required ? `${p.required - p.rated} still to rate` : "every skill your roles ask for", href: "/my-skills",
+      tone: p.rated === p.required ? "good" : "warn", info: "The skills your roles ask for that you gave a level." },
+    { label: "Confirmed", value: `${p.confirmed} of ${p.required}`, hint: p.waiting ? `${p.waiting} waiting for your manager` : p.returned ? `${p.returned} sent back to you` : "by your manager", href: "/my-skills",
+      info: "Ratings your manager agreed with or changed. The confirmed level is the one that counts." },
+    { label: "On target", value: fmtPct(myPct), hint: myPct == null ?"once something is confirmed" : "of the skills your roles ask for", href: "/my-skills",
+      info: "Of the skills your roles ask for, the share where your confirmed level reaches the level asked." },
+  ] : [];
+
   return (
     <>
       <PageHeader title={`Hello ${first}`} description={v.demo ? "Demo mode: made-up people. Switch who you are in the orange bar." : "Your next step, then how things stand."} />
 
       <NextSteps steps={steps} />
+      {mine.length > 0 && <KpiTiles items={mine} />}
       <TaskList tasks={tasksFor(await getMenuFor())} />
 
       {k && scope && (

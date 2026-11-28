@@ -34,6 +34,8 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
   const name = levelNamer(levels);
   const options = scopeOptions(engine, v);
   const k = engine.kpis(scope);
+  const allShort = param(sp, "short") === "all";
+  const team = scope === "*" ? null : scope;
   const here = (extra: Record<string, string | null>) => withParams("/insights", { scope: scope === v.homeScope ? null : scope, category: categoryId, ...extra });
 
   if (!k.people) {
@@ -42,21 +44,24 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
 
   const band = pctBand(k.onTargetPct, engine.settings);
   const tiles: Kpi[] = [
-    { label: "People", value: String(k.people), hint: `${k.asked} asked to rate their skills`,
+    { label: "People", value: String(k.people), hint: `${k.asked} asked to rate their skills`, href: withParams("/people", { scope: team }),
       info: "Everyone active here. Managers are not asked to rate their own skills; everyone else is." },
     { label: "Finished rating", value: fmtPct(k.donePct), hint: `${k.done} of ${k.asked} people`, tone: k.donePct == null ? "default" : k.donePct >= 85 ? "good" : k.donePct >= 50 ? "warn" : "bad",
+      href: team ? withParams("/team", { scope: team, tab: "people" }) : undefined,
       info: "People who rated every skill their role asks for and sent them. Until most have, the other numbers describe only part of the team." },
-    { label: "On target", value: fmtPct(k.onTargetPct), hint: `of ${k.required} required skill ratings`, tone: band === "good" ? "good" : band === "watch" ? "warn" : k.onTargetPct == null ? "default" : "bad",
+    { label: "On target", value: fmtPct(k.onTargetPct), hint: `of ${k.required} required skill ratings`, tone: band === "good" ? "good" : band === "watch" ? "warn" : k.onTargetPct == null ? "default" : "bad", href: "#capability",
       info: `Of every skill a person's role asks for, the share where the confirmed level reaches the target. Green from ${engine.settings.greenAt}%, amber from ${engine.settings.amberAt}% (Settings › Levels & rules).` },
-    { label: "Team needs short", value: String(k.short), hint: `of ${k.needs} needs · ${k.nobody} with nobody`, tone: k.short ? "bad" : "good",
+    { label: "Team needs short", value: String(k.short), hint: `of ${k.needs} needs · ${k.nobody} with nobody`, tone: k.short ? "bad" : "good", href: "#short",
       info: "Needs (N people at level L in skill S) where a team has fewer people at that level than it needs." },
-    { label: "Rest on one person", value: String(k.spof), hint: "covered by one person only", tone: k.spof ? "warn" : "good",
+    { label: "Rest on one person", value: String(k.spof), hint: "covered by one person only", tone: k.spof ? "warn" : "good", href: "#short",
       info: "Needs covered by exactly one person in the team: if they are away or leave, nobody is left at that level." },
   ];
 
   // capability by team: categories, or the skills of one category
   const heat = teamHeatmapData(engine, scope, { categoryId });
-  const short = engine.shortNeeds(scope).slice(0, 25).map((c) => needView(engine, c, name, v));
+  // the worst few first; the rest on request, so the page stays one screen of reading per section
+  const allNeeds = engine.shortNeeds(scope);
+  const short = allNeeds.slice(0, allShort ? 200 : 5).map((c) => needView(engine, c, name, v));
 
   // strengths: the skills most people here hold well
   const t = engine.talent(scope);
@@ -84,20 +89,29 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
       <PageHeader title="Insights" description={`${scopeName(engine, scope)}${scope === "*" ? "" : ` · ${engine.empById.get(scope)?.name ?? ""} and everyone below`}`}
         actions={options.length > 1 ? <UnitPicker units={options.map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" /> : undefined} />
       <KpiTiles items={tiles} />
+      <nav aria-label="On this page" className="mb-4 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm">
+        <span className="mr-1 text-xs font-semibold tracking-wider text-muted-foreground uppercase">On this page</span>
+        {[["capability", "Capability by team"], ["short", `Where teams are short (${allNeeds.length})`], ["strengths", "Strengths"], ["strengthen", `Could strengthen another team (${fits.length})`]].map(([id, label]) => (
+          <a key={id} href={`#${id}`} className="rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-foreground">{label}</a>
+        ))}
+      </nav>
 
       <div className="grid gap-5">
-        <Section title={categoryId ? `${engine.categoryById.get(categoryId)?.name ?? "Category"}: skill by skill` : "Capability by team"}
-          info="Each row is a team directly below (open it to go one level down). Each cell: of the skills that team's roles ask for in that category, the share of people at their target. Click a category to see its skills one by one."
+        <Section id="capability" title={categoryId ? `${engine.categoryById.get(categoryId)?.name ?? "Category"}: skill by skill` : "Capability by team"}
+          info="Each row is a team directly below; a row's name or any of its cells opens it, one level down. Each cell: of the skills that team's roles ask for in that category, the share of people at their target. Click a category to see its skills one by one."
           actions={categoryId ? <Button asChild size="sm" variant="ghost"><Link href={here({ category: null })}>All categories</Link></Button> : undefined}>
           <HeatLegend mode="units" />
           <UnitHeatmap data={heat} thresholds={engine.settings} />
         </Section>
 
-        <Section title="Where teams are short" info="Team needs with fewer people at the level than needed, or only one, worst first. Under each: who outside that team already has it at that level or above - people who could help, move or coach.">
+        <Section id="short" title="Where teams are short"
+          description={allNeeds.length > short.length ? `The worst ${short.length} of ${allNeeds.length}` : undefined}
+          actions={allNeeds.length > 5 ? <Button asChild size="sm" variant="ghost"><Link href={`${here({ short: allShort ? null : "all" })}#short`} scroll={false}>{allShort ? "Show the worst 5" : `Show all ${allNeeds.length}`}</Link></Button> : undefined}
+          info="Team needs with fewer people at the level than needed, or only one, worst first. Under each: who outside that team already has it at that level or above - people who could help, move or coach.">
           <NeedList items={short} />
         </Section>
 
-        <Section title="Strengths" info="The skills people here hold, the deepest first. 3+ = Proficient or above; 4+ = Advanced or above. Beyond role: people at 3+ whose role does not ask for it - hidden capability. Want to grow: people who starred the skill.">
+        <Section id="strengths" title="Strengths" info="The skills people here hold, the deepest first. 3+ = Proficient or above; 4+ = Advanced or above. Beyond role: people at 3+ whose role does not ask for it - hidden capability. Want to grow: people who starred the skill.">
           <DataTable csvName="strengths" rows={strengths} pageSize={15} initialSort={{ key: "proficient", desc: true }} searchPlaceholder="Find a skill…"
             columns={[
               { key: "skill", header: "Skill", kind: "link", hrefKey: "href" },
@@ -112,7 +126,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
             ]} />
         </Section>
 
-        <Section title="People who could strengthen another team" info="People here who already meet a need another team is short of (a team they are not in), with their confirmed level. Capability only: whether anyone moves, helps or coaches is a conversation, not something the app decides.">
+        <Section id="strengthen" title="People who could strengthen another team" info="People here who already meet a need another team is short of (a team they are not in), with their confirmed level. Capability only: whether anyone moves, helps or coaches is a conversation, not something the app decides.">
           {fits.length ? (
             <DataTable csvName="could-strengthen" rows={fits} pageSize={15} initialSort={{ key: "count", desc: true }} searchPlaceholder="Find a person or team…"
               columns={[

@@ -3,6 +3,7 @@
 // entry; this copy shows only when that one is out of sight (the menu closed to icons, or a
 // phone, where the menu is a drawer), so the sections of a page are always one tap away.
 // The rule that shows and hides it is .sub-menu-page in globals.css.
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -27,11 +28,19 @@ export function SubMenu({ label, items, active }: {
     return best?.key;
   };
   const on = active ?? byPath();
+  // a phone shows part of the list: fade the edge that has more behind it
+  const strip = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ left: false, right: false });
+  const measure = () => {
+    const el = strip.current;
+    if (el) setMore({ left: el.scrollLeft > 4, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+  };
+  useEffect(() => { measure(); window.addEventListener("resize", measure); return () => window.removeEventListener("resize", measure); }, []);
   return (
     <nav aria-label={`${label}: sections`} className="sub-menu-page mb-4 items-center gap-2 rounded-lg border bg-card p-1.5">
       <span className="shrink-0 pl-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{label}</span>
       <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
-      <div className="flex min-w-0 gap-1 overflow-x-auto">
+      <div ref={strip} onScroll={measure} className={cn("flex min-w-0 gap-1 overflow-x-auto", more.right && "fade-right", more.left && "fade-left")}>
         {items.map((t) => {
           const current = t.key === on;
           return (

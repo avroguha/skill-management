@@ -223,6 +223,15 @@ test("progress: not started, in progress, waiting, sent back, done, not asked", 
   assert.deepEqual(fresh.progress(fresh.empById.get("ivy")!).missing, ["sql"]);
 });
 
+test("a person's on-target share is empty until something of theirs is confirmed, never 0%", () => {
+  const e = createEngine(dataset());
+  const of = (id: string) => e.onTargetOf(e.empById.get(id)!);
+  assert.equal(of("eve"), null, "eve rated SQL and waits for dan: no number yet");
+  assert.equal(of("ivy"), null, "ivy rated nothing");
+  assert.equal(of("cat"), 50, "cat has both confirmed: k8s meets, ec2 does not");
+  assert.equal(of("bob"), 0, "bob has a confirmed rating below target: a real 0%");
+});
+
 test("KPIs for a team and the whole organisation", () => {
   const e = createEngine(dataset());
   const k = e.kpis("tia");

@@ -13,7 +13,7 @@ import { remindTeam } from "@/app/actions/email";
 export interface RemindCandidate { id: string; name: string; state: string; progress: string }
 
 /** My team: e-mail the people who have not updated their skills (one reminder per person per day). */
-export function RemindTeam({ people }: { people: RemindCandidate[] }) {
+export function RemindTeam({ people, label }: { people: RemindCandidate[]; label?: string }) {
   const [open, setOpen] = useState(false);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [note, setNote] = useState("");
@@ -23,7 +23,7 @@ export function RemindTeam({ people }: { people: RemindCandidate[] }) {
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => { setChosen(new Set(people.map((p) => p.id))); setOpen(true); }}>
-        <BellRing />Remind {people.length}
+        <BellRing />{label ?? `Remind ${people.length}`}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-lg">

@@ -120,7 +120,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         name: e.name, href: `/people/${e.id}`, photo: photos.get(e.id) ?? null, title: e.title, manager: e.managerId ? engine.empById.get(e.managerId)?.name ?? "" : "",
         role: roleNames(e) || "–", roleTags: roleTags(e),
         state: STATE_LABEL[p.state], rated: p.required ? `${p.rated} / ${p.required}` : "–", waiting: waitingOf(e).length || null,
-        onTarget: engine.aggregate([e]).pct,
+        onTarget: engine.onTargetOf(e),
       };
     });
     const email = await readEmailSettings(db);
@@ -178,7 +178,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
               { key: "state", header: "Their skills", facet: true, info: "Not started: nothing rated. In progress: some rated, or saved and not sent. Sent back: the manager returned a rating with a note. Waiting: sent, the manager has not confirmed yet. Done: confirmed." },
               { key: "rated", header: "Rated", align: "right", info: "Skills rated, of those their roles ask for." },
               { key: "waiting", header: "To confirm", kind: "number", align: "right", info: "Ratings this person sent that wait for their manager." },
-              { key: "onTarget", header: "On target", kind: "pct", align: "right", info: "Of the skills their roles ask for, the share where the confirmed level reaches the level asked." },
+              { key: "onTarget", header: "On target", kind: "pct", align: "right", info: "Of the skills their roles ask for, the share where the confirmed level reaches the level asked. Empty (–) while none of their ratings is confirmed yet." },
             ]} />
         </Section>
       </div>
@@ -301,7 +301,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         ...(t.key === "confirm" ? { count: waitingTotal, attention: true } : t.key === "people" ? { count: direct.length } : t.key === "needs" && short ? { count: short, attention: true }
           : t.key === "review" && changes.length ? { count: changes.length, attention: true } : {}),
       }))} />
-      {changes.length > 0 && tab !== "review" && (
+      {changes.length > 0 && (tab === "people" || tab === "needs") && (
         <div role="status" className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
           <span className="min-w-0 flex-1"><b className="tabular">{changes.length} change{changes.length === 1 ? "" : "s"}</b> to this team {changes.length === 1 ? "is" : "are"} a draft: not in force until confirmed. What you see here includes {changes.length === 1 ? "it" : "them"}.</span>
           <Button asChild size="sm"><Link href={href("review")}>Review changes</Link></Button>

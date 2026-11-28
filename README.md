@@ -113,8 +113,8 @@ Wherever a skill is looked for or asked for (a role's skills, My skills, team ne
 - **Your roles ask for**: the skills the roles you are in ask for, with the target underlined. Tap a level (0-5); tap it again to clear it. Skills your team needs are listed here too.
 - **Other skills you have**: skills you added yourself. They count as capability, and leaders use them to find people for other teams.
 - **Add skills you have**: a full-width search box over the **whole catalogue** (name, category or another name it goes by), category chips, and the results listed right there, each with its six level buttons. Press a level and the skill is added. A skill that is not in the catalogue can be added from the same place.
-- **Save** keeps a draft; **Send to (manager)** gives every changed level to your manager. A bar at the top shows how many of your role's skills you have rated, and stays in view.
-- Next to each skill: a star (*I want to grow in this*), a note for your manager, and where it stands (waiting, confirmed at what level, or sent back with your manager's note).
+- **Save** keeps a draft; **Send** gives every changed level to your manager and says how many (*Send 3 to Mivra*). With nothing new it steps back and the bar says so (*Sent: 2 waiting for Mivra*, *Nothing new to send*); it stays there to send a stale rating again. The bar shows how many of your role's skills you have rated and stays in view below the top bars, however tall they are.
+- Next to each skill: a star (*I want to grow in this*), a note for your manager (one line under the skill; click it, or the note button, to write), and where it stands (waiting, confirmed at what level, or sent back with your manager's note).
 
 **Managers are not asked to rate themselves** (a setting turns that on). They can still add skills of their own, for example a technical manager.
 
@@ -136,11 +136,11 @@ Managers of managers, leaders and administrators can open any team they may see,
 
 ### For leadership
 
-**Insights**, for a team or the whole organisation, read top to bottom:
+**Insights**, for a team or the whole organisation, read top to bottom (an *On this page* line under the numbers jumps to each part):
 
-1. **The numbers**: people, how many finished rating, on target, team needs short, needs that rest on one person.
-2. **Capability by team**: each team one level down × each skill category, the share of required skills at target. Click a team to go down, a category to see its skills.
-3. **Where teams are short**, worst first, with **who elsewhere already has it** at that level.
+1. **The numbers**: people, how many finished rating, on target, team needs short, needs that rest on one person. Each opens its detail.
+2. **Capability by team**: each team one level down × each skill category, the share of required skills at target. Click a team or any of its cells to go down, a category to see its skills.
+3. **Where teams are short**, worst first (the worst five, *Show all* for the rest), with **who elsewhere already has it** at that level.
 4. **Strengths**: the skills people hold, the deepest first, including capability beyond what roles ask for and what people want to grow in.
 5. **People who could strengthen another team**: people who already meet a need another team is short of.
 
