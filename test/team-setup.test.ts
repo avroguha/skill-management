@@ -190,3 +190,38 @@ test("people who left or moved and skills that were retired drop out of a setup;
   assert.equal(validateSetup(clean, later), null);
   assert.equal(validateSetup(base(), ctx), null);
 });
+
+test("a manager asks one person for skills beyond their roles: a draft line each, changed in place, taken back, kept to the team", () => {
+  const live = base();
+  const s = build(live,
+    { op: "setExtras", employeeId: "dee", skills: [{ skillId: "k8s", target: 3, mandatory: true }], note: " On-call from March " },
+    { op: "setExtras", employeeId: "bob", skills: [{ skillId: "sql", target: 2, mandatory: false }] });
+  assert.deepEqual(s.extras.map((x) => [x.employeeId, x.skillId, x.target, x.note]), [["dee", "k8s", 3, "On-call from March"], ["bob", "sql", 2, ""]]);
+  assert.deepEqual(diffSetup(live, s).map((c) => c.key), ["extra_added:dee:k8s", "extra_added:bob:sql"]);
+
+  // asked again: the level changes; no note given keeps the reason
+  const again = build(s, { op: "setExtras", employeeId: "dee", skills: [{ skillId: "k8s", target: 4, mandatory: true }] });
+  assert.deepEqual(again.extras.find((x) => x.employeeId === "dee"), { employeeId: "dee", skillId: "k8s", target: 4, mandatory: true, note: "On-call from March" });
+  assert.equal(again.extras.length, 2, "no second line for the same person and skill");
+
+  // only the team's own people, only skills that can be rated, levels 1-5
+  assert.match(refused(s, { op: "setExtras", employeeId: "gus", skills: [{ skillId: "k8s", target: 3, mandatory: true }] }), /report to this team's manager/);
+  assert.match(refused(s, { op: "setExtras", employeeId: "dee", skills: [{ skillId: "old", target: 3, mandatory: true }] }), /cannot be asked for/);
+  assert.match(refused(s, { op: "setExtras", employeeId: "dee", skills: [{ skillId: "k8s", target: 6, mandatory: true }] }), /1 to 5/);
+
+  // once in force: a change and a removal are lines of their own, and each can be taken back
+  const changed = build(s, { op: "setExtras", employeeId: "dee", skills: [{ skillId: "k8s", target: 4, mandatory: false }] }, { op: "removeExtra", employeeId: "bob", skillId: "sql" });
+  assert.deepEqual(diffSetup(s, changed).map((c) => c.kind).sort(), ["extra_changed", "extra_removed"]);
+  const back = revertChange(s, changed, "extra_changed:dee:k8s", ctx);
+  assert.ok(back.ok);
+  const back2 = revertChange(s, back.ok ? back.setup : changed, "extra_removed:bob:sql", ctx);
+  assert.ok(back2.ok);
+  assert.deepEqual(diffSetup(s, back2.ok ? back2.setup : changed), [], "everything taken back: nothing left to confirm");
+
+  // someone who moved to another manager drops out of the draft; what is left can be confirmed
+  const later: SetupContext = { people: new Set(["bob", "cat"]), rateable: ctx.rateable };
+  const clean = sanitize(s, later);
+  assert.deepEqual(clean.extras.map((x) => x.employeeId), ["bob"]);
+  assert.equal(validateSetup(clean, later), null);
+  assert.match(validateSetup(s, later) ?? "", /no longer reports/);
+});

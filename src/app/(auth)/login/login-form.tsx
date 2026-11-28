@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Shapes, Loader2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ export function LoginForm({ providers, demo, error, next = "/" }: {
   const [busy, setBusy] = useState<"local" | "sso" | null>(null);
   const [message, setMessage] = useState<string | null>(error === "NOT_ALLOWED" ? "Signed in at your company, but you are not one of the people this app is for. Ask an administrator." : error ? "Single sign-on did not complete. Try again or use a local account." : null);
   const [ssoEmail, setSsoEmail] = useState("");
+  // the cursor starts in Username with a mouse; on a phone the keyboard would cover the page
+  const userBox = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (window.matchMedia("(pointer: fine)").matches) userBox.current?.focus(); }, []);
 
   async function signIn(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -77,7 +80,7 @@ export function LoginForm({ providers, demo, error, next = "/" }: {
             ) : (
               <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); sso(); }}>
                 <Label htmlFor="sso-email">Work e-mail</Label>
-                <Input id="sso-email" type="email" placeholder="you@company.com" value={ssoEmail} onChange={(e) => setSsoEmail(e.target.value)} required />
+                <Input id="sso-email" name="email" type="email" autoComplete="email" spellCheck={false} placeholder="you@company.com" value={ssoEmail} onChange={(e) => setSsoEmail(e.target.value)} required />
                 <Button type="submit" disabled={!!busy}>
                   {busy === "sso" ? <Loader2 className="animate-spin" /> : <Building2 />}
                   Continue with single sign-on
@@ -92,7 +95,7 @@ export function LoginForm({ providers, demo, error, next = "/" }: {
         <form className="grid gap-3" onSubmit={signIn}>
           <div className="grid gap-1.5">
             <Label htmlFor="username">Username</Label>
-            <Input id="username" name="username" autoComplete="username" autoFocus required />
+            <Input id="username" name="username" ref={userBox} autoComplete="username" autoCapitalize="none" spellCheck={false} required />
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="password">Password</Label>

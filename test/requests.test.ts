@@ -152,6 +152,8 @@ test("a team's draft is kept apart from what is in force; confirming puts exactl
   assert.deepEqual(diffSetup(await readLiveSetup(db, p.manager), stored.setup), [], "what is in force is the draft");
   const after = createEngine(await loadDatasetFrom(db));
   assert.deepEqual(after.rolesOf(p.manager).map((r) => r.name), ["Cloud Engineer", "Site reliability", "On-call"], "in the manager's order");
+  assert.equal(stored.setup.extras.length, 2, "one in force, one more in the draft");
+  for (const x of stored.setup.extras) assert.ok(after.extrasOf(x.employeeId).some((y) => y.skillId === x.skillId && y.target === x.target), "asked of them alone, in force now");
   const onCall = after.rolesOf(p.manager).find((r) => r.name === "On-call")!;
   assert.equal(after.roleMembers(onCall.id).length, 2);
   for (const m of after.roleMembers(onCall.id)) assert.ok(after.requiredSkillIds(m).length > 0);

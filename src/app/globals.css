@@ -185,6 +185,31 @@
 }
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* Whatever Tab or an anchor brings into view lands below the sticky bars (--app-top, set by
+   StickyTop) and My skills' Save bar under them, never behind them. */
+html {
+  scroll-padding-top: calc(var(--app-top, 3rem) + 4rem);
+  touch-action: manipulation; /* no double-tap zoom delay on a tap */
+  -webkit-tap-highlight-color: color-mix(in oklch, var(--primary) 12%, transparent);
+}
+
+/* Someone who asked their system for less motion gets none: spinners stand still,
+   menus and dialogs appear at once. */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Scrolling to the end of a dialog or the phone menu does not scroll the page behind it. */
+[data-slot="dialog-content"], [data-slot="alert-dialog-content"], [data-slot="sheet-content"],
+[data-slot="dialog-content"] *, [data-slot="alert-dialog-content"] *, [data-slot="sheet-content"] * {
+  overscroll-behavior: contain;
+}
+
 /* a strip that scrolls sideways: the edge with more behind it fades (components/sub-menu.tsx) */
 .fade-right { mask-image: linear-gradient(to right, black calc(100% - 2.5rem), transparent); }
 .fade-left { mask-image: linear-gradient(to left, black calc(100% - 2.5rem), transparent); }

@@ -50,7 +50,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
       href: team ? withParams("/team", { scope: team, tab: "people" }) : undefined,
       info: "People who rated every skill their role asks for and sent them. Until most have, the other numbers describe only part of the team." },
     { label: "On target", value: fmtPct(k.onTargetPct), hint: `of ${k.required} required skill ratings`, tone: band === "good" ? "good" : band === "watch" ? "warn" : k.onTargetPct == null ? "default" : "bad", href: "#capability",
-      info: `Of every skill a person's role asks for, the share where the confirmed level reaches the target. Green from ${engine.settings.greenAt}%, amber from ${engine.settings.amberAt}% (Settings › Levels & rules).` },
+      info: `Of every skill a person’s role asks for, the share where the confirmed level reaches the target. Green from ${engine.settings.greenAt}%, amber from ${engine.settings.amberAt}% (Settings › Levels & rules).` },
     { label: "Team needs short", value: String(k.short), hint: `of ${k.needs} needs · ${k.nobody} with nobody`, tone: k.short ? "bad" : "good", href: "#short",
       info: "Needs (N people at level L in skill S) where a team has fewer people at that level than it needs." },
     { label: "Rest on one person", value: String(k.spof), hint: "covered by one person only", tone: k.spof ? "warn" : "good", href: "#short",
@@ -98,7 +98,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
 
       <div className="grid gap-5">
         <Section id="capability" title={categoryId ? `${engine.categoryById.get(categoryId)?.name ?? "Category"}: skill by skill` : "Capability by team"}
-          info="Each row is a team directly below; a row's name or any of its cells opens it, one level down. Each cell: of the skills that team's roles ask for in that category, the share of people at their target. Click a category to see its skills one by one."
+          info="Each row is a team directly below; a row’s name or any of its cells opens it, one level down. Each cell: of the skills that team’s roles ask for in that category, the share of people at their target. Click a category to see its skills one by one."
           actions={categoryId ? <Button asChild size="sm" variant="ghost"><Link href={here({ category: null })}>All categories</Link></Button> : undefined}>
           <HeatLegend mode="units" />
           <UnitHeatmap data={heat} thresholds={engine.settings} />
@@ -120,7 +120,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Sea
               { key: "proficient", header: "3+", kind: "number", align: "right", info: "People at Proficient (3) or above." },
               { key: "expert", header: "4+", kind: "number", align: "right", info: "People at Advanced (4) or above." },
               { key: "needed", header: "Role asks", kind: "number", align: "right", info: "People whose role asks for this skill." },
-              { key: "onTarget", header: "On target", kind: "number", align: "right", info: "Of those, how many reach their role's target." },
+              { key: "onTarget", header: "On target", kind: "number", align: "right", info: "Of those, how many reach their role’s target." },
               { key: "extra", header: "Beyond role", kind: "number", align: "right", info: "People at 3+ whose role does not ask for it." },
               { key: "interested", header: "Want to grow", kind: "number", align: "right", info: "People who starred this skill: they want to get better at it." },
             ]} />

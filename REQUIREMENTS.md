@@ -130,6 +130,32 @@ The owner's handwritten notes and what was built for each. This replaces the 202
 | An admin option to revert all changes back to out-of-the-box data; also reset a particular data point such as assessments or a team | Settings › Data & backups › Reset |
 | A manager sees if someone fits in a different team, and under whom, at a 50% skills match; the 50% is a setting, positive numbers only | My team › Fit in other teams; Settings › Levels & rules |
 
+## A skill for one person, beyond their role (owner, 2026-11-28: "a member is in role A but as a manager I need them to have an additional skill even when it is not part of their role", then "Build it")
+
+| What | Where it is |
+|---|---|
+| A manager asks one person for skills beyond their roles, with a level, must-have or not, and why | My team › People and roles: a person's menu › *Ask for extra skills*; table `team_person_skill` (migration 0005), `extras` in the team setup (`src/lib/team-setup.ts`) |
+| It goes through the draft like every other team change | Review changes lists "Asked of X alone" lines; each can be taken back; Confirm puts them in force |
+| It counts like a role's skill | `engine.targetFor` takes the highest level any role or the manager's own ask sets; `requiredSkillIds` includes it; the grid's tooltip says where it came from |
+| The person sees it, and why | My skills: "Mivra asks this of you: …" next to the skill; their page: *Asked of them alone* |
+| Belongs to the team | Kept per manager; a person who moves to another manager leaves it behind; a team reset removes it; merging two skills moves it |
+
+## Web Interface Guidelines pass (owner, 2026-11-28: "Fix everything needed and then test no button or anything is broken")
+
+Checked against Vercel's Web Interface Guidelines (the `web-design-guidelines` skill), then every page swept on the lab as each demo role.
+
+| Guideline | What changed |
+|---|---|
+| Dates rendered the same on server and browser | `components/local-time.tsx`: UTC first, the reader's zone once live (tables, backups, SSO); chart months in UTC |
+| Destructive actions confirm | Withdrawing a request asks first |
+| Large lists searchable | People › *Has skill* is a search box (`SearchFilter`), not a list of every skill |
+| URL reflects state | Every named table keeps sort, search, column filters and page in the address (`<name>.sort`, `.q`, `.<column>`, `.p`) |
+| Focus never under sticky bars | `html { scroll-padding-top }` from `--app-top` |
+| Reduced motion, touch, overscroll | Global `prefers-reduced-motion` rule; `touch-action: manipulation`; dialogs and the phone menu contain their scrolling |
+| Forms | Sign-in: right keyboard, no autocorrect, cursor in Username only with a mouse; web-address keyboards; every Settings field and dropdown has a label (`Field` gives its id to the input, or to the dropdown's button) |
+| Typography | Curly quotes in on-screen text, "…" on prompt placeholders, `Ctrl K` unbroken, `theme-color` for the phone browser bar |
+| No `transition: all` | The vendored components name what animates |
+
 ## Usability pass (owner, 2026-11-28: "relook at the UI", then "Build all 17")
 
 Found by walking the demo as a team member, a manager and an administrator, at 1440×900 and on a phone.

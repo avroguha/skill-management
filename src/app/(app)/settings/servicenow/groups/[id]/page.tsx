@@ -30,7 +30,7 @@ export default async function GroupPage({ params }: { params: Promise<{ id: stri
             { key: "name", header: "Name", kind: "person", hrefKey: "href" },
             { key: "title", header: "Designation", kind: "muted" },
             { key: "email", header: "E-mail", kind: "muted" },
-            { key: "status", header: "", kind: "muted" },
+            { key: "status", header: "Status", kind: "muted" },
           ]} />
       </Section>
     </>

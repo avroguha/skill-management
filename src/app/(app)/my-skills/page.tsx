@@ -33,6 +33,9 @@ export default async function MySkillsPage() {
   // what the person's own team needs is offered for rating too
   const teamNeeds = me.managerId ? engine.demands(me.managerId).filter((d) => d.explicit) : [];
   const needNote = new Map(teamNeeds.map((d) => [d.skillId, `${engine.teamLabel(d.managerId)} needs ${d.headcount} at level ${d.level}+`]));
+  // what your manager asks of you alone, beyond your roles, and why
+  const mgrFirst = me.managerId ? engine.empById.get(me.managerId)?.name.split(" ")[0] ?? "Your manager" : "Your manager";
+  const extras = new Map(engine.extrasOf(me.id).map((x) => [x.skillId, `${mgrFirst} asks this of you${x.note ? `: “${x.note}”` : ""}`]));
   const ids = new Set([...required, ...needNote.keys(), ...ratings.map((r) => r.skillId).filter((id) => engine.isRateable(id))]);
   const cat = (sid: string) => engine.categoryById.get(engine.skillById.get(sid)?.categoryId ?? "");
   const rows: Row[] = [...ids].map((sid) => {
@@ -42,7 +45,7 @@ export default async function MySkillsPage() {
       required: required.has(sid), target: engine.targetFor(me, sid)?.target ?? null,
       level: r?.selfLevel ?? null, comment: r?.selfComment ?? "", interest: r?.interest ?? false,
       status: r?.status ?? null, confirmed: r?.validatedLevel ?? null, managerComment: r?.managerComment ?? "",
-      teamNeed: needNote.get(sid) ?? null,
+      teamNeed: needNote.get(sid) ?? null, asked: extras.get(sid) ?? null,
     };
   });
   const catalogue: CatalogueItem[] = [...engine.skillById.values()].filter((s) => engine.isRateable(s.id))
@@ -56,7 +59,9 @@ export default async function MySkillsPage() {
     ? <>You are in {roles.length === 1 ? "the role" : "the roles"} {roles.map((r, i) => (
       <span key={r.id}>{i > 0 ? (i === roles.length - 1 ? " and " : ", ") : ""}<RoleChip name={r.name} tint={engine.roleTint(r.id)} href={`${withParams("/roles", { team: me.managerId })}#${r.id}`} /></span>
     ))} of {manager ? engine.teamLabel(manager.id) : "your team"}. </>
-    : assesses ? <>You are in no role yet, so no particular skills are asked of you: your manager puts you in one. You can already add the skills you have. </> : null;
+    : assesses ? (extras.size
+      ? <>You are in no role yet; {mgrFirst} asks {extras.size === 1 ? "one skill" : `${extras.size} skills`} of you, listed below. </>
+      : <>You are in no role yet, so no particular skills are asked of you: your manager puts you in one. You can already add the skills you have. </>) : null;
   const myRequests = await db.select({ id: schema.catalogueRequest.id }).from(schema.catalogueRequest)
     .where(and(eq(schema.catalogueRequest.requestedById, v.viewAs ? v.viewAs.byUserId : v.userId), inArray(schema.catalogueRequest.status, ["pending", "returned"])));
   // which other teams you would fit in: shown to you only when an administrator switched it on
@@ -67,13 +72,13 @@ export default async function MySkillsPage() {
       <PageHeader title="My skills"
         description={<>{roleNote}{assesses
           ? `Rate each skill from 0 to 5, then send them to ${manager?.active ? manager.name : "your manager"} to confirm.`
-          : "As a manager you are not asked to rate yourself. You can still add the skills you have: they count in your team's capability."}</>} />
+          : "As a manager you are not asked to rate yourself. You can still add the skills you have: they count in your team’s capability."}</>} />
       <MySkillsForm rows={rows} catalogue={catalogue} levels={levels}
         categories={[...engine.categoryById.values()].sort((a, b) => a.sort - b.sort).map((c) => ({ id: c.id, name: c.name }))}
         required={progress.required} managerName={manager?.active ? manager.name : null} ask={await getAskCatalogue()} openRequests={myRequests.length} />
       {engine.settings.membersSeeFit && (
         <Section className="mt-5" title="Where your skills would also fit"
-          info={`Roles of other teams whose skills you already hold at the level asked, from ${engine.settings.fitPercent}% of the role's skills upwards, counting the levels your manager confirmed. The manager named is the one you would be under. It shows capability only: whether anyone moves is a conversation. Only you and your managers see this.`}>
+          info={`Roles of other teams whose skills you already hold at the level asked, from ${engine.settings.fitPercent}% of the role’s skills upwards, counting the levels your manager confirmed. The manager named is the one you would be under. It shows capability only: whether anyone moves is a conversation. Only you and your managers see this.`}>
           {fits.length ? (
             <ul className="grid gap-2.5 text-sm sm:grid-cols-2">
               {fits.map((f) => (

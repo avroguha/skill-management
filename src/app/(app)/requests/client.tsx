@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Field } from "@/components/info";
 import { PersonChip } from "@/components/person-avatar";
 import { ActionButton, ActionMenu, type MenuAction } from "@/components/action-menu";
@@ -51,8 +52,12 @@ export function RequestsView({ rows, tab, canDecide, ask, readOnly, openNew }: {
   const [editing, setEditing] = useState<RequestRow | null>(null);
   const [deciding, setDeciding] = useState<Deciding | null>(null);
 
-  const withdraw = (r: RequestRow) => start(async () => {
+  // withdrawing cannot be undone, so it asks first
+  const [withdrawing, setWithdrawing] = useState<RequestRow | null>(null);
+  const withdraw = (r: RequestRow) => setWithdrawing(r);
+  const confirmWithdraw = (r: RequestRow) => start(async () => {
     const res = await withdrawRequest(r.id);
+    setWithdrawing(null);
     if (!res.ok) { toast.error(res.error); return; }
     toast.success(res.message ?? "Withdrawn.");
     router.refresh();
@@ -164,6 +169,20 @@ export function RequestsView({ rows, tab, canDecide, ask, readOnly, openNew }: {
           initial={{ id: editing.id, kind: editing.kind, name: editing.name, description: editing.description, reason: editing.reason, categoryId: editing.categoryId, categoryName: editing.categoryName, parentId: editing.parentId, note: editing.status === "returned" ? editing.comment : undefined }} />
       )}
       {deciding && <DecideDialog d={deciding} ask={ask} onClose={() => setDeciding(null)} />}
+      <AlertDialog open={!!withdrawing} onOpenChange={(o) => { if (!o && !busy) setWithdrawing(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Withdraw “{withdrawing?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>It stops waiting for a coordinator and cannot be sent again. To ask for it later, make a new request.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Keep it</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={(e) => { e.preventDefault(); if (withdrawing) confirmWithdraw(withdrawing); }}>
+              {busy ? <Loader2 className="animate-spin" /> : <X />}Withdraw
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -221,7 +240,7 @@ function DecideDialog({ d, ask, onClose }: { d: Deciding; ask: AskCatalogue; onC
                         <SelectItem value={NEW}>A new category…</SelectItem>
                       </SelectContent>
                     </Select>
-                    {categoryId === NEW && <Input className="mt-1.5" value={categoryName} maxLength={80} onChange={(e) => setCategoryName(e.target.value)} placeholder="Name of the new category" aria-label="Name of the new category" />}
+                    {categoryId === NEW && <Input className="mt-1.5" value={categoryName} maxLength={80} onChange={(e) => setCategoryName(e.target.value)} placeholder="Name of the new category…" aria-label="Name of the new category" />}
                   </Field>
                   <Field label="Under (optional)" info="Makes it a sub-skill of an existing skill.">
                     <Select value={parentId} onValueChange={setParentId} disabled={categoryId === NEW}>

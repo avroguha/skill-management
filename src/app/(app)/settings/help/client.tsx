@@ -34,7 +34,7 @@ export function FaqEditor({ help }: { help: Help }) {
         {faq.map((f, i) => (
           <div key={i} className="grid gap-2 rounded-md border p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Input value={f.q} onChange={(e) => set(i, { q: e.target.value })} placeholder="The question" className="min-w-0 flex-1" aria-label={`Question ${i + 1}`} />
+              <Input value={f.q} onChange={(e) => set(i, { q: e.target.value })} placeholder="The question…" className="min-w-0 flex-1" aria-label={`Question ${i + 1}`} />
               <Select value={f.audience} onValueChange={(a) => set(i, { audience: a as Faq["audience"] })}>
                 <SelectTrigger className="w-36" aria-label="Who sees it"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -47,7 +47,7 @@ export function FaqEditor({ help }: { help: Help }) {
               <Button size="icon" variant="ghost" disabled={i === faq.length - 1} onClick={() => move(i, 1)} aria-label="Move down"><ArrowDown /></Button>
               <Button size="icon" variant="ghost" onClick={() => setFaq((x) => x.filter((_, j) => j !== i))} aria-label="Remove"><Trash2 /></Button>
             </div>
-            <Textarea value={f.a} onChange={(e) => set(i, { a: e.target.value })} rows={3} placeholder="The answer" aria-label={`Answer ${i + 1}`} />
+            <Textarea value={f.a} onChange={(e) => set(i, { a: e.target.value })} rows={3} placeholder="The answer…" aria-label={`Answer ${i + 1}`} />
           </div>
         ))}
         <Button variant="outline" className="w-fit" onClick={() => setFaq((f) => [...f, { q: "", a: "", audience: "everyone" }])}><Plus />Add a question</Button>

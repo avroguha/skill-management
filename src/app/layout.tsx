@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -9,6 +9,14 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: { default: "Skill Management", template: "%s · Skill Management" },
   description: "Skills, gaps and what to do about them, from the whole organisation down to one person.",
+};
+
+// the browser bar on a phone, in the page's own background (globals.css --background)
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fdfdfd" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f1012" },
+  ],
 };
 
 export const dynamic = "force-dynamic";

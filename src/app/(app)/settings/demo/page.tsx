@@ -18,7 +18,7 @@ export default async function DemoSettings() {
   ]);
   return (
     <>
-      <PageHeader title="Demo" description="A made-up organisation for presentations, kept apart from the real data, like a phone's store mode." />
+      <PageHeader title="Demo" description="A made-up organisation for presentations, kept apart from the real data, like a phone’s store mode." />
       <div className="grid gap-5">
         <Section title="How it works" info="Demo mode is per browser: switching it on changes nothing for anyone else.">
           <ul className="grid list-disc gap-1.5 pl-5 text-sm">

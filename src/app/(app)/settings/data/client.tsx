@@ -58,7 +58,7 @@ export function ImportForm({ kinds }: { kinds: { kind: string; columns: string[]
           <div className="grid gap-1.5">
             <LabelInfo info="Which kind of data the file holds. Each kind has its own columns, listed under the choice.">What</LabelInfo>
             <Select value={kind} onValueChange={(k) => { setKind(k); reset(); }}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full" aria-label="What the file holds"><SelectValue /></SelectTrigger>
               <SelectContent>{kinds.map((k) => <SelectItem key={k.kind} value={k.kind}>{k.kind}</SelectItem>)}</SelectContent>
             </Select>
           </div>
@@ -121,7 +121,7 @@ function NearMatches({ matches, decisions, onChange }: { matches: NearSkill[]; d
           <span className="text-muted-foreground">Choose what to do with each. Nothing is imported until every one has a choice.</span>
         </div>
         <Select value="" onValueChange={(a) => applyAll(a as SkillAction)}>
-          <SelectTrigger className="h-8 w-56 text-xs"><SelectValue placeholder="Set every open one to…" /></SelectTrigger>
+          <SelectTrigger className="h-8 w-56 text-xs" aria-label="Set every open one to"><SelectValue placeholder="Set every open one to…" /></SelectTrigger>
           <SelectContent>{ACTIONS.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}</SelectContent>
         </Select>
       </div>
@@ -144,7 +144,7 @@ function NearMatches({ matches, decisions, onChange }: { matches: NearSkill[]; d
                     <div className="text-xs break-words"><span className="font-medium">{target.path}</span> ({target.category})</div>
                   ) : (
                     <Select value={target.id} onValueChange={(id) => set(m, { targetId: id })}>
-                      <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-8 w-full text-xs" aria-label="The existing skill it is compared with"><SelectValue /></SelectTrigger>
                       <SelectContent>{m.candidates.map((c) => <SelectItem key={c.id} value={c.id}>{c.path} ({c.category}) · {Math.round(c.score * 100)}%</SelectItem>)}</SelectContent>
                     </Select>
                   )}
@@ -153,7 +153,7 @@ function NearMatches({ matches, decisions, onChange }: { matches: NearSkill[]; d
                 <div className="grid min-w-0 gap-1">
                   <LabelInfo className="text-xs" info="Merge: no new skill, its name becomes an alias of the existing one. Replace: the existing skill takes the new name and keeps its ratings. Keep both: add it beside the existing one. Skip: leave the row out.">What to do</LabelInfo>
                   <Select value={d?.action ?? ""} onValueChange={(a) => set(m, { action: a as SkillAction })}>
-                    <SelectTrigger className="h-8 w-full text-xs"><SelectValue placeholder="Choose…" /></SelectTrigger>
+                    <SelectTrigger className="h-8 w-full text-xs" aria-label="What to do with it"><SelectValue placeholder="Choose…" /></SelectTrigger>
                     <SelectContent>{ACTIONS.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>

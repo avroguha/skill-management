@@ -24,7 +24,7 @@ export function DemoSwitch() {
         <Presentation />{busy ? "Opening demo…" : "Demo"}
       </Button>
       <Info label="About demo mode" side="bottom">
-        A made-up organisation (about 130 people) to look around in and try everything, like a phone&apos;s store mode: the
+        A made-up organisation (about 130 people) to look around in and try everything, like a phone’s store mode: the
         easiest way to learn the app. You start as someone like you and can switch to a manager, a director or the head of
         the organisation in the orange bar. Nothing you do there reaches the real data: no e-mail is sent, no sync runs.
         <b>Back to real data</b> switches back.

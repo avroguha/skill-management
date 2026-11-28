@@ -3,7 +3,8 @@
 //  - Drag a person onto a role to move them there; hold Ctrl while dropping to add them to
 //    that role as well (a person can be in several).
 //  - Tick several people and add them to a role in one go.
-//  - Right-click a person, a role or a skill (or press its "⋯") for everything else.
+//  - Right-click a person, a role or a skill (or press its "⋯") for everything else, among it
+//    asking one person for extra skills beyond their roles (shown on their card as "plus").
 //  - Each role has its own soft colour, here and wherever the role shows; the manager can
 //    choose another from the same list of tints (the dot beside its name).
 // Every change goes into the team's draft: nothing is in force until it is confirmed under
@@ -36,8 +37,10 @@ import { ROLE_TINTS, nextTint, tintColor, tintStyle } from "@/lib/role-colors";
 import { cn } from "@/lib/utils";
 import type { Level } from "@/components/level-picker";
 
-export interface BoardPerson { id: string; name: string; title: string; photo: string | null; href: string; status: string; tone: "done" | "wait" | "todo" | "none"; rated: string }
 export interface BoardSkill { skillId: string; name: string; category: string; target: number; mandatory: boolean; draft: boolean }
+/** A skill asked of one person beyond their roles, with why. */
+export interface BoardExtra extends BoardSkill { note: string }
+export interface BoardPerson { id: string; name: string; title: string; photo: string | null; href: string; status: string; tone: "done" | "wait" | "todo" | "none"; rated: string; extras?: BoardExtra[] }
 export interface BoardRole { id: string; name: string; description: string; /** its soft colour: a key of role-colors.ts */ tint: string; draft: boolean; members: { id: string; draft: boolean }[]; skills: BoardSkill[] }
 export interface CatalogueSkill { id: string; name: string; category: string; categoryId: string; aliases?: string[] }
 type Op = Parameters<typeof editTeam>[1];
@@ -60,6 +63,8 @@ export function TeamBoard({ managerId, canEdit, roles, people, catalogue, catego
   const [over, setOver] = useState<string | null>(null);
   const [roleDialog, setRoleDialog] = useState<{ role?: BoardRole; copyOf?: BoardRole } | null>(null);
   const [skillsFor, setSkillsFor] = useState<BoardRole | null>(null);
+  // asking one person for extra skills; with k, changing that one (its level, its reason)
+  const [extrasFor, setExtrasFor] = useState<{ p: BoardPerson; k?: BoardExtra } | null>(null);
   const [peopleFor, setPeopleFor] = useState<BoardRole | null>(null);
   const [removing, setRemoving] = useState<BoardRole | null>(null);
   const [asking, setAsking] = useState<string | null>(null);
@@ -105,6 +110,7 @@ export function TeamBoard({ managerId, canEdit, roles, people, catalogue, catego
         onSelect: () => act({ op: "removeMember", roleId: role.id, employeeId: p.id }),
       });
     }
+    out.push({ key: "extras", label: "Ask for extra skills…", hint: "Beyond their roles, for them alone", icon: Shapes, onSelect: () => setExtrasFor({ p }) });
     out.push({ key: "select", label: selected.has(p.id) ? "Untick" : "Tick, to add several at once", icon: Check, onSelect: () => toggle(p.id) });
     return [...out, ...personActions(p).map((a, i) => (i === 0 ? { ...a, separator: true } : a))];
   };
@@ -132,6 +138,20 @@ export function TeamBoard({ managerId, canEdit, roles, people, catalogue, catego
       { key: "must", label: k.mandatory ? "Make it a nice-to-have" : "Make it a must-have", hint: k.mandatory ? "Now a must-have: it counts as a gap when missing" : "Now a nice-to-have",
         icon: k.mandatory ? Circle : CircleDot, onSelect: () => act({ op: "setSkills", roleId: r.id, skills: [{ skillId: k.skillId, target: k.target, mandatory: !k.mandatory }] }) },
       { key: "remove", label: `Remove from ${r.name}`, icon: Trash2, destructive: true, onSelect: () => act({ op: "removeSkill", roleId: r.id, skillId: k.skillId }) },
+      ...base.map((a, i) => (i === 0 ? { ...a, separator: true } : a)),
+    ];
+  };
+
+  const extraMenu = (p: BoardPerson, k: BoardExtra): MenuAction[] => {
+    const base = skillActions({ id: k.skillId, name: k.name });
+    if (!canEdit) return base;
+    const set = (target: number, mandatory: boolean) => act({ op: "setExtras", employeeId: p.id, skills: [{ skillId: k.skillId, target, mandatory }] });
+    return [
+      { key: "level", label: `Level asked: ${k.target} ${levelName(k.target)}`, icon: CircleDot,
+        children: levels.filter((l) => l.level > 0).map((l) => ({ key: String(l.level), label: `${l.level} ${l.name}`, icon: l.level === k.target ? Check : Circle, onSelect: () => set(l.level, k.mandatory) })) },
+      { key: "must", label: k.mandatory ? "Make it a nice-to-have" : "Make it a must-have", icon: k.mandatory ? Circle : CircleDot, onSelect: () => set(k.target, !k.mandatory) },
+      { key: "why", label: k.note ? "Change why…" : "Say why…", hint: k.note || "Shown to them", icon: PencilLine, onSelect: () => setExtrasFor({ p, k }) },
+      { key: "remove", label: `No longer ask it of ${p.name.split(" ")[0]}`, icon: Trash2, destructive: true, onSelect: () => act({ op: "removeExtra", employeeId: p.id, skillId: k.skillId }) },
       ...base.map((a, i) => (i === 0 ? { ...a, separator: true } : a)),
     ];
   };
@@ -172,6 +192,19 @@ export function TeamBoard({ managerId, canEdit, roles, people, catalogue, catego
                 {also.map((r) => <RoleChip key={r.id} name={r.name} tint={r.tint} className="px-1.5 py-0 text-[11px]" />)}
               </span>
             )}
+            {/* what their manager asks of them alone, beyond their roles */}
+            {p.extras?.length ? (
+              <span className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">plus
+                {p.extras.map((k) => (
+                  <ActionButton key={k.skillId} actions={extraMenu(p, k)} title={k.name}
+                    label={`${k.name}: asked of ${p.name} alone, level ${k.target} ${levelName(k.target)}, ${k.mandatory ? "must-have" : "nice-to-have"}${k.note ? `. Why: ${k.note}` : ""}${k.draft ? ". Not confirmed yet" : ""}. Press to change.`}
+                    className={cn("inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0 text-[11px] text-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
+                      !k.mandatory && "border-dashed text-muted-foreground", k.draft && "border-amber-500/70 bg-amber-500/10")}>
+                    <span className="font-semibold tabular">{k.target}</span><span className="min-w-0 truncate">{k.name}</span>
+                  </ActionButton>
+                ))}
+              </span>
+            ) : null}
           </span>
           {draft && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300" title="Added in your changes: not in force until you confirm">Draft</span>}
           <span className={cn("hidden shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap sm:inline", TONE[p.tone])} title={p.rated ? `${p.status} · ${p.rated} rated` : p.status}>{p.status}</span>
@@ -200,7 +233,7 @@ export function TeamBoard({ managerId, canEdit, roles, people, catalogue, catego
           {busy && <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Saving…</span>}
           <p className="basis-full text-xs text-muted-foreground">
             Drag a person onto a role to move them there (hold Ctrl while dropping to add them to that role as well). Tick several people to add them in one go.
-            Right-click a person, a role or a skill, or press its ⋯, for everything you can do with it. Each role has its own soft colour; press the dot beside its name to choose another.
+            Right-click a person, a role or a skill, or press its ⋯, for everything you can do with it: on a person, <b>Ask for extra skills</b> asks them alone for skills beyond their roles. Each role has its own soft colour; press the dot beside its name to choose another.
           </p>
         </div>
       )}
@@ -266,7 +299,7 @@ export function TeamBoard({ managerId, canEdit, roles, people, catalogue, catego
                 </div>
                 <div className="min-w-0">
                   <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Shapes className="size-3.5" />Skills this role asks for
-                    <Info label="About a role's skills">The skills people in this role are asked to rate, with the level the role asks for. A solid chip is a must-have; a dashed one is a nice-to-have. {canEdit ? "Press a chip to change its level or remove it." : ""}</Info>
+                    <Info label="About a role’s skills">The skills people in this role are asked to rate, with the level the role asks for. A solid chip is a must-have; a dashed one is a nice-to-have. {canEdit ? "Press a chip to change its level or remove it." : ""}</Info>
                   </h4>
                   {r.skills.length ? (
                     <ul className="flex flex-wrap gap-1.5">
@@ -307,9 +340,23 @@ export function TeamBoard({ managerId, canEdit, roles, people, catalogue, catego
           onAdd={(ids) => act({ op: "addMembers", roleId: peopleFor.id, employeeIds: ids }, () => setPeopleFor(null))} />
       )}
       {skillsFor && (
-        <SkillsDialog role={skillsFor} catalogue={catalogue} categories={categories} levels={levels} busy={busy} onClose={() => setSkillsFor(null)}
+        <SkillsDialog title={`Add skills to ${skillsFor.name}`} have={skillsFor.skills.map((k) => k.skillId)}
+          description="From the catalogue, which is the same for every team. Tick the skills this role asks for; change a skill’s level afterwards by pressing its chip."
+          levelLabel="Level the role asks for" levelInfo="The level a person in this role should reach in these skills. You can set a different level per skill afterwards."
+          catalogue={catalogue} categories={categories} levels={levels} busy={busy} onClose={() => setSkillsFor(null)}
           onAsk={(q) => { setSkillsFor(null); setAsking(q); }}
           onAdd={(skills) => act({ op: "setSkills", roleId: skillsFor.id, skills }, () => setSkillsFor(null))} />
+      )}
+      {extrasFor && (
+        <SkillsDialog title={extrasFor.k ? `${extrasFor.k.name}, asked of ${extrasFor.p.name}` : `Ask ${extrasFor.p.name} for extra skills`}
+          have={(extrasFor.p.extras ?? []).map((k) => k.skillId).filter((id) => id !== extrasFor.k?.skillId)}
+          description="For this person alone, beyond what their roles ask: they are asked to rate these too, and they count in their numbers like a role’s skills. A skill they are already asked for gets the new level and reason."
+          levelLabel="Level asked of them" levelInfo="The level this person should reach in these skills. You can change it per skill afterwards: press its chip on their card."
+          note={extrasFor.k?.note ?? ""} preselect={extrasFor.k ? [extrasFor.k.skillId] : []}
+          startTarget={extrasFor.k?.target} startMandatory={extrasFor.k?.mandatory}
+          catalogue={catalogue} categories={categories} levels={levels} busy={busy} onClose={() => setExtrasFor(null)}
+          onAsk={(q) => { setExtrasFor(null); setAsking(q); }}
+          onAdd={(skills, note) => act({ op: "setExtras", employeeId: extrasFor.p.id, skills, note }, () => setExtrasFor(null))} />
       )}
       {asking != null && <AskDialog catalogue={ask} initial={{ kind: "skill", name: asking }} onClose={() => setAsking(null)} />}
       {removing && (
@@ -352,7 +399,7 @@ function RoleDialog({ roles, role, copyOf, busy, onClose, onSave }: { roles: Boa
         </DialogHeader>
         <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); if (name.trim().length >= 2 && !taken) onSave(name, description, color); }}>
           <Field label="Name" htmlFor="role-name" info="What the team calls it: SRE, Service desk, Team lead. Unique within this team.">
-            <Input id="role-name" value={name} autoFocus maxLength={80} autoComplete="off" onChange={(e) => setName(e.target.value)} placeholder="e.g. Service desk" />
+            <Input id="role-name" value={name} autoFocus maxLength={80} autoComplete="off" onChange={(e) => setName(e.target.value)} placeholder="e.g. Service desk…" />
             {taken && <p className="text-xs text-destructive">This team already has a role called “{taken.name}”.</p>}
           </Field>
           <Field label="What it is for (optional)" htmlFor="role-desc" info="One line the people in the role and other managers see.">
@@ -422,31 +469,39 @@ function PeopleDialog({ role, people, rolesOf, busy, onClose, onAdd }: { role: B
   );
 }
 
-function SkillsDialog({ role, catalogue, categories, levels, busy, onClose, onAdd, onAsk }: {
-  role: BoardRole; catalogue: CatalogueSkill[]; categories: { id: string; name: string }[]; levels: Level[]; busy: boolean;
-  onClose: () => void; onAdd: (skills: { skillId: string; target: number; mandatory: boolean }[]) => void; onAsk: (name: string) => void;
+/** Choosing skills from the catalogue: for a role, or (with `note`) for one person. */
+function SkillsDialog({ title, description, have: haveIds, levelLabel, levelInfo, note: startNote, preselect, startTarget, startMandatory, catalogue, categories, levels, busy, onClose, onAdd, onAsk }: {
+  title: string; description: string; have: string[]; levelLabel: string; levelInfo: string;
+  /** asking one person: a reason they will see (the dialog then shows a box for it) */
+  note?: string;
+  /** ticked from the start, with its level: one skill asked of them already, to change */
+  preselect?: string[]; startTarget?: number; startMandatory?: boolean;
+  catalogue: CatalogueSkill[]; categories: { id: string; name: string }[]; levels: Level[]; busy: boolean;
+  onClose: () => void; onAdd: (skills: { skillId: string; target: number; mandatory: boolean }[], note?: string) => void; onAsk: (name: string) => void;
 }) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [target, setTarget] = useState("3");
-  const [mandatory, setMandatory] = useState(true);
-  const have = new Set(role.skills.map((k) => k.skillId));
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set(preselect ?? []));
+  const [target, setTarget] = useState(String(startTarget ?? 3));
+  const [mandatory, setMandatory] = useState(startMandatory ?? true);
+  const [why, setWhy] = useState(startNote ?? "");
+  const forPerson = startNote != null;
+  const have = new Set(haveIds);
   const results = useMemo(() => {
     const pool = catalogue.filter((c) => !have.has(c.id) && (!cat || c.categoryId === cat));
     if (!q.trim()) return pool;
     return pool.map((c) => ({ c, score: Math.max(matchScore(q, c.name, c.aliases ?? []), matchScore(q, `${c.name} ${c.category}`) - 0.01) }))
       .filter((x) => x.score > 0).sort((a, b) => b.score - a.score || a.c.name.localeCompare(b.c.name)).map((x) => x.c);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalogue, q, cat, role.skills]);
+  }, [catalogue, q, cat, haveIds]);
   const flip = (id: string) => setChosen((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const exists = catalogue.some((c) => sameName(c.name, q) || sameName(c.name.split(" › ").pop() ?? "", q));
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add skills to {role.name}</DialogTitle>
-          <DialogDescription>From the catalogue, which is the same for every team. Tick the skills this role asks for; change a skill&apos;s level afterwards by pressing its chip.</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <div className="relative">
@@ -475,7 +530,7 @@ function SkillsDialog({ role, catalogue, categories, levels, busy, onClose, onAd
           </ul>
           {results.length > 200 && <p className="text-xs text-muted-foreground">The first 200 of {results.length}. Type to narrow it down.</p>}
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <Field label="Level the role asks for" info="The level a person in this role should reach in these skills. You can set a different level per skill afterwards." className="w-56">
+            <Field label={levelLabel} info={levelInfo} className="w-56">
               <Select value={target} onValueChange={setTarget}>
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>{levels.filter((l) => l.level > 0).map((l) => <SelectItem key={l.level} value={String(l.level)}>{l.level} {l.name}</SelectItem>)}</SelectContent>
@@ -485,11 +540,18 @@ function SkillsDialog({ role, catalogue, categories, levels, busy, onClose, onAd
               <Switch checked={mandatory} onCheckedChange={setMandatory} />
             </ToggleField>
           </div>
+          {forPerson && (
+            <Field label="Why (optional)" info="A line on why you ask it of them: they see it next to the skill in My skills.">
+              <Input value={why} onChange={(e) => setWhy(e.target.value)} maxLength={300} placeholder="e.g. You join the on-call rota in March…" />
+            </Field>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button disabled={busy || !chosen.size} onClick={() => onAdd([...chosen].map((skillId) => ({ skillId, target: Number(target), mandatory })))}>
-            {busy && <Loader2 className="animate-spin" />}Add {chosen.size || ""} {chosen.size === 1 ? "skill" : "skills"}
+          <Button disabled={busy || !chosen.size} onClick={() => onAdd([...chosen].map((skillId) => ({ skillId, target: Number(target), mandatory })), forPerson ? why : undefined)}>
+            {busy && <Loader2 className="animate-spin" />}
+            {/* not "Ask for …": the list above has "Ask for “x”", which asks for a new skill in the catalogue */}
+            {forPerson ? (chosen.size > 1 ? `Ask these ${chosen.size} of them` : "Ask it of them") : `Add ${chosen.size || ""} ${chosen.size === 1 ? "skill" : "skills"}`}
           </Button>
         </DialogFooter>
       </DialogContent>

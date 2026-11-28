@@ -4,7 +4,7 @@
 // its team and its name (two teams can each have a role called the same).
 //
 // Order for a first load: skills, grades, people, team-roles, role-people, role-skills,
-// team-needs, ratings.
+// person-skills, team-needs, ratings.
 // Bad rows are skipped and reported with their line number; dryRun checks a file
 // without changing anything.
 import { and, eq, sql } from "drizzle-orm";
@@ -13,7 +13,7 @@ import * as s from "../db/schema.ts";
 import { parseCsvObjects, toCsv } from "./csv.ts";
 import { nextTint } from "./role-colors.ts";
 
-export const KINDS = ["skills", "grades", "people", "team-roles", "role-people", "role-skills", "team-needs", "ratings"] as const;
+export const KINDS = ["skills", "grades", "people", "team-roles", "role-people", "role-skills", "person-skills", "team-needs", "ratings"] as const;
 export type Kind = (typeof KINDS)[number];
 export const SEP = " > ";
 
@@ -24,6 +24,7 @@ export const COLUMNS: Record<Kind, string[]> = {
   "team-roles": ["manager_email", "role", "description"],
   "role-people": ["manager_email", "role", "email"],
   "role-skills": ["manager_email", "role", "skill", "level", "must_have"],
+  "person-skills": ["email", "skill", "level", "must_have", "note"],
   "team-needs": ["manager_email", "skill", "min_level", "headcount", "note"],
   ratings: ["email", "skill", "self_level", "confirmed_level", "status", "self_comment", "manager_comment", "interest", "self_on", "confirmed_on"],
 };
@@ -35,6 +36,7 @@ export const DESCRIPTIONS: Record<Kind, string> = {
   "team-roles": "The roles of each team: the manager's e-mail, the role's name (unique within that team) and what it is for.",
   "role-people": "Who is in which role of their manager's team. A person can be in several roles: one row each.",
   "role-skills": "The skills a team's role asks for, with the level (1-5) and whether it is a must-have (yes) or a nice-to-have (no).",
+  "person-skills": "Skills a manager asks of one person beyond their roles: the person's e-mail, the skill, the level (1-5), must-have (yes) or nice-to-have (no), and why. It belongs to the person's manager at the time of the import.",
   "team-needs": "What a manager's team needs: N people at a minimum level in a skill.",
   ratings: "Self and confirmed levels per person and skill. status: draft, submitted (waiting for the manager), confirmed or returned; empty = confirmed when there is a confirmed level, else submitted.",
 };
@@ -117,6 +119,12 @@ export async function exportCsv(db: DB, kind: Kind): Promise<string> {
       manager_email: email(role.get(r.roleId)!.managerId), role: role.get(r.roleId)!.name,
       skill: L.skillPath(r.skillId), level: r.target, must_have: r.mandatory ? "yes" : "no",
     })).sort((a, b) => `${a.manager_email}${a.role}${a.skill}`.localeCompare(`${b.manager_email}${b.role}${b.skill}`));
+  } else if (kind === "person-skills") {
+    // what a manager asked of one of their own people; left behind when the person moved on
+    const extras = await db.select().from(s.teamPersonSkill);
+    rows = extras.filter((x) => L.personById.get(x.employeeId)?.managerId === x.managerId).map((x) => ({
+      email: email(x.employeeId), skill: L.skillPath(x.skillId), level: x.target, must_have: x.mandatory ? "yes" : "no", note: x.note,
+    })).sort((a, b) => `${a.email}${a.skill}`.localeCompare(`${b.email}${b.skill}`));
   } else if (kind === "people") {
     rows = L.people.map((p) => ({
       email: p.email, name: p.name, title: p.title,
@@ -149,7 +157,7 @@ export async function importCsv(db: DB, kind: Kind, text: string, opts: { dryRun
   const report: ImportReport = { kind, rows: rows.length, created: 0, updated: 0, errors: [], warnings: [], dryRun: !!opts.dryRun, matches: [], undecided: 0 };
   const err = (line: number, message: string) => report.errors.push({ line, message });
   const warn = (line: number, message: string) => report.warnings.push({ line, message });
-  const required = { skills: ["category", "skill"], grades: ["grade", "rank"], people: ["email"], "team-roles": ["manager_email", "role"], "role-people": ["manager_email", "role", "email"], "role-skills": ["manager_email", "role", "skill", "level"], "team-needs": ["manager_email", "skill", "min_level"], ratings: ["email", "skill"] }[kind];
+  const required = { skills: ["category", "skill"], grades: ["grade", "rank"], people: ["email"], "team-roles": ["manager_email", "role"], "role-people": ["manager_email", "role", "email"], "role-skills": ["manager_email", "role", "skill", "level"], "person-skills": ["email", "skill", "level"], "team-needs": ["manager_email", "skill", "min_level"], ratings: ["email", "skill"] }[kind];
   if (rows.length) {
     const missing = required.filter((c) => !(c in rows[0].data));
     if (missing.length) { err(1, `Missing column(s): ${missing.join(", ")}. Expected: ${COLUMNS[kind].join(", ")}`); return report; }
@@ -164,6 +172,7 @@ export async function importCsv(db: DB, kind: Kind, text: string, opts: { dryRun
       else if (kind === "role-people") await importRolePeople(tx, L, rows, report, err);
       else if (kind === "role-skills") await importRoleSkills(tx, L, rows, report, err);
       else if (kind === "team-needs") await importNeeds(tx, L, rows, report, err);
+      else if (kind === "person-skills") await importPersonSkills(tx, L, rows, report, err);
       else if (kind === "ratings") await importRatings(tx, L, rows, report, err, opts.actorId ?? null);
       if (opts.dryRun) throw new Rollback();
     });
@@ -543,6 +552,22 @@ async function importNeeds(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err)
     if (!Number.isInteger(hc) || hc < 1) { err(line, "headcount must be a whole number, 1 or more"); continue; }
     const had = await tx.delete(s.teamNeed).where(and(eq(s.teamNeed.managerId, m.id), eq(s.teamNeed.skillId, skill.id))).returning();
     await tx.insert(s.teamNeed).values({ managerId: m.id, skillId: skill.id, minLevel: min, headcount: hc, note: data.note ?? "" });
+    if (had.length) r.updated++; else r.created++;
+  }
+}
+
+async function importPersonSkills(tx: Tx, L: Lk, rows: Rows, r: ImportReport, err: Err) {
+  for (const { line, data } of rows) {
+    const p = L.personByEmail.get(lc(data.email ?? ""));
+    if (!p) { err(line, `Unknown person ${data.email} (import people first)`); continue; }
+    if (!p.managerId) { err(line, `${data.email} has no manager: only a manager asks a skill of someone`); continue; }
+    const skill = findSkill(L, data.skill ?? "");
+    if (!skill) { err(line, `Unknown skill "${data.skill}"`); continue; }
+    const target = lvl(data.level, 1);
+    if (target == null || target === "bad") { err(line, "level must be 1-5"); continue; }
+    const key = and(eq(s.teamPersonSkill.managerId, p.managerId), eq(s.teamPersonSkill.employeeId, p.id), eq(s.teamPersonSkill.skillId, skill.id));
+    const had = await tx.delete(s.teamPersonSkill).where(key).returning();
+    await tx.insert(s.teamPersonSkill).values({ managerId: p.managerId, employeeId: p.id, skillId: skill.id, target, mandatory: yes(data.must_have, true), note: (data.note ?? "").slice(0, 300) });
     if (had.length) r.updated++; else r.created++;
   }
 }

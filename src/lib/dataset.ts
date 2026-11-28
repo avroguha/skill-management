@@ -12,7 +12,7 @@ export async function readSettings(db: DB): Promise<Settings> {
 }
 
 export async function loadDatasetFrom(db: DB): Promise<Dataset> {
-  const [settings, employees, categories, skills, roles, members, grades, roleSkills, teamNeeds, ratings] = await Promise.all([
+  const [settings, employees, categories, skills, roles, members, grades, roleSkills, teamNeeds, extras, ratings] = await Promise.all([
     readSettings(db),
     db.select().from(s.employee),
     db.select().from(s.skillCategory),
@@ -22,6 +22,7 @@ export async function loadDatasetFrom(db: DB): Promise<Dataset> {
     db.select().from(s.grade),
     db.select().from(s.teamRoleSkill),
     db.select().from(s.teamNeed),
+    db.select().from(s.teamPersonSkill),
     db.select({
       employeeId: s.rating.employeeId, skillId: s.rating.skillId,
       selfLevel: s.rating.selfLevel, selfAt: s.rating.selfAt,
@@ -50,6 +51,9 @@ export async function loadDatasetFrom(db: DB): Promise<Dataset> {
     roles: roles.map((r) => ({ id: r.id, name: r.name, managerId: r.managerId, description: r.description, sort: r.sort, color: r.color })),
     grades: grades.map((g) => ({ id: g.id, name: g.name, rank: g.rank })),
     roleSkills: roleSkills.map((r) => ({ roleId: r.roleId, skillId: r.skillId, target: r.target, mandatory: r.mandatory })),
+    // what a manager asked of one person counts while that person is still in their team
+    personSkills: extras.filter((x) => managerOf.get(x.employeeId) === x.managerId)
+      .map((x) => ({ employeeId: x.employeeId, skillId: x.skillId, target: x.target, mandatory: x.mandatory, note: x.note })),
     teamNeeds: teamNeeds.map((n) => ({ managerId: n.managerId, skillId: n.skillId, minLevel: n.minLevel, headcount: n.headcount, dismissed: n.dismissed })),
     ratings,
   };

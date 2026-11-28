@@ -132,7 +132,11 @@ test("the demo has changes waiting in Review for the manager persona, and reques
   const draft = await readDraft(demo, p.manager);
   assert.ok(draft, "a draft is waiting");
   const changes = diffSetup(await readLiveSetup(demo, p.manager), draft!.setup);
-  assert.deepEqual(changes.map((c) => c.kind).sort(), ["member_added", "member_added", "role_added", "skill_added", "skill_added"]);
+  assert.deepEqual(changes.map((c) => c.kind).sort(), ["extra_added", "member_added", "member_added", "role_added", "skill_added", "skill_added"]);
+  // the team member persona is asked for a skill beyond their role, in force already
+  const e = createEngine(await loadDatasetFrom(demo));
+  const ansible = [...e.skillById.values()].find((k) => k.name === "Ansible")!;
+  assert.equal(e.targetFor(e.empById.get(p.member)!, ansible.id)?.source, "person");
   const requests = await demo.select().from(s.catalogueRequest);
   assert.deepEqual([...new Set(requests.map((r) => r.status))].sort(), ["approved", "pending", "rejected", "returned"]);
   assert.ok(requests.some((r) => r.kind === "category" && r.status === "pending"));

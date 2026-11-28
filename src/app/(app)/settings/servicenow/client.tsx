@@ -48,15 +48,15 @@ export function DirectoryForm({ initial }: { initial: Initial }) {
   return (
     <div className="grid gap-6">
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Field label="Instance URL" className="xl:col-span-2" info="The ServiceNow instance people come from, e.g. https://company.service-now.com."><Input value={f.instanceUrl} onChange={(e) => set("instanceUrl", e.target.value)} placeholder="https://company.service-now.com" /></Field>
+        <Field label="Instance URL" className="xl:col-span-2" info="The ServiceNow instance people come from, e.g. https://company.service-now.com."><Input type="url" spellCheck={false} value={f.instanceUrl} onChange={(e) => set("instanceUrl", e.target.value)} placeholder="https://company.service-now.com" /></Field>
         <Field label="Integration user" info="A ServiceNow account that may read sys_user (and the groups). Basic sign-in; on newer instances it needs the role snc_basic_auth_api_access."><Input value={f.username} onChange={(e) => set("username", e.target.value)} autoComplete="off" /></Field>
-        <Field label="Password" info="The integration user's password. Kept encrypted with the app's secret; never shown again." help={initial.hasPassword ? "Saved, encrypted. Leave blank to keep it." : "Stored encrypted; never shown again."}>
+        <Field label="Password" info="The integration user’s password. Kept encrypted with the app’s secret; never shown again." help={initial.hasPassword ? "Saved, encrypted. Leave blank to keep it." : "Stored encrypted; never shown again."}>
           <Input type="password" value={f.password} onChange={(e) => set("password", e.target.value)} placeholder={initial.hasPassword ? "••••••••" : ""} autoComplete="new-password" />
         </Field>
         <Field label="Top-level user (user_name)" help="Everyone under this person, recursively, through the manager field." info="The person at the top of the part of the organisation that uses the app. Everyone below them (through the manager field, at every level) comes in."><Input value={f.rootUserName} onChange={(e) => set("rootUserName", e.target.value)} placeholder="e.g. jane.doe" /></Field>
         <Field label="User type field" help="Tells people from service accounts, e.g. identity_type." info="A sys_user field whose value tells real people from service accounts. Load values shows what is in it.">
           <div className="flex gap-2">
-            <Input value={f.typeField} onChange={(e) => { set("typeField", e.target.value); setValues(null); }} />
+            <Input aria-label="User type field" spellCheck={false} value={f.typeField} onChange={(e) => { set("typeField", e.target.value); setValues(null); }} />
             <Button type="button" variant="outline" disabled={!!busy || !f.typeField} onClick={() => run("values", async () => {
               const r = await fieldValues(form(), f.typeField);
               if (r.ok) setValues(r.values); else toast.error(r.error);
@@ -88,11 +88,11 @@ export function DirectoryForm({ initial }: { initial: Initial }) {
         <h3 className="mb-2 text-sm font-medium">Fields</h3>
         <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
           <Field label="Login name" info="The field holding the login (user_name). Single sign-on can match on it."><Input value={f.fields.userName} onChange={(e) => setField("userName", e.target.value)} /></Field>
-          <Field label="Display name" info="The field holding the person's name."><Input value={f.fields.name} onChange={(e) => setField("name", e.target.value)} /></Field>
+          <Field label="Display name" info="The field holding the person’s name."><Input value={f.fields.name} onChange={(e) => setField("name", e.target.value)} /></Field>
           <Field label="E-mail" info="The field holding the e-mail address: how single sign-on and CSV files find people."><Input value={f.fields.email} onChange={(e) => setField("email", e.target.value)} /></Field>
-          <Field label="Manager" info="The reference to the person's manager. The reporting lines are the teams."><Input value={f.fields.manager} onChange={(e) => setField("manager", e.target.value)} /></Field>
+          <Field label="Manager" info="The reference to the person’s manager. The reporting lines are the teams."><Input value={f.fields.manager} onChange={(e) => setField("manager", e.target.value)} /></Field>
           <Field label="Designation" info="The job title, shown with the person everywhere."><Input value={f.fields.title} onChange={(e) => setField("title", e.target.value)} /></Field>
-          <Field label="Also keep" help="Comma-separated, e.g. employee_number for the photo URL" info="More sys_user fields to store with each person, for the photo address below and the person's details."><Input value={f.extraFieldsText} onChange={(e) => set("extraFieldsText", e.target.value)} /></Field>
+          <Field label="Also keep" help="Comma-separated, e.g. employee_number for the photo URL" info="More sys_user fields to store with each person, for the photo address below and the person’s details."><Input value={f.extraFieldsText} onChange={(e) => set("extraFieldsText", e.target.value)} /></Field>
         </div>
       </div>
 
@@ -178,7 +178,7 @@ export function PhotoForm({ initial, placeholders, preview: initialPreview, samp
   const [pending, start] = useTransition();
   return (
     <div className="grid gap-3">
-      <Input value={t} onChange={(e) => setT(e.target.value)} placeholder="https://photos.avro.com/{user_name}.jpg" />
+      <Input type="url" aria-label="Photo address" spellCheck={false} value={t} onChange={(e) => setT(e.target.value)} placeholder="https://photos.avro.com/{user_name}.jpg" />
       <p className="text-xs text-muted-foreground">Placeholders: {placeholders.map((p) => <code key={p} className="mr-1 rounded bg-muted px-1">{`{${p}}`}</code>)}. Empty = initials.</p>
       <Button className="justify-self-start" size="sm" disabled={pending} onClick={() => start(async () => {
         const r = await saveProfileSettings({ photoUrlTemplate: t });

@@ -20,7 +20,7 @@ export function TrendChart({ data }: { data: { period: string; onTarget: number 
       <LineChart data={data} margin={{ left: 0, right: 8, top: 8 }}>
         <CartesianGrid vertical={false} />
         <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={6} fontSize={11}
-          tickFormatter={(p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "short" })} />
+          tickFormatter={(p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" })} />
         <YAxis domain={[0, 100]} tickLine={false} axisLine={false} fontSize={11} tickFormatter={(v) => `${v}%`} width={40} />
         <ChartTooltip content={<ChartTooltipContent formatter={(v, n) => (
           <div className="flex w-full justify-between gap-4"><span className="text-muted-foreground">{config[n as keyof typeof config]?.label}</span><span className="font-medium tabular">{v as number}%</span></div>

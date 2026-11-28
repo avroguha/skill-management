@@ -66,6 +66,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
   const remind = canConfirm && progress.needsAction && (v.demo || (await readEmailSettings(db)).enabled)
     ? [{ id: e.id, name: e.name, state: progress.state === "sent_back" ? "Sent back" : progress.state === "not_started" ? "Not started" : "In progress", progress: progress.required ? `${progress.rated} of ${progress.required} rated` : "" }] : [];
   const nothingConfirmed = profile.required > 0 && !progress.confirmed;
+  const extras = new Map(engine.extrasOf(id).map((x) => [x.skillId, x]));
 
   return (
     <>
@@ -81,7 +82,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         { label: "On target", value: nothingConfirmed ? "–" : fmtPct(profile.fitPct),
           hint: nothingConfirmed ? (progress.waiting ? "waiting for their manager to confirm" : "nothing confirmed yet") : profile.required ? `${profile.met} of ${profile.required} skills their roles ask for` : roles.length ? "their roles ask for no skills" : "in no role yet",
           tone: nothingConfirmed || profile.fitPct == null ? "default" : profile.fitPct >= engine.settings.greenAt ? "good" : profile.fitPct >= engine.settings.amberAt ? "warn" : "bad",
-          info: "Of the skills this person's roles ask for, the share where their confirmed level reaches the level asked." },
+          info: "Of the skills this person’s roles ask for, the share where their confirmed level reaches the level asked." },
         { label: "Their skills", value: progress.state === "not_asked" ? "Optional" : progress.state === "done" ? "Done" : progress.state === "waiting" ? "Waiting" : progress.state === "sent_back" ? "Sent back" : progress.state === "not_started" ? "Not started" : "In progress",
           hint: progress.required ? `${progress.rated} of ${progress.required} rated` : "manages people",
           info: "How far their self-assessment has got. Managers are not asked to rate themselves, but may." },
@@ -89,13 +90,13 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
           hint: mayPutInRole ? "put them in one on My team" : "their manager puts them in one",
           info: "A person is asked to rate the skills of the roles they are in. Their manager puts them in a role (My team › People and roles); a person can be in several." }]),
         { label: "Manager", value: manager?.name ?? "–", person: manager ? { name: manager.name, src: (await photoUrls()).get(manager.id) ?? null } : undefined, hint: manager ? engine.teamLabel(manager.id) : "",
-          info: "Who confirms this person's ratings: their direct manager.", href: manager && canSeeEmployee(v, manager.id) ? `/people/${manager.id}` : undefined },
+          info: "Who confirms this person’s ratings: their direct manager.", href: manager && canSeeEmployee(v, manager.id) ? `/people/${manager.id}` : undefined },
         { label: "To confirm", value: String(waiting), hint: canConfirm ? "on My team" : "with their manager",
           info: "Ratings this person sent that wait for their manager.", href: canConfirm && waiting ? withParams("/team", { tab: "confirm", person: id }) : undefined },
       ]} />
       <div className="grid gap-5 xl:grid-cols-3">
         <Section className="xl:col-span-2" title="Skills"
-          info="Their own level (Self) and the one their manager confirmed (Confirmed), against the level their roles ask for (Target). The colour shows how far the confirmed level is from the target. ★ = wants to grow in it.">
+          info="Their own level (Self) and the one their manager confirmed (Confirmed), against the level their roles ask for, or their manager asks of them alone (Target). The colour shows how far the confirmed level is from the target. ★ = wants to grow in it.">
           {cells.length ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -118,6 +119,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
                             {engine.categoryById.get(engine.skillById.get(c.skillId)!.categoryId)?.name}
                             {c.status ? ` · ${STATUS[c.status] ?? c.status}` : ""}{c.at ? ` · ${fmtDate(c.at)}` : ""}{c.stale ? " · stale" : ""}
                           </div>
+                          {extras.has(c.skillId) && <div className="text-xs text-muted-foreground"><span className="rounded bg-amber-500/10 px-1 font-medium text-foreground">Asked of them alone</span>{extras.get(c.skillId)!.note ? ` · “${extras.get(c.skillId)!.note}”` : ""}</div>}
                           {(r?.selfComment || r?.managerComment) && <div className="text-xs text-muted-foreground">{r.selfComment && `“${r.selfComment}”`} {r.managerComment && `Manager: “${r.managerComment}”`}</div>}
                         </td>
                         <td className="px-2 py-2 text-center"><Lvl n={c.target} /></td>
@@ -146,7 +148,7 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
             ) : <p className="text-sm text-muted-foreground">No other team is short of a skill they have.</p>}
           </Section>}
           {seesFit && (
-            <Section title="Fits in other teams" info={`Roles of other teams whose skills this person already holds at the level asked, from ${engine.settings.fitPercent}% of the role's skills upwards (an administrator sets that number in Settings › Levels & rules). The manager named is the one they would be under. Capability only: whether anyone moves is a conversation.`}>
+            <Section title="Fits in other teams" info={`Roles of other teams whose skills this person already holds at the level asked, from ${engine.settings.fitPercent}% of the role’s skills upwards (an administrator sets that number in Settings › Levels & rules). The manager named is the one they would be under. Capability only: whether anyone moves is a conversation.`}>
               {roleFits.length ? (
                 <ul className="grid gap-2.5 text-sm">
                   {roleFits.map((f) => (

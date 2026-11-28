@@ -64,7 +64,7 @@ export default async function DirectoryAdmin() {
             columns={[
               { key: "name", header: "Group", kind: "link", hrefKey: "href" },
               { key: "members", header: "Members", kind: "number", align: "right" },
-              { key: "active", header: "", kind: "muted", facet: true },
+              { key: "active", header: "Status", kind: "muted", facet: true },
               { key: "email", header: "E-mail", kind: "muted" },
               { key: "description", header: "Description", kind: "muted", sortable: false, className: "max-w-96 truncate" },
             ]} />

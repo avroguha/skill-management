@@ -49,7 +49,7 @@ export function RemindTeam({ people, label }: { people: RemindCandidate[]; label
             <div className="grid gap-1.5">
               <Label htmlFor="remind-note">A note from you (optional)</Label>
               <Textarea id="remind-note" rows={3} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)}
-                placeholder="Please finish your self-assessment by Friday: we use it to plan next quarter's training." />
+                placeholder="Please finish your self-assessment by Friday: we use it to plan next quarter’s training…" />
             </div>
           </div>
           <DialogFooter>

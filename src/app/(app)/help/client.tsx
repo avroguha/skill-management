@@ -37,12 +37,12 @@ export function HelpPage({ faq, contact }: { faq: Faq[]; contact: Contact }) {
 
         <Section title="How the numbers work" info="The rules every page uses, so the numbers agree everywhere.">
           <ul className="grid list-disc gap-1.5 pl-5 text-sm">
-            <li><b>Only confirmed levels count.</b> A level counts once the person&apos;s manager confirmed it. Self-ratings waiting for the manager show, but do not count yet.</li>
-            <li><b>On target</b>: of every skill a person&apos;s role asks for, the share where their confirmed level reaches the target. Levels are never averaged across people: one expert does not hide four beginners.</li>
-            <li><b>A team</b> is a manager and everyone below them. Managers are not asked to rate themselves and count in no gap, but the skills they add count as the team&apos;s capability.</li>
-            <li><b>Team needs</b> (&quot;N people at level L in skill S&quot;) are set by the manager, or implied when two or more of their people have a role that asks for a skill. A need is <b>short</b> when fewer people than needed are at that level, and <b>rests on one person</b> when exactly one is.</li>
+            <li><b>Only confirmed levels count.</b> A level counts once the person’s manager confirmed it. Self-ratings waiting for the manager show, but do not count yet.</li>
+            <li><b>On target</b>: of every skill a person’s role asks for, the share where their confirmed level reaches the target. Levels are never averaged across people: one expert does not hide four beginners.</li>
+            <li><b>A team</b> is a manager and everyone below them. Managers are not asked to rate themselves and count in no gap, but the skills they add count as the team’s capability.</li>
+            <li><b>Team needs</b> (“N people at level L in skill S”) are set by the manager, or implied when two or more of their people have a role that asks for a skill. A need is <b>short</b> when fewer people than needed are at that level, and <b>rests on one person</b> when exactly one is.</li>
             <li><b>Elsewhere / could strengthen</b>: people outside a team who already have what it is short of, at the level. Capability only: whether anyone helps or moves is a conversation, not something the app decides.</li>
-            <li>A rating older than the &quot;stale&quot; period (Settings › Levels &amp; rules) is flagged as stale.</li>
+            <li>A rating older than the “stale” period (Settings › Levels &amp; rules) is flagged as stale.</li>
           </ul>
         </Section>
       </div>

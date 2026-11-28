@@ -65,7 +65,7 @@ export function ConfirmQueue({ people: initial, levels, focus }: { people: Confi
         <section key={p.id} className="rounded-lg border bg-card">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
             <Person name={p.name} href={`/people/${p.id}`} size="md" sub={`${p.title ? `${p.title} · ` : ""}${p.items.length} to confirm`} />
-            <Button size="sm" variant="outline" disabled={pending} onClick={() => accept(p.items.map((it) => ({ p, it })))}><CheckCheck />Confirm {p.name.split(" ")[0]}&apos;s {p.items.length}</Button>
+            <Button size="sm" variant="outline" disabled={pending} onClick={() => accept(p.items.map((it) => ({ p, it })))}><CheckCheck />Confirm {p.name.split(" ")[0]}’s {p.items.length}</Button>
           </div>
           <ul className="divide-y">
             {p.items.map((it) => {
@@ -80,7 +80,7 @@ export function ConfirmQueue({ people: initial, levels, focus }: { people: Confi
                     </div>
                   </div>
                   <LevelPicker value={d.level} onChange={(n) => n != null && set(p.id, it, { level: n })} levels={levels} label={`Level for ${it.skill}`} target={it.target} compare={it.self} />
-                  <Input value={d.comment} onChange={(e) => set(p.id, it, { comment: e.target.value })} placeholder="Note to them (needed to send back)"
+                  <Input value={d.comment} onChange={(e) => set(p.id, it, { comment: e.target.value })} placeholder="What to look at again (needed to send back)…"
                     aria-label={`Note about ${it.skill}`} className="h-9 text-sm" />
                   <div className="flex gap-1">
                     <Button size="sm" disabled={pending} onClick={() => accept([{ p, it }])}><Check />Confirm</Button>

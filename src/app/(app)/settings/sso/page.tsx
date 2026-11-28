@@ -28,7 +28,7 @@ export default async function SsoPage() {
   return (
     <>
       <PageHeader title="Single sign-on (SAML 2.0)"
-        description="1. Add the identity provider (upload its Federation Metadata XML) and give it this app's values (download the metadata). 2. Test SSO: see what it returns. 3. Map it to the person and the account. 4. Choose who may sign in. 5. Activate. Until then the sign-in page shows only the local login, and every SSO attempt is captured and refused." />
+        description="1. Add the identity provider (upload its Federation Metadata XML) and give it this app’s values (download the metadata). 2. Test SSO: see what it returns. 3. Map it to the person and the account. 4. Choose who may sign in. 5. Activate. Until then the sign-in page shows only the local login, and every SSO attempt is captured and refused." />
       <div className="grid gap-5">
         <SsoSetup base={base} providers={saved} />
         <Section title="2-5. Test, map, who may sign in, activate" info="Single sign-on stays off until a test sign-in finds an active person. Until then every attempt is captured here and refused, so nobody can sign in by mistake. The local admin account always keeps working.">

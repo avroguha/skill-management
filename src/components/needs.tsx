@@ -46,7 +46,7 @@ export function NeedList({ items, empty = "Every team need here is covered by tw
               {n.critical ? <span className="font-medium text-status-critical dark:text-[color:oklch(0.75_0.15_27)]">nobody in the team at this level</span>
                 : n.spof ? <span className="inline-flex items-center gap-1 align-middle">only <PersonChip name={n.holders[0] ?? ""} /></span>
                   : <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 align-middle">{n.holders.slice(0, 3).map((h) => <PersonChip key={h} name={h} />)}{n.holders.length > 3 ? ` +${n.holders.length - 3}` : ""}</span>}
-              {!n.explicit && " · implied by the team's roles"}
+              {!n.explicit && " · implied by the team’s roles"}
             </div>
             {n.elsewhereCount > 0 && (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

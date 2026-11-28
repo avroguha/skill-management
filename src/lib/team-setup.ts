@@ -1,6 +1,7 @@
-// A team's setup: its roles (who is in each, which skills each asks for) and what the team
-// needs. A role is a grouping the manager makes inside their own team; its name is unique in
-// that team only, and a person can be in several.
+// A team's setup: its roles (who is in each, which skills each asks for), what the team
+// needs, and the skills the manager asks of one person beyond their roles (extras). A role is
+// a grouping the manager makes inside their own team; its name is unique in that team only,
+// and a person can be in several.
 //
 // Nothing a manager changes here counts at once. Every change goes into a DRAFT of the whole
 // setup; the Review section lists what differs from what is in force, each line can be
@@ -19,14 +20,17 @@ export interface SetupRole {
   members: string[]; skills: SetupSkill[];
 }
 export interface SetupNeed { skillId: string; minLevel: number; headcount: number; note: string }
+/** A skill asked of one person, beyond their roles, with why (shown to them). */
+export interface SetupExtra { employeeId: string; skillId: string; target: number; mandatory: boolean; note: string }
 export interface TeamSetup {
   roles: SetupRole[];
   needs: SetupNeed[];
+  extras: SetupExtra[];
   /** needs the roles imply that the manager took off the list */
   dismissed: string[];
 }
 
-export const emptySetup = (): TeamSetup => ({ roles: [], needs: [], dismissed: [] });
+export const emptySetup = (): TeamSetup => ({ roles: [], needs: [], extras: [], dismissed: [] });
 
 export interface SetupContext {
   /** who can be put in this team's roles: the people reporting to its manager */
@@ -47,13 +51,16 @@ export type SetupOp =
   | { op: "removeSkill"; roleId: string; skillId: string }
   | { op: "setNeed"; need: SetupNeed }
   | { op: "removeNeed"; skillId: string; implied?: boolean }
-  | { op: "restoreNeed"; skillId: string };
+  | { op: "restoreNeed"; skillId: string }
+  | { op: "setExtras"; employeeId: string; skills: SetupSkill[]; note?: string }
+  | { op: "removeExtra"; employeeId: string; skillId: string };
 
 export type Applied = { ok: true; setup: TeamSetup } | { ok: false; error: string };
 
 const clone = (s: TeamSetup): TeamSetup => ({
   roles: s.roles.map((r) => ({ ...r, members: [...r.members], skills: r.skills.map((k) => ({ ...k })) })),
   needs: s.needs.map((n) => ({ ...n })),
+  extras: (s.extras ?? []).map((x) => ({ ...x })),
   dismissed: [...s.dismissed],
 });
 const fail = (error: string): Applied => ({ ok: false, error });
@@ -179,6 +186,24 @@ export function applyOp(setup: TeamSetup, op: SetupOp, ctx: SetupContext): Appli
       s.dismissed = s.dismissed.filter((id) => id !== op.skillId);
       return { ok: true, setup: s };
     }
+    case "setExtras": {
+      if (!ctx.people.has(op.employeeId)) return fail("Only people who report to this team's manager can be asked for skills here.");
+      if (!op.skills.length) return fail("Choose at least one skill.");
+      for (const k of op.skills) {
+        if (!level(k.target)) return fail("A level from 1 to 5.");
+        if (!ctx.rateable(k.skillId)) return fail("One of those skills cannot be asked for: it is retired, or it has sub-skills (choose one of them).");
+        const had = s.extras.find((x) => x.employeeId === op.employeeId && x.skillId === k.skillId);
+        // a note given here replaces the old one; none given keeps it
+        const note = op.note != null ? op.note.trim().slice(0, 300) : had?.note ?? "";
+        if (had) { had.target = k.target; had.mandatory = !!k.mandatory; had.note = note; }
+        else s.extras.push({ employeeId: op.employeeId, skillId: k.skillId, target: k.target, mandatory: !!k.mandatory, note });
+      }
+      return { ok: true, setup: s };
+    }
+    case "removeExtra": {
+      s.extras = s.extras.filter((x) => !(x.employeeId === op.employeeId && x.skillId === op.skillId));
+      return { ok: true, setup: s };
+    }
   }
 }
 
@@ -193,6 +218,8 @@ export function sanitize(setup: TeamSetup, ctx: SetupContext): TeamSetup {
   const seen = new Set<string>();
   s.needs = s.needs.filter((n) => ctx.rateable(n.skillId) && !seen.has(n.skillId) && !!seen.add(n.skillId));
   s.dismissed = [...new Set(s.dismissed)].filter((id) => !seen.has(id));
+  const pairs = new Set<string>();
+  s.extras = s.extras.filter((x) => ctx.people.has(x.employeeId) && ctx.rateable(x.skillId) && !pairs.has(`${x.employeeId}|${x.skillId}`) && !!pairs.add(`${x.employeeId}|${x.skillId}`));
   return s;
 }
 
@@ -210,7 +237,9 @@ export type Change =
   | { key: string; kind: "skill_changed"; roleId: string; role: string; skillId: string; from: { target: number; mandatory: boolean }; target: number; mandatory: boolean }
   | { key: string; kind: "need_added" | "need_removed"; skillId: string; minLevel: number; headcount: number }
   | { key: string; kind: "need_changed"; skillId: string; from: SetupNeed; minLevel: number; headcount: number }
-  | { key: string; kind: "need_dismissed" | "need_restored"; skillId: string };
+  | { key: string; kind: "need_dismissed" | "need_restored"; skillId: string }
+  | { key: string; kind: "extra_added" | "extra_removed"; employeeId: string; skillId: string; target: number; mandatory: boolean }
+  | { key: string; kind: "extra_changed"; employeeId: string; skillId: string; from: SetupExtra; target: number; mandatory: boolean };
 
 /** Every difference between two setups, one line each. Empty = the same. */
 export function diffSetup(live: TeamSetup, draft: TeamSetup): Change[] {
@@ -256,6 +285,16 @@ export function diffSetup(live: TeamSetup, draft: TeamSetup): Change[] {
   const wasOff = new Set(live.dismissed), isOff = new Set(draft.dismissed);
   for (const id of draft.dismissed) if (!wasOff.has(id)) out.push({ key: `need_dismissed:${id}`, kind: "need_dismissed", skillId: id });
   for (const id of live.dismissed) if (!isOff.has(id)) out.push({ key: `need_restored:${id}`, kind: "need_restored", skillId: id });
+
+  const pair = (x: SetupExtra) => `${x.employeeId}:${x.skillId}`;
+  const liveExtras = new Map((live.extras ?? []).map((x) => [pair(x), x]));
+  const draftExtras = new Map((draft.extras ?? []).map((x) => [pair(x), x]));
+  for (const x of draft.extras ?? []) {
+    const was = liveExtras.get(pair(x));
+    if (!was) out.push({ key: `extra_added:${pair(x)}`, kind: "extra_added", employeeId: x.employeeId, skillId: x.skillId, target: x.target, mandatory: x.mandatory });
+    else if (was.target !== x.target || was.mandatory !== x.mandatory || was.note !== x.note) out.push({ key: `extra_changed:${pair(x)}`, kind: "extra_changed", employeeId: x.employeeId, skillId: x.skillId, from: was, target: x.target, mandatory: x.mandatory });
+  }
+  for (const x of live.extras ?? []) if (!draftExtras.has(pair(x))) out.push({ key: `extra_removed:${pair(x)}`, kind: "extra_removed", employeeId: x.employeeId, skillId: x.skillId, target: x.target, mandatory: x.mandatory });
   return out;
 }
 
@@ -334,6 +373,15 @@ export function revertChange(live: TeamSetup, draft: TeamSetup, key: string, ctx
     case "need_restored":
       if (!s.dismissed.includes(change.skillId) && !s.needs.some((n) => n.skillId === change.skillId)) s.dismissed.push(change.skillId);
       break;
+    case "extra_added":
+      s.extras = s.extras.filter((x) => !(x.employeeId === change.employeeId && x.skillId === change.skillId));
+      break;
+    case "extra_removed":
+      if (ctx.people.has(change.employeeId)) s.extras.push({ ...live.extras.find((x) => x.employeeId === change.employeeId && x.skillId === change.skillId)! });
+      break;
+    case "extra_changed":
+      s.extras = s.extras.map((x) => (x.employeeId === change.employeeId && x.skillId === change.skillId ? { ...change.from } : x));
+      break;
   }
   return { ok: true, setup: s };
 }
@@ -356,6 +404,11 @@ export function validateSetup(setup: TeamSetup, ctx: SetupContext): string | nul
   for (const n of setup.needs) {
     if (!level(n.minLevel) || !Number.isInteger(n.headcount) || n.headcount < 1) return "A team need has a level or a number of people that is not valid.";
     if (!ctx.rateable(n.skillId)) return "A team need is for a skill that was retired. Open the page again: it is taken out of the draft.";
+  }
+  for (const x of setup.extras ?? []) {
+    if (!ctx.people.has(x.employeeId)) return "A skill is asked of someone who no longer reports to this team's manager. Open the page again: it is taken out of the draft.";
+    if (!level(x.target)) return "A skill asked of one person has a level that is not 1 to 5.";
+    if (!ctx.rateable(x.skillId)) return "A skill asked of one person was retired. Open the page again: it is taken out of the draft.";
   }
   return null;
 }

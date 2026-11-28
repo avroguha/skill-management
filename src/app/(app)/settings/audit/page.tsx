@@ -10,7 +10,7 @@ export default async function AuditAdmin() {
   const rows = await db.select().from(schema.auditLog).orderBy(desc(schema.auditLog.at)).limit(2000);
   return (
     <>
-      <PageHeader title="Audit log" description="Every change made through the app: who, what and when. The latest 2,000 entries. In demo mode, the demo's own log." />
+      <PageHeader title="Audit log" description="Every change made through the app: who, what and when. The latest 2,000 entries. In demo mode, the demo’s own log." />
       <DataTable csvName="audit-log" pageSize={50}
         rows={rows.map((r) => ({
           at: r.at.toISOString(), when: r.at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }),

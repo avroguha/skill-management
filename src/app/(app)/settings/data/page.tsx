@@ -29,7 +29,7 @@ export default async function DataSettings() {
           info="Everything in one file: people, ratings, catalogue, accounts, ServiceNow and single sign-on configuration, settings and the audit log. Restore puts it all back, on this server or a new one; a backup of what is there is taken first. One is also taken before every upgrade.">
           <Backups backups={listBackups()} settings={settings} dir={backupDir()} />
         </Section>
-        <Section title="Import CSV" info="Load in this order the first time: skills, grades, people, team-roles, role-people, role-skills, team-needs, ratings. Check a file first: nothing is saved until you press Import, and every problem is listed with its line number.">
+        <Section title="Import CSV" info="Load in this order the first time: skills, grades, people, team-roles, role-people, role-skills, person-skills, team-needs, ratings. Check a file first: nothing is saved until you press Import, and every problem is listed with its line number.">
           <ImportForm kinds={kinds} />
         </Section>
         <Section title="Export CSV" info="Names, skill paths and e-mail addresses, never internal ids. An export imports back unchanged, so the easiest template for an import is an export.">

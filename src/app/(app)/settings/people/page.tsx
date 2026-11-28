@@ -55,7 +55,7 @@ export default async function PeopleSettings() {
         description="Everyone in the app with their manager, and the accounts that sign in. Access follows who people are: having people reporting to you makes you a manager. Coordinators, who approve new skills and categories, are named under Accounts." />
       <div className="grid gap-5">
         <Section title={`People (${people.filter((p) => p.active).length} active)`}
-          info="Usually from ServiceNow (Settings › ServiceNow), which keeps names, e-mails, designations and managers up to date. A person's roles are not set here: their manager makes the team's roles and puts people in them (My team › People and roles).">
+          info="Usually from ServiceNow (Settings › ServiceNow), which keeps names, e-mails, designations and managers up to date. A person’s roles are not set here: their manager makes the team’s roles and puts people in them (My team › People and roles).">
           <PeopleAdmin rows={personRows} readOnly={!!v?.demo}
             grades={opts(engine.grades)}
             managers={people.filter((p) => p.active).map((p) => ({ value: p.id, label: `${p.name}${p.title ? ` · ${p.title}` : ""}` }))} />

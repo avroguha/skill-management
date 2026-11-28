@@ -77,11 +77,11 @@ export function FindBox({ groups, tasks }: { groups: MenuGroup[]; tasks: Task[] 
     <>
       <Button variant="outline" size="sm" className="h-8 shrink-0 justify-start text-muted-foreground lg:w-64" onClick={() => setOpen(true)} aria-label="Find: what do you want to do?">
         <Search /><span className="hidden lg:inline">What do you want to do?</span><span className="hidden sm:inline lg:hidden">Find</span>
-        <kbd className="ml-auto hidden rounded border bg-muted px-1 text-[10px] lg:inline">Ctrl K</kbd>
+        <kbd className="ml-auto hidden rounded border bg-muted px-1 text-[10px] lg:inline">Ctrl K</kbd>
       </Button>
       <CommandDialog open={open} onOpenChange={setOpen} title="Find" description="Type what you want to do, or the name of a page." className="sm:max-w-xl">
         <Command filter={substringFilter}>
-        <CommandInput placeholder="What do you want to do? e.g. remind, confirm, role, backup" />
+        <CommandInput placeholder="What do you want to do? e.g. remind, confirm, role, backup…" />
         <CommandList className="max-h-[60vh]">
           <CommandEmpty>Nothing like that. Try another word, or open Help.</CommandEmpty>
           {taskGroups.map(([label, list]) => (

@@ -33,7 +33,7 @@ export function TeamTitle({ managerId, name, custom, canEdit }: { managerId: str
         router.refresh();
       });
     }}>
-      <Input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. Cloud Platform" className="h-8 w-56 text-base font-normal" aria-label="Team name" maxLength={80} />
+      <Input autoFocus value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. Cloud Platform…" className="h-8 w-56 text-base font-normal" aria-label="Team name" maxLength={80} />
       <Button size="icon" className="size-8" type="submit" disabled={busy} aria-label="Save the name"><Check className="size-4" /></Button>
       <Button size="icon" variant="ghost" className="size-8" type="button" onClick={() => setEditing(false)} aria-label="Cancel"><X className="size-4" /></Button>
       <Info label="About the team name">What everyone sees for this team: in pickers, insights and e-mails. Leave it empty to call it after its manager.</Info>

@@ -77,11 +77,11 @@ export default async function SkillsSettings() {
             fields={[
               { name: "name", label: "Name", info: "What people see and search for. Unique (within its skill, for a sub-skill): skills with a name like it are listed as you type.",
                 similar: { noun: "skill", items: skills.filter((s) => s.status !== "retired").map((s) => ({ id: s.id, name: label(s.id), aliases: [s.name, ...s.aliases], hint: catName.get(s.categoryId) ?? "", href: `/skills/${s.id}` })) } },
-              { name: "categoryId", label: "Category", type: "select", info: "The group it belongs to. A sub-skill always has its parent's category.", options: cats.map((c) => ({ value: c.id, label: c.name })) },
+              { name: "categoryId", label: "Category", type: "select", info: "The group it belongs to. A sub-skill always has its parent’s category.", options: cats.map((c) => ({ value: c.id, label: c.name })) },
               { name: "parentId", label: "Under (for a sub-skill)", type: "select", optional: true, info: "Makes it a sub-skill of a top-level skill, e.g. EC2 under AWS. People then rate the sub-skills, not the parent.",
                 options: skills.filter((s) => !s.parentId && s.status !== "retired").map((s) => ({ value: s.id, label: `${s.name} (${catName.get(s.categoryId)})` })) },
               { name: "aliases", label: "Also known as", placeholder: "K8s, kube", info: "Other names, comma-separated. Search finds the skill by these, and the CSV upload uses them to spot duplicates." },
-              { name: "description", label: "Description", type: "textarea", info: "One or two lines on what it covers, shown on the skill's page." },
+              { name: "description", label: "Description", type: "textarea", info: "One or two lines on what it covers, shown on the skill’s page." },
               { name: "status", label: "Status", type: "select", half: true, info: "Active: rated. Retired: no longer offered; history stays.", options: [
                 { value: "active", label: "Active" }, { value: "retired", label: "Retired" },
               ] },

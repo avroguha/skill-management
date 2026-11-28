@@ -95,7 +95,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
   let body: React.ReactNode = null;
   if (tab === "confirm") {
     if (!canConfirm) {
-      body = <p className="text-sm text-muted-foreground">{waitingTotal ? `${waitingTotal} ratings wait for ${manager.name} to confirm.` : "Nothing waits here."} Only the person&apos;s own manager confirms their ratings.</p>;
+      body = <p className="text-sm text-muted-foreground">{waitingTotal ? `${waitingTotal} ratings wait for ${manager.name} to confirm.` : "Nothing waits here."} Only the person’s own manager confirms their ratings.</p>;
     } else {
       const people: ConfirmPerson[] = toConfirm.map((e) => ({
         id: e.id, name: e.name, title: e.title,
@@ -141,7 +141,13 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     }));
     const boardPeople: BoardPerson[] = direct.map((e) => {
       const p = engine.progress(e);
-      return { id: e.id, name: e.name, title: e.title, photo: photos.get(e.id) ?? null, href: `/people/${e.id}`, status: STATE_SHORT[p.state] ?? "", tone: STATE_TONE[p.state] ?? "none", rated: p.required ? `${p.rated} of ${p.required}` : "" };
+      // what the manager asks of them alone, as it would be (draft included)
+      const extras = view.extras.filter((x) => x.employeeId === e.id).map((x) => ({
+        skillId: x.skillId, name: skillName(x.skillId), category: engine.categoryById.get(engine.skillById.get(x.skillId)?.categoryId ?? "")?.name ?? "",
+        target: x.target, mandatory: x.mandatory, note: x.note,
+        draft: changed.has(`extra_added:${e.id}:${x.skillId}`) || changed.has(`extra_changed:${e.id}:${x.skillId}`),
+      })).sort((a, b) => a.name.localeCompare(b.name));
+      return { id: e.id, name: e.name, title: e.title, photo: photos.get(e.id) ?? null, href: `/people/${e.id}`, status: STATE_SHORT[p.state] ?? "", tone: STATE_TONE[p.state] ?? "none", rated: p.required ? `${p.rated} of ${p.required}` : "", extras };
     });
     const catalogue = [...engine.skillById.values()].filter((s) => engine.isRateable(s.id))
       .map((s) => ({ id: s.id, name: engine.skillLabel(s.id), category: engine.categoryById.get(s.categoryId)?.name ?? "", categoryId: s.categoryId }))
@@ -150,7 +156,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     body = (
       <div className="grid gap-5">
         <Section title={`Roles (${view.roles.length})`}
-          info="A role is a group inside this team, made by its manager: who is in it, and which skills it asks for. Its name is unique in this team only. A person can be in more than one role, and nobody is put in a role by themselves. What a person's roles ask for is what they are asked to rate.">
+          info="A role is a group inside this team, made by its manager: who is in it, and which skills it asks for. Its name is unique in this team only. A person can be in more than one role, and nobody is put in a role by themselves. What a person’s roles ask for is what they are asked to rate.">
           <TeamBoard managerId={scope} canEdit={canEdit} roles={boardRoles} people={boardPeople} catalogue={catalogue} levels={levels} ask={ask}
             categories={[...engine.categoryById.values()].sort((a, b) => a.sort - b.sort).map((c) => ({ id: c.id, name: c.name }))} />
         </Section>
@@ -173,7 +179,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
             columns={[
               { key: "name", header: "Name", kind: "person", hrefKey: "href", photoKey: "photo" },
               { key: "title", header: "Designation", kind: "muted" },
-              { key: "role", header: "Roles", kind: "roles", chipsKey: "roleTags", facet: true, info: "The roles of their manager's team this person is in, each in its own colour. What those roles ask for is what they are asked to rate." },
+              { key: "role", header: "Roles", kind: "roles", chipsKey: "roleTags", facet: true, info: "The roles of their manager’s team this person is in, each in its own colour. What those roles ask for is what they are asked to rate." },
               ...(all ? [{ key: "manager", header: "Manager", kind: "person" as const, facet: true }] : []),
               { key: "state", header: "Their skills", facet: true, info: "Not started: nothing rated. In progress: some rated, or saved and not sent. Sent back: the manager returned a rating with a note. Waiting: sent, the manager has not confirmed yet. Done: confirmed." },
               { key: "rated", header: "Rated", align: "right", info: "Skills rated, of those their roles ask for." },
@@ -207,7 +213,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
       .sort((a, b) => a.name.localeCompare(b.name));
     const impliedIds = new Set(implied.map((d) => d.skillId));
     body = (
-      <Section title="What this team needs" info="Skills the team depends on: how many people it needs at what level, and how many it has (the manager and everyone below count). The manager chooses them. A need is also listed “from the roles” when two or more of the manager's people are in a role that asks for a skill as a must-have. Every need can be changed or removed, those too.">
+      <Section title="What this team needs" info="Skills the team depends on: how many people it needs at what level, and how many it has (the manager and everyone below count). The manager chooses them. A need is also listed “from the roles” when two or more of the manager’s people are in a role that asks for a skill as a must-have. Every need can be changed or removed, those too.">
         <TeamNeeds managerId={scope} needs={rows} skills={skills} levels={levels} canEdit={canEdit} ask={await getAskCatalogue()}
           dismissed={view.dismissed.filter((id) => impliedIds.has(id)).map((id) => ({ id, name: skillName(id) }))} />
       </Section>
@@ -216,7 +222,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
     const all = param(sp, "all") === "1";
     const data = peopleHeatmapData(engine, scope, { everyone: all, hideMet: param(sp, "short") === "1", includeRated: true });
     body = (
-      <Section title="Skills grid" info="One row per person, one column per skill their roles ask for (and the team's needs, and skills they added). The number is their confirmed level; the colour is how far it is from the level asked. Hover a cell for the detail."
+      <Section title="Skills grid" info="One row per person, one column per skill their roles ask for (and the team’s needs, and skills they added). The number is their confirmed level; the colour is how far it is from the level asked. Hover a cell for the detail."
         actions={(
           <div className="inline-flex rounded-md border p-0.5 text-xs" role="group" aria-label="Who to show">
             <Link href={href("grid")} className={!all ? "rounded bg-muted px-2 py-1 font-medium" : "rounded px-2 py-1 text-muted-foreground hover:text-foreground"}>Direct</Link>
@@ -250,12 +256,12 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
               { key: "team", header: "Would fit in", facet: true, info: "The other team whose role their skills match." },
               { key: "manager", header: "Under", kind: "person", hrefKey: "managerHref", photoKey: "managerPhoto", info: "The manager of that team." },
               { key: "role", header: "As", kind: "roles", chipsKey: "roleTags", facet: true, info: "The role of that team their skills match." },
-              { key: "match", header: "Match", kind: "pct", align: "right", info: "The share of that role's skills they hold at the level it asks for." },
-              { key: "has", header: "Skills", align: "right", info: "How many of the role's skills they hold at the level it asks for." },
+              { key: "match", header: "Match", kind: "pct", align: "right", info: "The share of that role’s skills they hold at the level it asks for." },
+              { key: "has", header: "Skills", align: "right", info: "How many of the role’s skills they hold at the level it asks for." },
               { key: "missing", header: "Not there yet", kind: "muted", info: "The skills of that role they are below in or have not rated: their level, and the level the role asks for." },
             ]} />
         ) : (
-          <Empty>Nobody here matches a role of another team at {at}% or more yet. This fills in as people&apos;s ratings are confirmed and other teams set up their roles.</Empty>
+          <Empty>Nobody here matches a role of another team at {at}% or more yet. This fills in as people’s ratings are confirmed and other teams set up their roles.</Empty>
         )}
       </Section>
     );
@@ -268,7 +274,7 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         case "role_removed": return { key: c.key, group: `Role: ${c.role}`, kind: "remove", text: `Role “${c.role}” deleted (${c.members} ${c.members === 1 ? "person" : "people"} in it, ${c.skills} ${c.skills === 1 ? "skill" : "skills"})` };
         case "role_renamed": return { key: c.key, group: `Role: ${c.role}`, kind: "change", text: `Renamed from “${c.from}” to “${c.role}”` };
         case "role_described": return { key: c.key, group: `Role: ${c.role}`, kind: "change", text: "What it is for was changed" };
-        case "role_coloured": return { key: c.key, group: `Role: ${c.role}`, kind: "change", text: `Colour changed${tintName(c.from) ? ` from ${tintName(c.from)}` : ""} to ${tintName(c.color) || "the team's next free colour"}` };
+        case "role_coloured": return { key: c.key, group: `Role: ${c.role}`, kind: "change", text: `Colour changed${tintName(c.from) ? ` from ${tintName(c.from)}` : ""} to ${tintName(c.color) || "the team’s next free colour"}` };
         case "roles_reordered": return { key: c.key, group: "Roles", kind: "change", text: "The order of the roles was changed" };
         case "member_added": return { key: c.key, group: `Role: ${c.role}`, kind: "add", text: `${personName(c.employeeId)} added to the role` };
         case "member_removed": return { key: c.key, group: `Role: ${c.role}`, kind: "remove", text: `${personName(c.employeeId)} taken out of the role` };
@@ -280,10 +286,14 @@ export default async function TeamPage({ searchParams }: { searchParams: SearchP
         case "need_changed": return { key: c.key, group: "Team needs", kind: "change", text: `${skillName(c.skillId)}: ${need(c.from)} → ${need(c)}${c.from.minLevel === c.minLevel && c.from.headcount === c.headcount ? " (the reason changed)" : ""}` };
         case "need_dismissed": return { key: c.key, group: "Team needs", kind: "remove", text: `${skillName(c.skillId)} taken off the list (the roles ask for it)` };
         case "need_restored": return { key: c.key, group: "Team needs", kind: "add", text: `${skillName(c.skillId)} back on the list` };
+        case "extra_added": return { key: c.key, group: `Asked of ${personName(c.employeeId)} alone`, kind: "add", text: `${skillName(c.skillId)}, level ${c.target}, ${kind(c.mandatory)}` };
+        case "extra_removed": return { key: c.key, group: `Asked of ${personName(c.employeeId)} alone`, kind: "remove", text: `${skillName(c.skillId)} no longer asked (was level ${c.target}, ${kind(c.mandatory)})` };
+        case "extra_changed": return { key: c.key, group: `Asked of ${personName(c.employeeId)} alone`, kind: "change",
+          text: `${skillName(c.skillId)}: ${[c.from.target !== c.target ? `level ${c.from.target} → ${c.target}` : "", c.from.mandatory !== c.mandatory ? `now a ${kind(c.mandatory)}` : ""].filter(Boolean).join(", ") || "the reason changed"}` };
       }
     };
     body = (
-      <Section title="Review changes" info="Every change to this team's roles and needs is a draft first. Here is what differs from what is in force. Take back a line you did not mean, then confirm: only then do people's roles and the skills they are asked for change.">
+      <Section title="Review changes" info="Every change to this team’s roles and needs is a draft first. Here is what differs from what is in force. Take back a line you did not mean, then confirm: only then do people’s roles and the skills they are asked for change.">
         <ReviewChanges managerId={scope} canEdit={canEdit} lines={changes.map(line)} by={stored?.authorName ?? ""} when={stored ? fmtDate(stored.updatedAt) : ""} backHref={href("people")} />
       </Section>
     );

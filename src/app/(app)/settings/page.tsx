@@ -63,7 +63,7 @@ export default async function SettingsHome() {
   return (
     <>
       <PageHeader title="Settings" description="Everything the app needs, one section each: they are the sub menu under Settings in the menu. Every field has an (i) that says what it does." />
-      {v?.demo && <p className="mb-4 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">Demo mode: these are the demo&apos;s settings. Single sign-on, ServiceNow, e-mail, accounts and backups only change for real, so they are read-only here.</p>}
+      {v?.demo && <p className="mb-4 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">Demo mode: these are the demo’s settings. Single sign-on, ServiceNow, e-mail, accounts and backups only change for real, so they are read-only here.</p>}
       <div className="grid gap-5">
         <Section title="Setup" info="The five things the app needs to be useful, in order. Each opens its section.">
           <ol className="grid gap-2">
@@ -82,7 +82,7 @@ export default async function SettingsHome() {
           </ol>
         </Section>
         {summary && (
-          <Section title="Brought over from version 1" info="On its first start, version 2 copied everything that still has a meaning from the version-1 database, which it left unchanged. Units became teams (a unit's needs became its manager's team needs); what version 2 no longer has was left in the version-1 database.">
+          <Section title="Brought over from version 1" info="On its first start, version 2 copied everything that still has a meaning from the version-1 database, which it left unchanged. Units became teams (a unit’s needs became its manager’s team needs); what version 2 no longer has was left in the version-1 database.">
             <p className="text-sm">{summary.source ? `From ${summary.source}, ${fmtDate(summary.at)}.` : summary.note}</p>
             {summary.source && (
               <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-3">

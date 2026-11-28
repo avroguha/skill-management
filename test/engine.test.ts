@@ -315,3 +315,21 @@ test("talent: holders, need and on-target agree with the plain roll-ups", () => 
   assert.equal(ec2.onTarget, 0);
   assert.equal(t.skills.get("sql")!.extra, 1, "ann holds SQL at 3 without being asked");
 });
+
+test("a skill a manager asks of one person counts like a role's: a target, a required skill, the higher level wins", () => {
+  const ds = dataset();
+  // bob (Engineer: ec2 3, k8s 2) is also asked for SQL at 3, and for k8s at 4, by ann
+  ds.personSkills = [
+    { employeeId: "bob", skillId: "sql", target: 3, mandatory: true, note: "on-call" },
+    { employeeId: "bob", skillId: "k8s", target: 4, mandatory: false },
+    { employeeId: "bob", skillId: "ec2", target: 1, mandatory: false },
+  ];
+  const e = createEngine(ds);
+  const bob = e.empById.get("bob")!;
+  assert.deepEqual(e.targetFor(bob, "sql"), { target: 3, mandatory: true, source: "person" }, "asked of him alone");
+  assert.deepEqual(e.targetFor(bob, "k8s"), { target: 4, mandatory: false, source: "person" }, "his manager asks more than the role");
+  assert.deepEqual(e.targetFor(bob, "ec2"), { target: 3, mandatory: true, source: "role" }, "a lower ask changes nothing: the role's level stands");
+  assert.deepEqual(e.requiredSkillIds(bob).sort(), ["ec2", "k8s", "sql"]);
+  assert.deepEqual(e.extrasOf("bob").map((x) => x.skillId).sort(), ["ec2", "k8s", "sql"]);
+  assert.equal(e.targetFor(e.empById.get("cat")!, "sql"), null, "nobody else is asked");
+});

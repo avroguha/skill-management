@@ -121,7 +121,7 @@ async function insertChunks<T>(rows: T[], insert: (chunk: T[]) => Promise<unknow
 export interface DemoPersonas { top: string; director: string; manager: string; member: string; coordinator: string }
 export const DEMO_PERSONAS_KEY = "demo_personas";
 /** Raised when the made-up organisation changes, so an existing demo database is rebuilt on the next start. */
-export const DEMO_VERSION = 5;
+export const DEMO_VERSION = 6;
 const DEMO_VERSION_KEY = "demo_version";
 
 export async function seedDemo(db: DB): Promise<DemoPersonas> {
@@ -306,6 +306,10 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
   const coordinator = employees.find((e) => e.team === "Reliability" && e.kind === "manager")!;
   const personas: DemoPersonas = { top: top.id, director: director.id, manager: manager.id, member: member.id, coordinator: coordinator.id };
 
+  // ---- a skill the manager asks of one person beyond their role: the team member persona
+  const extra = { employeeId: member.id, skillId: sk("Ansible"), target: 3, mandatory: true, note: "You take over the patching runbooks next quarter." };
+  await db.insert(s.teamPersonSkill).values({ managerId: manager.id, ...extra });
+
   // ---- changes waiting in Review: the manager persona started a new role and has not confirmed it
   {
     const mine = teamRoles.filter((r) => r.managerId === manager.id).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0));
@@ -321,6 +325,8 @@ export async function seedDemo(db: DB): Promise<DemoPersonas> {
           skills: [{ skillId: sk("Incident management"), target: 3, mandatory: true }, { skillId: sk("Observability"), target: 3, mandatory: true }] },
       ],
       needs: needs.filter((n) => n.managerId === manager.id).map((n) => ({ skillId: n.skillId, minLevel: n.minLevel, headcount: n.headcount ?? 1, note: n.note ?? "" })),
+      // the one in force, and one more not confirmed yet
+      extras: [extra, ...people.filter((e) => e.id !== member.id).slice(0, 1).map((e) => ({ employeeId: e.id, skillId: sk("Python"), target: 3, mandatory: false, note: "To help automate the runbooks." }))],
       dismissed: [] as string[],
     };
     await db.insert(s.teamDraft).values({ managerId: manager.id, doc: doc as never, authorId: "demo:manager", authorName: manager.name });

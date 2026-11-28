@@ -19,9 +19,9 @@ type Opt = { id: string; name: string };
 
 const CHOICES: { value: What; title: string; goes: string; stays: string }[] = [
   { value: "assessments", title: "Assessments", goes: "The ratings people gave themselves, what managers confirmed, notes and the rating history, for everyone, one team or one person.", stays: "Roles, team needs, the catalogue, requests." },
-  { value: "team", title: "A team's roles and needs", goes: "The roles of a team (who is in them, the skills they ask for), its team needs and any changes not confirmed yet.", stays: "The people and their ratings; the catalogue." },
+  { value: "team", title: "A team’s roles and needs", goes: "The roles of a team (who is in them, the skills they ask for), its team needs and any changes not confirmed yet.", stays: "The people and their ratings; the catalogue." },
   { value: "requests", title: "Requests", goes: "Every request for a new skill or category, decided or not.", stays: "Skills and categories that were approved stay in the catalogue." },
-  { value: "everything", title: "Everything: back to how it was first installed", goes: "All ratings and their history, every team's roles and needs, unconfirmed changes, requests and team names. The skill catalogue, the level wording and the rules go back to what the app ships with.", stays: "People and who reports to whom, accounts, single sign-on, ServiceNow, e-mail, the help page, the audit log and the backups." },
+  { value: "everything", title: "Everything: back to how it was first installed", goes: "All ratings and their history, every team’s roles and needs, unconfirmed changes, requests and team names. The skill catalogue, the level wording and the rules go back to what the app ships with.", stays: "People and who reports to whom, accounts, single sign-on, ServiceNow, e-mail, the help page, the audit log and the backups." },
 ];
 
 export function ResetData({ managers, people }: { managers: (Opt & { below: number })[]; people: Opt[] }) {
@@ -82,7 +82,7 @@ export function ResetData({ managers, people }: { managers: (Opt & { below: numb
             </Field>
           )}
           {whose === "person" && what === "assessments" && (
-            <Field label="Person" info="Only this person's ratings and their history are removed.">
+            <Field label="Person" info="Only this person’s ratings and their history are removed.">
               <Select value={person} onValueChange={setPerson}>
                 <SelectTrigger className="w-full max-w-xl"><SelectValue placeholder="Choose a person…" /></SelectTrigger>
                 <SelectContent>{people.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>

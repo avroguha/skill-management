@@ -37,6 +37,8 @@ const opIn = z.discriminatedUnion("op", [
   z.object({ op: z.literal("setNeed"), need: z.object({ skillId: z.string().min(1), minLevel: z.coerce.number().int(), headcount: z.coerce.number().int(), note: z.string().max(400).default("") }) }),
   z.object({ op: z.literal("removeNeed"), skillId: z.string().min(1), implied: z.boolean().optional() }),
   z.object({ op: z.literal("restoreNeed"), skillId: z.string().min(1) }),
+  z.object({ op: z.literal("setExtras"), employeeId: z.string().min(1), skills: z.array(skillIn).min(1).max(500), note: z.string().max(400).optional() }),
+  z.object({ op: z.literal("removeExtra"), employeeId: z.string().min(1), skillId: z.string().min(1) }),
 ]);
 
 const DONE: Record<SetupOp["op"], string> = {
@@ -52,6 +54,8 @@ const DONE: Record<SetupOp["op"], string> = {
   setNeed: "Need saved.",
   removeNeed: "Need removed.",
   restoreNeed: "Need back on the list.",
+  setExtras: "Asked of them.",
+  removeExtra: "No longer asked of them.",
 };
 
 /** The team as the rules see it, what is in force, and the draft (kept clean of people who left and skills that were retired). */

@@ -29,7 +29,8 @@
 
 export type Basis = "validated" | "self";
 export type GapCategory = "meets" | "minor" | "significant" | "critical" | "unassessed" | "not_required";
-export type TargetSource = "role";
+/** Where a target comes from: the person's roles, or their manager asking it of them alone. */
+export type TargetSource = "role" | "person";
 
 import { tintsFor, type TintKey } from "../role-colors.ts";
 
@@ -65,6 +66,8 @@ export interface Skill { id: string; name: string; categoryId: string; parentId:
 export interface Role { id: string; name: string; managerId: string; description?: string; sort?: number; /** its tint, "" = by its place in the team */ color?: string }
 export interface Grade { id: string; name: string; rank: number }
 export interface RoleSkill { roleId: string; skillId: string; target: number; mandatory: boolean }
+/** A skill a manager asks of one person beyond their roles (only their own manager's count). */
+export interface PersonSkill { employeeId: string; skillId: string; target: number; mandatory: boolean; note?: string }
 export interface TeamNeed {
   managerId: string; skillId: string; minLevel: number; headcount: number;
   /** a need the roles imply that the manager took off the list */
@@ -86,6 +89,8 @@ export interface Dataset {
   roles: Role[];
   grades: Grade[];
   roleSkills: RoleSkill[];
+  /** skills asked of one person (absent = none) */
+  personSkills?: PersonSkill[];
   teamNeeds: TeamNeed[];
   ratings: Rating[];
 }
@@ -254,6 +259,13 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     roleIndex.set(rs.roleId, bySkill);
     rolesBySkill.set(rs.skillId, [...(rolesBySkill.get(rs.skillId) ?? []), rs.roleId]);
   }
+  // person -> skill -> what their manager asks of them alone
+  const extraIndex = new Map<string, Map<string, PersonSkill>>();
+  for (const x of ds.personSkills ?? []) {
+    const bySkill = extraIndex.get(x.employeeId) ?? new Map<string, PersonSkill>();
+    bySkill.set(x.skillId, x);
+    extraIndex.set(x.employeeId, bySkill);
+  }
   const needsByManager = new Map<string, TeamNeed[]>();
   for (const n of ds.teamNeeds) needsByManager.set(n.managerId, [...(needsByManager.get(n.managerId) ?? []), n]);
 
@@ -345,7 +357,9 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     return n;
   }
 
-  /** What a person's roles ask of them in a skill: the highest level any of them asks for; a must-have when any says so. */
+  /** What is asked of a person in a skill, by their roles and by their manager for them alone:
+   *  the highest level asked; a must-have when any says so. The source is "person" when the
+   *  manager's own ask is what sets the level (no role asks it, or a role asks less). */
   function targetFor(emp: Employee, skillId: string): Target | null {
     if (!assesses(emp)) return null;
     let out: Target | null = null;
@@ -354,7 +368,15 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
       if (!rs) continue;
       out = out ? { target: Math.max(out.target, rs.target), mandatory: out.mandatory || rs.mandatory, source: "role" } : { target: rs.target, mandatory: rs.mandatory, source: "role" };
     }
+    const x = extraIndex.get(emp.id)?.get(skillId);
+    if (x) out = out ? { target: Math.max(out.target, x.target), mandatory: out.mandatory || x.mandatory, source: x.target > out.target ? "person" : out.source }
+      : { target: x.target, mandatory: x.mandatory, source: "person" };
     return out;
+  }
+
+  /** The skills a person's manager asks of them alone, beyond their roles. */
+  function extrasOf(employeeId: string): PersonSkill[] {
+    return [...(extraIndex.get(employeeId)?.values() ?? [])];
   }
 
   const requiredMemo = new Map<string, string[]>();
@@ -365,6 +387,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     if (!assesses(emp)) { requiredMemo.set(emp.id, []); return []; }
     const ids = new Set<string>();
     for (const rid of emp.roleIds) for (const id of roleIndex.get(rid)?.keys() ?? []) ids.add(id);
+    for (const id of extraIndex.get(emp.id)?.keys() ?? []) ids.add(id);
     const out = [...ids].filter(isRateable);
     requiredMemo.set(emp.id, out);
     return out;
@@ -864,6 +887,7 @@ export function createEngine(ds: Dataset, opts: { basis?: Basis } = {}) {
     isRateable,
     targetFor,
     requiredSkillIds,
+    extrasOf,
     levelOf: (employeeId: string, skillId: string, b?: Basis) => levelOf(ratingByKey.get(`${employeeId}|${skillId}`), b),
     rating: (employeeId: string, skillId: string) => ratingByKey.get(`${employeeId}|${skillId}`),
     cell,

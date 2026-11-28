@@ -51,7 +51,7 @@ export default async function SkillPage({ params, searchParams }: { params: Prom
   if (!v.canSeeTeams) {
     const mine = v.employee ? engine.cell(v.employee, id) : null;
     return (<>{header}<div className="grid gap-5 lg:grid-cols-2">{about}
-      {mine && <Section title="You" info="Your role's target for it, the level your manager confirmed, and your own."><p className="text-sm">Target {mine.target ?? "–"} · confirmed {mine.validatedLevel ?? "–"} · yours {mine.selfLevel ?? "–"}</p></Section>}
+      {mine && <Section title="You" info="Your role’s target for it, the level your manager confirmed, and your own."><p className="text-sm">Target {mine.target ?? "–"} · confirmed {mine.validatedLevel ?? "–"} · yours {mine.selfLevel ?? "–"}</p></Section>}
     </div></>);
   }
 

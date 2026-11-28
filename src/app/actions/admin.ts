@@ -144,6 +144,9 @@ export async function mergeSkill(fromId: string, intoId: string): Promise<Result
       await tx.execute(sql`update team_need set skill_id = ${intoId} where skill_id = ${fromId}
         and manager_id not in (select manager_id from team_need where skill_id = ${intoId})`);
       await tx.delete(schema.teamNeed).where(eq(schema.teamNeed.skillId, fromId));
+      await tx.execute(sql`update team_person_skill set skill_id = ${intoId} where skill_id = ${fromId}
+        and (manager_id, employee_id) not in (select manager_id, employee_id from team_person_skill where skill_id = ${intoId})`);
+      await tx.delete(schema.teamPersonSkill).where(eq(schema.teamPersonSkill.skillId, fromId));
       await tx.update(schema.skill).set({ aliases: [...new Set([...into.aliases, from.name, ...from.aliases])] }).where(eq(schema.skill.id, intoId));
       await tx.update(schema.skill).set({ status: "retired", description: `Merged into ${into.name}. ${from.description}`.trim() }).where(eq(schema.skill.id, fromId));
     });

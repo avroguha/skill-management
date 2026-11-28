@@ -21,6 +21,8 @@ export interface Row {
   skillId: string; skill: string; category: string; categorySort: number; required: boolean; target: number | null;
   level: number | null; comment: string; interest: boolean; status: string | null; confirmed: number | null;
   managerComment: string; teamNeed: string | null;
+  /** what the manager asks of this person alone, and why */
+  asked?: string | null;
 }
 export interface CatalogueItem { id: string; name: string; category: string; categoryId: string; aliases?: string[] }
 type Entry = { level: number | null; comment: string; interest: boolean };
@@ -93,8 +95,8 @@ export function MySkillsForm({ rows: initial, catalogue, levels, categories, req
           </div>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {dirty ? <span className="text-xs text-muted-foreground">Not saved yet</span>
-            : !toSend && <span className="flex items-center gap-1 text-xs text-muted-foreground">{waiting ? <><Hourglass className="size-3.5" />Sent: {waiting} waiting for {first ?? "your manager"}</> : <><CircleCheck className="size-3.5" />Nothing new to send</>}</span>}
+          <span aria-live="polite">{dirty ? <span className="text-xs text-muted-foreground">Not saved yet</span>
+            : !toSend && <span className="flex items-center gap-1 text-xs text-muted-foreground">{waiting ? <><Hourglass className="size-3.5" />Sent: {waiting} waiting for {first ?? "your manager"}</> : <><CircleCheck className="size-3.5" />Nothing new to send</>}</span>}</span>
           <Button variant="outline" disabled={busy || !dirty} onClick={() => submit(false)}><Save />Save</Button>
           {/* the main button only while there is something to send; otherwise it stays for a stale rating to be sent again */}
           <Button variant={toSend ? "default" : "outline"} disabled={busy} onClick={() => submit(true)}><Send />{managerName ? (toSend ? `Send ${toSend} to ${first}` : `Send again to ${first}`) : "Save and finish"}</Button>
@@ -107,14 +109,14 @@ export function MySkillsForm({ rows: initial, catalogue, levels, categories, req
 
       <LevelGuide levels={levels} />
 
-      <Group title="Your roles ask for" count={asked.length}
-        info="The skills the roles you are in ask for, with the level they ask for: the target. Your manager made those roles and put you in them. Skills your team needs are listed here too. Rate every one; 0 is fine if you have never used it."
+      <Group title={rows.some((r) => r.asked) ? "Your roles and your manager ask for" : "Your roles ask for"} count={asked.length}
+        info="The skills the roles you are in ask for, with the level they ask for: the target. Your manager made those roles and put you in them, and may ask some skills of you alone (marked, with why). Skills your team needs are listed here too. Rate every one; 0 is fine if you have never used it."
         empty="Your roles ask for no particular skills yet. Add the skills you have below.">
         {asked.map((r) => <RowItem key={r.skillId} row={r} entry={entries[r.skillId]} levels={levels} onChange={(p) => set(r.skillId, p)} />)}
       </Group>
 
       <Group title="Other skills you have" count={other.length}
-        info="Skills you added yourself. They are not part of your role's targets, but they show what you can do: leaders use them to find people for other teams. Clear the level to remove one."
+        info="Skills you added yourself. They are not part of your role’s targets, but they show what you can do: leaders use them to find people for other teams. Clear the level to remove one."
         empty="None yet. Search below to add skills you have.">
         {other.map((r) => <RowItem key={r.skillId} row={r} entry={entries[r.skillId]} levels={levels} onChange={(p) => set(r.skillId, p)} onRemove={() => remove(r.skillId)} />)}
       </Group>
@@ -183,6 +185,7 @@ function RowItem({ row, entry, levels, onChange, onRemove }: { row: Row; entry: 
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           <span>{row.category}</span>
           {row.target != null && <span className="rounded bg-primary/10 px-1.5 py-px font-medium text-foreground">Target {row.target}</span>}
+          {row.asked && <span className="rounded bg-amber-500/10 px-1.5 py-px font-medium text-foreground">{row.asked}</span>}
           {row.teamNeed && <span>{row.teamNeed}</span>}
           <StatusLine row={row} entry={entry} />
         </div>

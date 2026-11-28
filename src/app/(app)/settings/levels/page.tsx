@@ -19,7 +19,7 @@ export default async function LevelsSettings() {
     <>
       <PageHeader title="Levels & rules" description="The 0-5 scale everyone rates on, who is asked to rate themselves, and how the numbers are coloured." />
       <div className="grid gap-5">
-        <Section title="Levels" info="The same 0-5 scale for every skill. Describe each level as what someone can do on their own, not as an adjective: that keeps people's own levels and their managers' close.">
+        <Section title="Levels" info="The same 0-5 scale for every skill. Describe each level as what someone can do on their own, not as an adjective: that keeps people’s own levels and their managers' close.">
           <AdminCrud noun="level" canAdd={false}
             rows={levels.map((l) => ({ id: String(l.level), level: l.level, name: l.name, description: l.description }))}
             columns={[

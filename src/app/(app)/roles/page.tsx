@@ -54,12 +54,12 @@ export default async function RolesPage({ searchParams }: { searchParams: Search
     <>
       <PageHeader title={full ? "Roles" : "My roles"}
         description={<span className="inline-flex flex-wrap items-center gap-1.5">{full ? `The roles of ${engine.teamLabel(team)}, made by its manager` : `The roles you are in, in ${engine.teamLabel(team)}. Your manager is`} <PersonChip name={manager.name} href={canSeeEmployee(v, manager.id) ? `/people/${manager.id}` : undefined} src={photos.get(manager.id)} />
-          <Info label="About roles">A role is a group inside one team: who is in it, and the skills it asks for. It belongs to that team only, so two teams can each have a role called the same. A person can be in several roles; what their roles ask for is what they are asked to rate. Skills come from the catalogue, which is the same for everyone. Each role has its own soft colour, the same wherever the role shows.{full ? "" : " You see the roles you are in; who else is in a role is for the team's managers."}</Info></span>}
+          <Info label="About roles">A role is a group inside one team: who is in it, and the skills it asks for. It belongs to that team only, so two teams can each have a role called the same. A person can be in several roles; what their roles ask for is what they are asked to rate. Skills come from the catalogue, which is the same for everyone. Each role has its own soft colour, the same wherever the role shows.{full ? "" : " You see the roles you are in; who else is in a role is for the team’s managers."}</Info></span>}
         actions={(
           <>
             {full && options.length > 1 && <UnitPicker units={options.map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={team} paramName="team" />}
             {full && me?.managerId && me.roleIds.length > 0 && team !== me.managerId && <Button asChild size="sm" variant="outline"><Link href={withParams("/roles", { team: me.managerId })}><BriefcaseBusiness />My own roles</Link></Button>}
-            {!full && own && own !== team && <Button asChild size="sm" variant="outline"><Link href="/roles"><BriefcaseBusiness />My team&apos;s roles</Link></Button>}
+            {!full && own && own !== team && <Button asChild size="sm" variant="outline"><Link href="/roles"><BriefcaseBusiness />My team’s roles</Link></Button>}
             {canEdit && <Button asChild size="sm"><Link href={withParams("/team", { scope: team === (me && engine.isManager(me) ? me.id : null) ? null : team, tab: "people" })}><PencilLine />Change these roles</Link></Button>}
           </>
         )} />
@@ -107,8 +107,8 @@ export default async function RolesPage({ searchParams }: { searchParams: Search
         </div>
       ) : (
         <Empty>
-          {!full ? `You are in no role yet. Your manager, ${manager.name}, makes the team's roles and puts people in them. Until then nothing in particular is asked of you; you can still add the skills you have, on My skills.`
-            : <>{engine.teamLabel(team)} has no roles yet. {canEdit ? "Make them on the team's page: press Change these roles." : `Its manager, ${manager.name}, makes them. Until then nothing in particular is asked of the team; everyone can still add the skills they have.`}</>}
+          {!full ? `You are in no role yet. Your manager, ${manager.name}, makes the team’s roles and puts people in them. Until then nothing in particular is asked of you; you can still add the skills you have, on My skills.`
+            : <>{engine.teamLabel(team)} has no roles yet. {canEdit ? "Make them on the team’s page: press Change these roles." : `Its manager, ${manager.name}, makes them. Until then nothing in particular is asked of the team; everyone can still add the skills they have.`}</>}
         </Empty>
       )}
     </>

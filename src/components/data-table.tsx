@@ -4,8 +4,9 @@
 // on a row offers what can be done with it: open it, show only rows like it, copy it.
 // Columns are plain data (kind + key), so server pages pass them without writing
 // a client component per table.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   flexRender, getCoreRowModel, getFacetedRowModel, getFacetedUniqueValues, getFilteredRowModel,
   getPaginationRowModel, getSortedRowModel, useReactTable, type ColumnDef, type SortingState,
@@ -23,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { GAP_CLASS, GAP_LABEL, LEVEL_CLASS } from "@/lib/status";
 import type { GapCategory } from "@/lib/engine/engine";
 import { cn } from "@/lib/utils";
+import { LocalTime } from "@/components/local-time";
 import { substringFilter } from "@/lib/search";
 import { Info } from "@/components/info";
 import { Person } from "@/components/person-avatar";
@@ -68,7 +70,7 @@ function renderCell(c: ColSpec, row: Row) {
     case "number":
       return v == null ? <span className="text-muted-foreground">–</span> : <span className="tabular">{String(v)}</span>;
     case "date":
-      return v ? <span className="tabular text-muted-foreground">{new Date(String(v)).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span> : <span className="text-muted-foreground">–</span>;
+      return v ? <LocalTime value={String(v)} options={{ day: "numeric", month: "short", year: "numeric" }} className="tabular text-muted-foreground" /> : <span className="text-muted-foreground">–</span>;
     case "level":
       return v == null || v === "" ? <span className="text-muted-foreground">–</span>
         : <span className={cn("inline-flex size-6 items-center justify-center rounded text-xs font-medium tabular", LEVEL_CLASS[Number(v)] ?? "")}>{String(v)}</span>;
@@ -163,9 +165,23 @@ export function DataTable({
   /** its own search box; off where the page already searches */
   search?: boolean;
 }) {
-  const [sorting, setSorting] = useState<SortingState>(initialSort ? [{ id: initialSort.key, desc: !!initialSort.desc }] : []);
-  const [filters, setFilters] = useState<ColumnFiltersState>([]);
-  const [search, setSearch] = useState("");
+  // the table's sort, search, column filters and page live in the address (`<name>.sort`,
+  // `.q`, `.<column>`, `.p`), so a refresh or a shared link shows the same list. Tables
+  // without a name keep them in memory only.
+  const urlKey = csvName ? csvName.toLowerCase().replace(/[^a-z0-9]+/g, "-") : null;
+  const params = useSearchParams();
+  const fromUrl = (k: string) => (urlKey ? params.get(`${urlKey}.${k}`) : null);
+  const defaultSort = initialSort ? `${initialSort.desc ? "-" : ""}${initialSort.key}` : "";
+  const [sorting, setSorting] = useState<SortingState>(() => {
+    const s = fromUrl("sort") ?? defaultSort;
+    return s && s !== "none" ? [{ id: s.replace(/^-/, ""), desc: s.startsWith("-") }] : [];
+  });
+  const [filters, setFilters] = useState<ColumnFiltersState>(() => (urlKey ? columns.filter((c) => c.facet).flatMap((c) => {
+    const v = params.getAll(`${urlKey}.${c.key}`);
+    return v.length ? [{ id: c.key, value: v }] : [];
+  }) : []));
+  const [search, setSearch] = useState(() => fromUrl("q") ?? "");
+  const [pagination, setPagination] = useState(() => ({ pageIndex: Math.max(0, Number(fromUrl("p") ?? 1) - 1) || 0, pageSize }));
 
   const defs = useMemo<ColumnDef<Row>[]>(() => columns.map((c) => ({
     id: c.key,
@@ -181,8 +197,9 @@ export function DataTable({
   const table = useReactTable({
     data: rows,
     columns: defs,
-    state: { sorting, columnFilters: filters, globalFilter: search },
+    state: { sorting, columnFilters: filters, globalFilter: search, pagination },
     onSortingChange: setSorting,
+    onPaginationChange: setPagination,
     onColumnFiltersChange: setFilters,
     onGlobalFilterChange: setSearch,
     globalFilterFn: (row, _id, value: string) => {
@@ -196,8 +213,26 @@ export function DataTable({
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize } },
   });
+
+  // a page number from an old link that is past the end: the last page instead of an empty one
+  const pageCount = table.getPageCount();
+  useEffect(() => {
+    if (pageCount && pagination.pageIndex >= pageCount) setPagination((p) => ({ ...p, pageIndex: pageCount - 1 }));
+  }, [pageCount, pagination.pageIndex]);
+
+  // write the state back into the address, without a round trip to the server
+  useEffect(() => {
+    if (!urlKey) return;
+    const u = new URL(window.location.href);
+    for (const k of [...u.searchParams.keys()]) if (k.startsWith(`${urlKey}.`)) u.searchParams.delete(k);
+    const s = sorting[0] ? `${sorting[0].desc ? "-" : ""}${sorting[0].id}` : "none";
+    if (s !== (defaultSort || "none")) u.searchParams.set(`${urlKey}.sort`, s);
+    if (search.trim()) u.searchParams.set(`${urlKey}.q`, search);
+    for (const f of filters) for (const v of (f.value as string[]) ?? []) u.searchParams.append(`${urlKey}.${f.id}`, v);
+    if (pagination.pageIndex > 0) u.searchParams.set(`${urlKey}.p`, String(pagination.pageIndex + 1));
+    if (u.href !== window.location.href) window.history.replaceState(null, "", u);
+  }, [urlKey, defaultSort, sorting, search, filters, pagination.pageIndex]);
 
   // what a right-click on a row offers: open what it links to, narrow the list to rows like it, copy
   const linkCol = columns.find((c) => c.hrefKey && (c.kind === "link" || c.kind === "person"));

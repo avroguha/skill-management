@@ -36,6 +36,13 @@
       "when": 1795654700477,
       "tag": "0004_role_colour",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795878590955,
+      "tag": "0005_person_skill",
+      "breakpoints": true
     }
   ]
 }

@@ -18,9 +18,9 @@ const SECURITY = [
 ];
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const SENDS: { key: keyof EmailSettings["send"]; label: string; info: string }[] = [
-  { key: "submitted", label: "To a manager, when someone sends ratings to confirm", info: "Each time, with the skills, the levels and the person's comments, and a button straight to confirming them." },
+  { key: "submitted", label: "To a manager, when someone sends ratings to confirm", info: "Each time, with the skills, the levels and the person’s comments, and a button straight to confirming them." },
   { key: "digest", label: "To managers, weekly: what waits for them", info: "On the weekly day: how many ratings wait to be confirmed, from whom, and who in the team has not started. Only to managers with something waiting." },
-  { key: "returned", label: "To a person, when their manager sends a rating back", info: "With the manager's note. Several sent back in one sitting go out as one e-mail." },
+  { key: "returned", label: "To a person, when their manager sends a rating back", info: "With the manager’s note. Several sent back in one sitting go out as one e-mail." },
   { key: "validated", label: "To a person, when their ratings are confirmed", info: "Their level and the confirmed one side by side. One e-mail per sitting." },
   { key: "reminders", label: "To people, weekly: finish your skills", info: "On the weekly day, to everyone who has not started, has not finished, or has ratings sent back. Nobody with nothing to do gets one." },
   { key: "nudge", label: "Managers can remind their team", info: "A Remind button on My team › People for those who still have something to do. At most one per person per day." },
@@ -48,14 +48,14 @@ export function EmailForm({ initial, adminEmail, appUrl, readOnly }: { initial: 
         <fieldset className="grid gap-4">
           <legend className="mb-2 text-sm font-medium">Mail relay</legend>
           <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
-            <Field label="Relay host" htmlFor="host" info="The company's mail relay (SMTP), by name or IP address. An open relay inside the network accepts mail from this server without a user name or password.">
-              <Input id="host" placeholder="smtp-relay.company.com" value={s.host} onChange={(e) => set({ host: e.target.value })} />
+            <Field label="Relay host" htmlFor="host" info="The company’s mail relay (SMTP), by name or IP address. An open relay inside the network accepts mail from this server without a user name or password.">
+              <Input id="host" spellCheck={false} autoComplete="off" placeholder="smtp-relay.company.com" value={s.host} onChange={(e) => set({ host: e.target.value })} />
             </Field>
             <Field label="Port" htmlFor="port" info="25 for a plain or STARTTLS relay, 587 for STARTTLS submission, 465 for TLS from the start.">
               <Input id="port" type="number" min={1} max={65535} value={s.port} onChange={(e) => set({ port: Number(e.target.value) })} />
             </Field>
           </div>
-          <Field label="Encryption" info="How the connection to the relay is protected. With encryption the relay's certificate must be trusted: put the company CA certificate in certs/ before building the image.">
+          <Field label="Encryption" info="How the connection to the relay is protected. With encryption the relay’s certificate must be trusted: put the company CA certificate in certs/ before building the image.">
             <Select value={s.security} onValueChange={(x) => set({ security: x as EmailSettings["security"] })}>
               <SelectTrigger className="w-full sm:w-[28rem]" aria-label="Encryption"><SelectValue /></SelectTrigger>
               <SelectContent>{SECURITY.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
@@ -73,7 +73,7 @@ export function EmailForm({ initial, adminEmail, appUrl, readOnly }: { initial: 
             </Field>
           </div>
           <div className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
-            <Field label="Send a test to" htmlFor="to" info="Sends one test e-mail now with the values above, saved or not, and shows the relay's answer.">
+            <Field label="Send a test to" htmlFor="to" info="Sends one test e-mail now with the values above, saved or not, and shows the relay’s answer.">
               <Input id="to" type="email" className="w-72 max-w-full" value={to} onChange={(e) => setTo(e.target.value)} />
             </Field>
             <Button type="button" variant="outline" disabled={testing || !to} onClick={() => startTest(async () => {
@@ -108,8 +108,8 @@ export function EmailForm({ initial, adminEmail, appUrl, readOnly }: { initial: 
                 <SelectContent>{Array.from({ length: 24 }, (_, h) => <SelectItem key={h} value={String(h)}>{`${String(h).padStart(2, "0")}:00`}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field label="Time zone" htmlFor="tz" info="The organisation's clock, as an IANA name: America/New_York, Europe/London, Asia/Kolkata. It follows summer time by itself.">
-              <Input id="tz" value={s.timeZone} onChange={(e) => set({ timeZone: e.target.value })} placeholder="America/New_York" />
+            <Field label="Time zone" htmlFor="tz" info="The organisation’s clock, as an IANA name: America/New_York, Europe/London, Asia/Kolkata. It follows summer time by itself.">
+              <Input id="tz" spellCheck={false} autoComplete="off" value={s.timeZone} onChange={(e) => set({ timeZone: e.target.value })} placeholder="America/New_York" />
             </Field>
           </div>
         </fieldset>

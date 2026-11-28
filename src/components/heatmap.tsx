@@ -95,7 +95,7 @@ export interface PeopleHeatmapData {
   rows: { id: string; name: string; title: string; href: string; onTargetPct: number | null; cells: Record<string, PeopleCell> }[];
 }
 
-const SOURCE_LABEL: Record<string, string> = { role: "their roles" };
+const SOURCE_LABEL: Record<string, string> = { role: "their roles", person: "their manager, for them alone" };
 
 function PersonCell({ c, levels, label }: { c: PeopleCell; levels: string[]; label: string }) {
   const cls = c.target == null && c.level != null ? "bg-status-none text-foreground/70"
@@ -232,7 +232,7 @@ export function HeatLegend({ mode }: { mode: "people" | "units"; }) {
           {item(GAP_CLASS.unassessed, "Not rated or not confirmed", "–")}
           <span className="flex items-center gap-1.5"><span className="relative inline-flex size-4 items-center justify-center rounded-[3px] bg-muted text-[9px] text-foreground/75">3<span className="absolute top-0 right-0 size-1.5 rounded-full bg-primary" /></span>Blue dot = sent, waiting for the manager (their own level in grey)</span>
           <span className="flex items-center gap-1.5"><Clock className="size-3.5" />Faded = stale</span>
-          <span>The number is the confirmed level; the colour is how far it is from the person&apos;s target</span>
+          <span>The number is the confirmed level; the colour is how far it is from the person’s target</span>
         </>
       )}
     </div>

@@ -71,7 +71,7 @@ export function TeamNeeds({ managerId, needs, dismissed, skills, levels, canEdit
               <th className="px-3 py-2 text-left font-medium"><span className="inline-flex items-center gap-1">At least<Info label="About the level">The lowest level that counts for this need. Only confirmed ratings count.</Info></span></th>
               <th className="px-3 py-2 text-right font-medium"><span className="inline-flex items-center gap-1">Have / need<Info label="About have and need">How many people in the team (the manager and everyone below) are at that level or above, against how many the team needs.</Info></span></th>
               <th className="px-3 py-2 text-left font-medium">Who has it</th>
-              <th className="px-3 py-2 text-left font-medium"><span className="inline-flex items-center gap-1">Why<Info label="About why">The manager&apos;s note, or “from the roles” when two or more of the manager&apos;s people are in a role that asks for this skill as a must-have and nobody set a need. Either kind can be removed.</Info></span></th>
+              <th className="px-3 py-2 text-left font-medium"><span className="inline-flex items-center gap-1">Why<Info label="About why">The manager’s note, or “from the roles” when two or more of the manager’s people are in a role that asks for this skill as a must-have and nobody set a need. Either kind can be removed.</Info></span></th>
               <th />
             </tr></thead>
             <tbody>
@@ -107,7 +107,7 @@ export function TeamNeeds({ managerId, needs, dismissed, skills, levels, canEdit
       {dismissed.length > 0 && (
         <div className="rounded-md border border-dashed px-3 py-2 text-sm">
           <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">Taken off the list
-            <Info label="About needs taken off the list">Needs the team&apos;s roles imply that the manager removed. They stay off the list until someone puts them back.</Info></span>
+            <Info label="About needs taken off the list">Needs the team’s roles imply that the manager removed. They stay off the list until someone puts them back.</Info></span>
           <ul className="mt-1 flex flex-wrap gap-1.5">
             {dismissed.map((d) => (
               <li key={d.id} className="inline-flex items-center gap-1 rounded-full border py-0.5 pr-1 pl-2.5 text-xs">
@@ -188,7 +188,7 @@ function NeedDialog({ row, skills, levels, busy, onClose, onSave, onAsk }: {
             </Field>
             <Field label="People" htmlFor="hc" info="How many people the team needs at that level. With one, the need is met by one person but flagged as resting on them."><Input id="hc" type="number" min={1} max={500} value={headcount} onChange={(e) => setHeadcount(e.target.value)} /></Field>
           </div>
-          <Field label="Why (optional)" htmlFor="why" info="A short reason others see next to the need, e.g. the on-call rota."><Input id="why" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. on-call rota needs two people who can do this" /></Field>
+          <Field label="Why (optional)" htmlFor="why" info="A short reason others see next to the need, e.g. the on-call rota."><Input id="why" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. on-call rota needs two people who can do this…" /></Field>
         </div>
         <DialogFooter>
           <Button onClick={() => onSave({ skillId, minLevel: Number(level), headcount: Number(headcount), note })} disabled={busy || !skillId}>{busy && <Loader2 className="animate-spin" />}Save</Button>

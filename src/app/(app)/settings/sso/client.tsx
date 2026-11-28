@@ -2,6 +2,7 @@
 // Step 1 of single sign-on: the identity provider, and the values to set on its side.
 // The values panel follows the form as it is typed, so what the identity team is given is
 // exactly what will be saved. The provider ID is internal ("corporate") and not asked for.
+import { LocalTime } from "@/components/local-time";
 import { CopyValue } from "@/components/copy-value";
 import { useRef, useState, useTransition } from "react";
 import { Trash2, Loader2, ExternalLink, TriangleAlert, Download, Upload, ShieldCheck } from "lucide-react";
@@ -33,10 +34,10 @@ function download(name: string, text: string) {
 }
 
 function CertLine({ notAfter, daysLeft }: { notAfter: string; daysLeft: number }) {
-  const when = new Date(notAfter).toLocaleDateString("en-GB", { dateStyle: "medium" });
+  const when = <LocalTime value={notAfter} options={{ dateStyle: "medium" }} />;
   return (
     <span className={daysLeft < 0 ? "text-destructive" : daysLeft < 30 ? "font-medium text-status-minor-fg dark:text-foreground" : ""}>
-      {daysLeft < 0 ? `expired ${when}` : `expires ${when} (${daysLeft} days)`}
+      {daysLeft < 0 ? <>expired {when}</> : <>expires {when} ({daysLeft} days)</>}
     </span>
   );
 }
@@ -106,7 +107,7 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
               <div className="grid gap-1.5">
                 <LabelInfo htmlFor="spe" info="How the identity provider knows this app. Give the same value to the identity team (Entra: Identifier (Entity ID)).">Entity ID (Entra: Identifier)</LabelInfo>
                 <Input id="spe" value={f.spEntityId} onChange={set("spEntityId")} placeholder={defaultSpEntityId(base)} aria-invalid={!entityOk} />
-                <p className="text-xs text-muted-foreground">This app&apos;s name at the identity provider. Usually its address; any https:// or urn: value works if it is the same on both sides.</p>
+                <p className="text-xs text-muted-foreground">This app’s name at the identity provider. Usually its address; any https:// or urn: value works if it is the same on both sides.</p>
               </div>
               <div className="grid gap-1.5">
                 <LabelInfo htmlFor="dom" info="The company e-mail domain: the sign-in page offers single sign-on to these addresses.">E-mail domain</LabelInfo>
@@ -139,13 +140,13 @@ export function SsoSetup({ base, providers }: { base: string; providers: SavedPr
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Entra ID: download <b>Federation Metadata XML</b> from the app&apos;s Single sign-on page (SAML Certificates) and upload it here.
+                  Entra ID: download <b>Federation Metadata XML</b> from the app’s Single sign-on page (SAML Certificates) and upload it here.
                   {saved && " Leave it empty to keep the metadata already saved."}
                 </p>
               </TabsContent>
               <TabsContent value="manual" className="grid gap-3 pt-2">
-                <div className="grid gap-1.5"><LabelInfo htmlFor="eid" info="The identity provider's own identifier, from its metadata.">Identity provider entity ID (Entra: Microsoft Entra Identifier)</LabelInfo><Input id="eid" value={f.entityId} onChange={set("entityId")} /></div>
-                <div className="grid gap-1.5"><LabelInfo htmlFor="url" info="Where people are sent to sign in, from the identity provider's metadata.">Sign-in URL (Entra: Login URL)</LabelInfo><Input id="url" value={f.ssoUrl} onChange={set("ssoUrl")} placeholder="https://login.microsoftonline.com/<tenant>/saml2" /></div>
+                <div className="grid gap-1.5"><LabelInfo htmlFor="eid" info="The identity provider’s own identifier, from its metadata.">Identity provider entity ID (Entra: Microsoft Entra Identifier)</LabelInfo><Input id="eid" value={f.entityId} onChange={set("entityId")} /></div>
+                <div className="grid gap-1.5"><LabelInfo htmlFor="url" info="Where people are sent to sign in, from the identity provider’s metadata.">Sign-in URL (Entra: Login URL)</LabelInfo><Input id="url" type="url" spellCheck={false} value={f.ssoUrl} onChange={set("ssoUrl")} placeholder="https://login.microsoftonline.com/<tenant>/saml2" /></div>
                 <div className="grid gap-1.5"><LabelInfo htmlFor="cert" info="The certificate the identity provider signs sign-ins with. Sign-ins not signed with it are refused.">Signing certificate (PEM or Base64)</LabelInfo><Textarea id="cert" rows={4} className="font-mono text-xs" value={f.cert} onChange={set("cert")} /></div>
               </TabsContent>
             </Tabs>

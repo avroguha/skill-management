@@ -3,6 +3,7 @@
 // decide who may sign in (everyone in the organisation, or members of AD / ServiceNow
 // groups), activate. The same panel, without the access rules and activation, is shown in
 // the test pop-up, so the mapping can be done where the answer is seen.
+import { LocalTime } from "@/components/local-time";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { ExternalLink, Loader2, RefreshCw, Power, PowerOff, Search, Save, Plus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -65,7 +66,7 @@ export function SsoActivate({ providers, initial, mode = "page" }: { providers: 
 
   const AttrSelect = ({ value, onChange, allowKeep, label }: { value: string; onChange: (v: string) => void; allowKeep?: boolean; label: string }) => (
     <Select value={value || (allowKeep ? KEEP : "")} onValueChange={(v) => onChange(v === KEEP ? "" : v)}>
-      <SelectTrigger className="w-full min-w-0 sm:w-80" aria-label={label}><SelectValue placeholder="Choose a value" /></SelectTrigger>
+      <SelectTrigger className="w-full min-w-0 sm:w-80" aria-label={label}><SelectValue placeholder="Choose a value…" /></SelectTrigger>
       <SelectContent>
         {allowKeep && <SelectItem value={KEEP}><span className="text-muted-foreground">Do not change</span></SelectItem>}
         {attrNames.map((a) => (
@@ -88,7 +89,7 @@ export function SsoActivate({ providers, initial, mode = "page" }: { providers: 
           </span>
           {providers.length > 1 && (
             <Select value={providerId} onValueChange={setProviderId}>
-              <SelectTrigger className="h-8 w-48"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-8 w-48" aria-label="Identity provider to test"><SelectValue /></SelectTrigger>
               <SelectContent>{providers.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
             </Select>
           )}
@@ -107,7 +108,7 @@ export function SsoActivate({ providers, initial, mode = "page" }: { providers: 
           <div className="overflow-x-auto rounded-md border">
             <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
               <span className={cn("rounded px-1.5 py-0.5 font-medium", OUTCOME[last.outcome])}>{last.outcome}</span>
-              <span className="text-muted-foreground">{new Date(last.at).toLocaleString("en-GB")} · {last.providerId}</span>
+              <span className="text-muted-foreground"><LocalTime value={last.at} options={{ dateStyle: "medium", timeStyle: "medium" }} /> · {last.providerId}</span>
               <span>{last.reason}</span>
             </div>
             <table className="w-full text-xs">
@@ -123,7 +124,7 @@ export function SsoActivate({ providers, initial, mode = "page" }: { providers: 
         {!popup && attempts.length > 1 && (
           <details className="text-xs text-muted-foreground">
             <summary className="cursor-pointer">Earlier attempts ({attempts.length - 1})</summary>
-            <ul className="mt-1 grid gap-0.5">{attempts.slice(1).map((a, i) => <li key={i}>{new Date(a.at).toLocaleTimeString("en-GB")} · {a.outcome} · {a.nameId} · {a.reason}</li>)}</ul>
+            <ul className="mt-1 grid gap-0.5">{attempts.slice(1).map((a, i) => <li key={i}><LocalTime value={a.at} options={{ timeStyle: "medium" }} /> · {a.outcome} · {a.nameId} · {a.reason}</li>)}</ul>
           </details>
         )}
       </div>
@@ -135,7 +136,7 @@ export function SsoActivate({ providers, initial, mode = "page" }: { providers: 
             <LabelInfo info="Which value from the sign-in finds the person in the app: the e-mail or the login name they have in ServiceNow.">Identifies the person: this value</LabelInfo>
             <div className="flex flex-wrap items-center gap-2">
               <AttrSelect label="Value that identifies the person" value={settings.matchAttribute} onChange={(v) => change({ matchAttribute: v })} />
-              <span className="text-sm text-muted-foreground">must equal the person&apos;s</span>
+              <span className="text-sm text-muted-foreground">must equal the person’s</span>
               <Select value={settings.matchField} onValueChange={(v) => change({ matchField: v as SsoSettings["matchField"] })}>
                 <SelectTrigger className="w-56" aria-label="Person field"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -146,14 +147,14 @@ export function SsoActivate({ providers, initial, mode = "page" }: { providers: 
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-[10rem_1fr] sm:items-center">
-            <LabelInfo info="Which value from the sign-in becomes the account's display name. Leave as it is to keep the name from ServiceNow.">Account name</LabelInfo>
+            <LabelInfo info="Which value from the sign-in becomes the account’s display name. Leave as it is to keep the name from ServiceNow.">Account name</LabelInfo>
             <AttrSelect label="Account name" allowKeep value={settings.profile.name} onChange={(v) => change({ profile: { ...settings.profile, name: v } })} />
-            <LabelInfo info="Which value from the sign-in becomes the account's e-mail.">Account e-mail</LabelInfo>
+            <LabelInfo info="Which value from the sign-in becomes the account’s e-mail.">Account e-mail</LabelInfo>
             <AttrSelect label="Account e-mail" allowKeep value={settings.profile.email} onChange={(v) => change({ profile: { ...settings.profile, email: v } })} />
-            <LabelInfo info="Which value from the sign-in becomes the account's login name.">Login name</LabelInfo>
+            <LabelInfo info="Which value from the sign-in becomes the account’s login name.">Login name</LabelInfo>
             <AttrSelect label="Login name" allowKeep value={settings.profile.userName} onChange={(v) => change({ profile: { ...settings.profile, userName: v } })} />
           </div>
-          <p className="text-xs text-muted-foreground">The account fields are filled when someone first signs in and refreshed on every sign-in. A value another account already uses is left alone. The person&apos;s own record (designation, manager, unit) always comes from ServiceNow.</p>
+          <p className="text-xs text-muted-foreground">The account fields are filled when someone first signs in and refreshed on every sign-in. A value another account already uses is left alone. The person’s own record (designation, manager, unit) always comes from ServiceNow.</p>
         </div>
       </div>
 
@@ -251,14 +252,14 @@ function AccessRules({ settings, groups, last, attrSelect, onChange }: {
           <div className="grid content-start gap-2 rounded-md border p-3">
             <div className="text-sm font-medium">AD groups <span className="font-normal text-muted-foreground">(from the sign-in)</span></div>
             <div className="grid gap-1.5">
-              <LabelInfo info="The claim in the sign-in that carries the person's groups (Entra: the groups claim).">The attribute that lists the person&apos;s groups</LabelInfo>
+              <LabelInfo info="The claim in the sign-in that carries the person’s groups (Entra: the groups claim).">The attribute that lists the person’s groups</LabelInfo>
               {attrSelect(claimAttr, (v) => onChange({ ...a, claimAttribute: v }))}
             </div>
             <p className="text-xs text-muted-foreground">Entra ID: add a groups claim (Attributes &amp; Claims › Add a group claim). It sends group object IDs, or names when it is set to sAMAccountName for groups synced from on-premises AD.</p>
             <div className="grid gap-1.5">
               <LabelInfo htmlFor="ad-val" info="Only members of these groups may sign in. Empty: every active person from ServiceNow may.">Allowed groups</LabelInfo>
               <div className="flex gap-2">
-                <Input id="ad-val" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Group object ID or name"
+                <Input id="ad-val" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Group object ID or name…"
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addValue(draft); setDraft(""); } }} />
                 <Button type="button" variant="outline" size="icon" aria-label="Add the group" onClick={() => { addValue(draft); setDraft(""); }}><Plus /></Button>
               </div>

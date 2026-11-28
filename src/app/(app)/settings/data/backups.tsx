@@ -1,6 +1,7 @@
 "use client";
 // Backups: take one now, download, restore (stored or uploaded), delete, and the
 // automatic schedule. Restoring always asks for RESTORE and signs everyone out after.
+import { LocalTime } from "@/components/local-time";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Download, HardDriveDownload, Loader2, RotateCcw, Save, Trash2, Upload } from "lucide-react";
@@ -18,7 +19,7 @@ const REASON: Record<string, string> = {
   "before-upgrade": "Before an upgrade", uploaded: "Uploaded",
 };
 const size = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
-const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+const when = (iso: string) => <LocalTime value={iso} options={{ dateStyle: "medium", timeStyle: "short" }} />;
 
 function afterRestore(message: string) {
   toast.success(message, { duration: 8000 });
@@ -99,7 +100,7 @@ export function Backups({ backups, settings, dir }: { backups: StoredBackup[]; s
         <p className="text-xs text-muted-foreground">A backup downloaded from this app (for example onto a new server after the old one was lost). Everything here is replaced by it; what is here now is backed up first.</p>
         <div className="flex flex-wrap items-end gap-3">
           <Input type="file" accept=".gz,.json,application/gzip,application/json" className="w-full sm:w-auto" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Backup file" />
-          <div className="grid gap-1"><LabelInfo htmlFor="fileConfirm" className="text-xs" info="Restoring replaces everything in the app with the file's contents. A backup of what is here now is taken first.">Type RESTORE</LabelInfo><Input id="fileConfirm" className="h-8 w-36" value={fileConfirm} onChange={(e) => setFileConfirm(e.target.value)} /></div>
+          <div className="grid gap-1"><LabelInfo htmlFor="fileConfirm" className="text-xs" info="Restoring replaces everything in the app with the file’s contents. A backup of what is here now is taken first.">Type RESTORE</LabelInfo><Input id="fileConfirm" className="h-8 w-36" value={fileConfirm} onChange={(e) => setFileConfirm(e.target.value)} /></div>
           <Button variant="destructive" disabled={pending || !file || fileConfirm.trim().toUpperCase() !== "RESTORE"} onClick={() => start(async () => {
             const body = new FormData();
             body.set("file", file!); body.set("confirm", fileConfirm);

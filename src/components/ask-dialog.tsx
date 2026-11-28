@@ -113,7 +113,7 @@ export function AskDialog({ catalogue, initial, onClose, onDone }: { catalogue: 
                     <SelectItem value={NEW}>A new category…</SelectItem>
                   </SelectContent>
                 </Select>
-                {categoryId === NEW && <Input className="mt-1.5" value={categoryName} maxLength={80} onChange={(e) => setCategoryName(e.target.value)} placeholder="Name of the new category" aria-label="Name of the new category" />}
+                {categoryId === NEW && <Input className="mt-1.5" value={categoryName} maxLength={80} onChange={(e) => setCategoryName(e.target.value)} placeholder="Name of the new category…" aria-label="Name of the new category" />}
               </Field>
               <Field label="Under (optional)" info="Makes it a sub-skill of an existing skill, for example EC2 under AWS. Leave it at top level otherwise.">
                 <Select value={parentId} onValueChange={setParentId} disabled={categoryId === NEW}>
@@ -130,7 +130,7 @@ export function AskDialog({ catalogue, initial, onClose, onDone }: { catalogue: 
             <Textarea id="ask-desc" className="min-h-16" value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} />
           </Field>
           <Field label="Why you need it" htmlFor="ask-why" info="A line for the coordinator: which team or role needs it, and for what. It helps them decide quickly.">
-            <Textarea id="ask-why" className="min-h-16" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Two of our services run on it and nobody is rated on it." />
+            <Textarea id="ask-why" className="min-h-16" value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Two of our services run on it and nobody is rated on it…" />
           </Field>
         </div>
         <DialogFooter>

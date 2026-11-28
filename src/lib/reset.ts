@@ -40,12 +40,14 @@ export async function resetTeams(db: DB, managerIds: string[] | null): Promise<n
     if (!managerIds) {
       n = (await tx.delete(s.teamRole).returning({ id: s.teamRole.id })).length;
       await tx.delete(s.teamNeed);
+      await tx.delete(s.teamPersonSkill);
       await tx.delete(s.teamDraft);
       return;
     }
     for (const ids of chunks(managerIds)) {
       n += (await tx.delete(s.teamRole).where(inArray(s.teamRole.managerId, ids)).returning({ id: s.teamRole.id })).length;
       await tx.delete(s.teamNeed).where(inArray(s.teamNeed.managerId, ids));
+      await tx.delete(s.teamPersonSkill).where(inArray(s.teamPersonSkill.managerId, ids));
       await tx.delete(s.teamDraft).where(inArray(s.teamDraft.managerId, ids));
     }
   });
@@ -67,6 +69,7 @@ export async function resetToOutOfBox(db: DB): Promise<{ skills: number }> {
     await tx.delete(s.teamDraft);
     await tx.delete(s.teamRole);
     await tx.delete(s.teamNeed);
+    await tx.delete(s.teamPersonSkill);
     await tx.delete(s.catalogueRequest);
     await tx.update(s.employee).set({ teamName: "" });
     await tx.execute(sql`delete from "skill" where "parent_id" is not null`);

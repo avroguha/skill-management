@@ -13,7 +13,7 @@ export function PeopleAdmin({ rows, grades, managers, readOnly }: { rows: Record
       columns={[
         { key: "name", header: "Name", kind: "person" },
         { key: "title", header: "Designation", kind: "muted" },
-        { key: "role", header: "Roles", facet: true, info: "The roles of their manager's team they are in: what those roles ask for is what they are asked to rate. Their manager gives them (My team › People and roles). Empty: in no role yet, so nothing is asked of them." },
+        { key: "role", header: "Roles", facet: true, info: "The roles of their manager’s team they are in: what those roles ask for is what they are asked to rate. Their manager gives them (My team › People and roles). Empty: in no role yet, so nothing is asked of them." },
         { key: "grade", header: "Grade", kind: "muted", facet: true, info: "A label on the person, such as Associate or Senior. It changes no target." },
         { key: "manager", header: "Manager", kind: "person", facet: true },
         { key: "teamName", header: "Team name", kind: "muted", info: "For a manager: what their team is called. Empty: called after them." },
@@ -26,7 +26,7 @@ export function PeopleAdmin({ rows, grades, managers, readOnly }: { rows: Record
         { name: "title", label: "Designation", half: true, info: "The job title, as ServiceNow has it." },
         { name: "location", label: "Location", half: true, info: "Where they work, shown on their page and in lists." },
         { name: "gradeId", label: "Grade", type: "select", optional: true, options: grades, info: "A label on the person, such as Associate or Senior (the list comes from a grades CSV in Data & backups). It changes no target." },
-        { name: "managerId", label: "Manager", type: "select", optional: true, options: managers, info: "Who they report to: that person's team includes them, and that person confirms their ratings. Synced people get it from ServiceNow." },
+        { name: "managerId", label: "Manager", type: "select", optional: true, options: managers, info: "Who they report to: that person’s team includes them, and that person confirms their ratings. Synced people get it from ServiceNow." },
         { name: "teamName", label: "Team name (if they manage people)", info: "What their team is called everywhere. Leave empty to call it after them." },
         { name: "active", label: "Active", type: "switch", info: "Off: they have left. They cannot sign in, and count nowhere; their history stays." },
       ]}

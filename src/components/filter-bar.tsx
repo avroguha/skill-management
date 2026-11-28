@@ -68,6 +68,46 @@ export function UnitPicker({ units, value, paramName = "unit" }: { units: UnitOp
   );
 }
 
+/** A filter over a long list (a skill out of hundreds): a box to type in, then the matches. */
+export function SearchFilter({ name, label, options, value, allLabel, placeholder }: {
+  name: string; label: string; options: Option[]; value: string | null; allLabel: string; placeholder: string;
+}) {
+  const { set } = useSetParams();
+  const [open, setOpen] = useState(false);
+  const current = options.find((o) => o.id === value);
+  const pick = (id: string | null) => { set({ [name]: id }); setOpen(false); };
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className={cn("h-8 max-w-64 min-w-36 justify-between gap-2", value && "border-primary/50 bg-accent")} aria-label={label}>
+          <span className="truncate">{current?.name ?? allLabel}</span>
+          <ChevronsUpDown className="size-3.5 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start">
+        <Command filter={substringFilter}>
+          <CommandInput placeholder={placeholder} />
+          <CommandList>
+            <CommandEmpty>Nothing found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value={allLabel} onSelect={() => pick(null)}>
+                <span className="flex-1">{allLabel}</span>
+                <Check className={cn("size-3.5", !value ? "opacity-100" : "opacity-0")} />
+              </CommandItem>
+              {options.map((o) => (
+                <CommandItem key={o.id} value={`${o.name} ${o.id}`} onSelect={() => pick(o.id)}>
+                  <span className="flex-1 truncate">{o.name}</span>
+                  <Check className={cn("size-3.5", o.id === value ? "opacity-100" : "opacity-0")} />
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function SelectFilter({ name, label, options, value, allLabel }: {
   name: string; label: string; options: Option[]; value: string | null; allLabel: string;
 }) {

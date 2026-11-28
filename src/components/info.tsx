@@ -2,6 +2,7 @@
 // The (i) next to every field, tile, column and section: what the data is, or what the
 // setting changes. A tap or click opens it (works on phones; no hover needed), Escape or a
 // click elsewhere closes it.
+import { Fragment, cloneElement, createContext, isValidElement, useId } from "react";
 import { Info as InfoIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
@@ -36,6 +37,10 @@ export function Info({ children, label = "What is this?", className, side = "top
  * setting is built with this, so none can be added without saying what it does
  * (test/info.test.ts checks the settings pages use no bare <Label>).
  */
+/** The id a Field's label points at, for a field that cannot take one from outside (a
+ *  dropdown: its button is inside the component). ui/select.tsx reads it. */
+export const FieldIdContext = createContext<string | undefined>(undefined);
+
 export function Field({ label, info, htmlFor, hint, children, className }: {
   label: string;
   info: React.ReactNode;
@@ -44,13 +49,18 @@ export function Field({ label, info, htmlFor, hint, children, className }: {
   children: React.ReactNode;
   className?: string;
 }) {
+  // the label names its field: a single field without an id of its own gets one
+  const autoId = useId();
+  const only = !htmlFor && isValidElement<{ id?: string }>(children) && children.type !== Fragment
+    && (typeof children.type !== "string" || ["input", "textarea", "select"].includes(children.type)) ? children : null;
+  const id = htmlFor ?? (only ? only.props.id ?? autoId : undefined);
   return (
     <div className={cn("grid min-w-0 gap-1.5", className)}>
       <div className="flex items-center gap-1.5">
-        <Label htmlFor={htmlFor}>{label}</Label>
+        <Label htmlFor={id}>{label}</Label>
         <Info label={`About ${label}`}>{info}</Info>
       </div>
-      {children}
+      <FieldIdContext.Provider value={only ? id : undefined}>{only && !only.props.id ? cloneElement(only, { id }) : children}</FieldIdContext.Provider>
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );

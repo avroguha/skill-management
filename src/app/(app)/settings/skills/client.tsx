@@ -47,10 +47,10 @@ function MergeDialog({ from, targets, onClose }: { from: Row; targets: { value: 
           <DialogTitle>Merge “{String(from.label)}”</DialogTitle>
           <DialogDescription>
             Every rating, role target and team need moves to the skill you choose. Where someone has both, the
-            chosen skill&apos;s rating is kept. The old name becomes an alias and the old skill is retired.
+            chosen skill’s rating is kept. The old name becomes an alias and the old skill is retired.
           </DialogDescription>
         </DialogHeader>
-        <InfoField label="Into" info="The skill that stays. The merged one's name becomes one of its aliases.">
+        <InfoField label="Into" info="The skill that stays. The merged one’s name becomes one of its aliases.">
           <Select value={into} onValueChange={setInto}>
             <SelectTrigger className="w-full" aria-label="Into"><SelectValue placeholder="Choose a skill…" /></SelectTrigger>
             <SelectContent>{targets.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>

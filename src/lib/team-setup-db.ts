@@ -1,5 +1,6 @@
 // A team's setup in the database: what is in force (team_role, team_role_member,
-// team_role_skill, team_need) and the draft of changes not confirmed yet (team_draft).
+// team_role_skill, team_need, team_person_skill) and the draft of changes not confirmed yet
+// (team_draft).
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import type { DB } from "../db/index.ts";
 import * as s from "../db/schema.ts";
@@ -9,10 +10,11 @@ import { emptySetup, type TeamSetup } from "./team-setup.ts";
 export async function readLiveSetup(db: DB, managerId: string): Promise<TeamSetup> {
   const roles = await db.select().from(s.teamRole).where(eq(s.teamRole.managerId, managerId));
   const ids = roles.map((r) => r.id);
-  const [members, skills, needs] = await Promise.all([
+  const [members, skills, needs, extras] = await Promise.all([
     ids.length ? db.select().from(s.teamRoleMember).where(inArray(s.teamRoleMember.roleId, ids)) : [],
     ids.length ? db.select().from(s.teamRoleSkill).where(inArray(s.teamRoleSkill.roleId, ids)) : [],
     db.select().from(s.teamNeed).where(eq(s.teamNeed.managerId, managerId)),
+    db.select().from(s.teamPersonSkill).where(eq(s.teamPersonSkill.managerId, managerId)),
   ]);
   roles.sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name));
   return {
@@ -23,6 +25,8 @@ export async function readLiveSetup(db: DB, managerId: string): Promise<TeamSetu
     })),
     needs: needs.filter((n) => !n.dismissed).map((n) => ({ skillId: n.skillId, minLevel: n.minLevel, headcount: n.headcount, note: n.note })),
     dismissed: needs.filter((n) => n.dismissed).map((n) => n.skillId),
+    extras: extras.map((x) => ({ employeeId: x.employeeId, skillId: x.skillId, target: x.target, mandatory: x.mandatory, note: x.note }))
+      .sort((a, b) => a.employeeId.localeCompare(b.employeeId) || a.skillId.localeCompare(b.skillId)),
   };
 }
 
@@ -35,7 +39,8 @@ export async function readDraft(db: DB, managerId: string): Promise<StoredDraft 
   // a draft saved before roles had a colour: each role keeps the colour it has in force
   const colours = new Map((await db.select({ id: s.teamRole.id, color: s.teamRole.color }).from(s.teamRole).where(eq(s.teamRole.managerId, managerId))).map((r) => [r.id, r.color]));
   return {
-    setup: { ...emptySetup(), ...doc, roles: (doc.roles ?? []).map((r) => ({ ...r, description: r.description ?? "", color: r.color ?? colours.get(r.id) ?? "", members: r.members ?? [], skills: r.skills ?? [] })) },
+    // a draft saved before extras existed has none
+    setup: { ...emptySetup(), ...doc, extras: doc.extras ?? [], roles: (doc.roles ?? []).map((r) => ({ ...r, description: r.description ?? "", color: r.color ?? colours.get(r.id) ?? "", members: r.members ?? [], skills: r.skills ?? [] })) },
     authorName: row.authorName, updatedAt: row.updatedAt,
   };
 }
@@ -71,6 +76,8 @@ export async function applySetup(db: DB, managerId: string, setup: TeamSetup): P
       ...setup.dismissed.filter((id) => !setup.needs.some((n) => n.skillId === id)).map((skillId) => ({ managerId, skillId, minLevel: 1, headcount: 1, note: "", dismissed: true })),
     ];
     if (needs.length) await tx.insert(s.teamNeed).values(needs);
+    await tx.delete(s.teamPersonSkill).where(eq(s.teamPersonSkill.managerId, managerId));
+    if (setup.extras.length) await tx.insert(s.teamPersonSkill).values(setup.extras.map((x) => ({ managerId, employeeId: x.employeeId, skillId: x.skillId, target: x.target, mandatory: x.mandatory, note: x.note })));
     await tx.delete(s.teamDraft).where(eq(s.teamDraft.managerId, managerId));
   });
 }

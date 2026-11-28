@@ -1,6 +1,6 @@
 // People: everyone the viewer may see, and the finder ("who has Kubernetes at 3 or above?").
 import { PageHeader } from "@/components/page-header";
-import { UnitPicker, SelectFilter, ClearFilters, SearchParamInput } from "@/components/filter-bar";
+import { UnitPicker, SelectFilter, SearchFilter, ClearFilters, SearchParamInput } from "@/components/filter-bar";
 import { Section } from "@/components/kpi";
 import { DataTable } from "@/components/data-table";
 import { Empty } from "@/components/heatmap";
@@ -47,7 +47,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Searc
       <SearchParamInput value={param(sp, "q") ?? null} placeholder="Find anyone by name or e-mail…" />
       <UnitPicker units={scopeOptions(engine, v).map((o) => ({ id: o.id, name: o.name, depth: o.depth, kind: `${o.people}` }))} value={scope} paramName="scope" />
       <SelectFilter name="role" label="Role" allLabel="All roles" value={roleName} options={roleOptions.map((name) => ({ id: name, name }))} />
-      <SelectFilter name="skill" label="Has skill" allLabel="Any skill" value={skillId} options={skills} />
+      <SearchFilter name="skill" label="Has skill" allLabel="Any skill" value={skillId} options={skills} placeholder="Find a skill…" />
       {skillId && (
         <SelectFilter name="min" label="At least" allLabel="At least 3 (Proficient)" value={param(sp, "min") ?? null}
           options={levels.filter((l) => l.level > 0).map((l) => ({ id: String(l.level), name: `At least ${l.level} (${l.name})` }))} />
@@ -107,7 +107,7 @@ export default async function PeoplePage({ searchParams }: { searchParams: Searc
           { key: "name", header: "Name", kind: "person", hrefKey: "href", photoKey: "photo" },
           { key: "title", header: "Designation", kind: "muted" },
           { key: "team", header: "Team", info: "The team of their manager." },
-          { key: "role", header: "Roles", kind: "roles", chipsKey: "roleTags", info: "The roles of their manager's team they are in, each in its own colour. A role with the same name in another team is another role." },
+          { key: "role", header: "Roles", kind: "roles", chipsKey: "roleTags", info: "The roles of their manager’s team they are in, each in its own colour. A role with the same name in another team is another role." },
           { key: "grade", header: "Grade", kind: "muted", facet: true },
           { key: "location", header: "Location", kind: "muted", facet: true },
           { key: "skills", header: "Skills", kind: "number", align: "right", info: "Skills with a confirmed level." },

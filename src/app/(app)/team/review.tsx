@@ -40,7 +40,7 @@ export function ReviewChanges({ managerId, lines, canEdit, by, when, backHref }:
         <Check className="mx-auto size-7 text-muted-foreground" aria-hidden />
         <p className="mt-2 font-medium">Nothing waits to be confirmed</p>
         <p className="mx-auto mt-1 max-w-prose text-sm text-muted-foreground">
-          When you change the team&apos;s roles or needs, the changes are listed here first. Nothing is in force until you confirm it, so you can try things and take them back.
+          When you change the team’s roles or needs, the changes are listed here first. Nothing is in force until you confirm it, so you can try things and take them back.
         </p>
       </div>
     );

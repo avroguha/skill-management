@@ -3,6 +3,7 @@
 import * as React from "react"
 import { cn } from "cn"
 import { Select as SelectPrimitive } from "radix-ui"
+import { FieldIdContext } from "@/components/info"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
 function Select({
@@ -38,8 +39,11 @@ function SelectTrigger({
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: "sm" | "default"
 }) {
+  // inside a Field, the label points at this button (an id given here still wins)
+  const fieldId = React.useContext(FieldIdContext)
   return (
     <SelectPrimitive.Trigger
+      id={fieldId}
       data-slot="select-trigger"
       data-size={size}
       className={cn(

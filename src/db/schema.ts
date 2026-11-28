@@ -131,6 +131,20 @@ export const teamRoleSkill = pgTable("team_role_skill", {
   mandatory: boolean("mandatory").notNull().default(true),
 }, (t) => [primaryKey({ columns: [t.roleId, t.skillId] }), index("team_role_skill_skill_idx").on(t.skillId)]);
 
+// A skill a manager asks of ONE person, beyond what their roles ask: "Priya also needs
+// Kubernetes at 3". It counts like a role's skill (a target, a gap, the grid), belongs to the
+// manager's team (a person who moves to another manager leaves it behind) and goes through
+// the team's draft like every other change.
+export const teamPersonSkill = pgTable("team_person_skill", {
+  managerId: text("manager_id").notNull().references(() => employee.id, { onDelete: "cascade" }),
+  employeeId: text("employee_id").notNull().references(() => employee.id, { onDelete: "cascade" }),
+  skillId: text("skill_id").notNull().references(() => skill.id, { onDelete: "cascade" }),
+  target: integer("target").notNull(),
+  mandatory: boolean("mandatory").notNull().default(true),
+  /** why, in the manager's words: shown to the person */
+  note: text("note").notNull().default(""),
+}, (t) => [primaryKey({ columns: [t.managerId, t.employeeId, t.skillId] }), index("team_person_skill_employee_idx").on(t.employeeId), index("team_person_skill_skill_idx").on(t.skillId)]);
+
 // Changes to a team's roles and needs that are not confirmed yet: the whole team setup as it
 // would be (src/lib/team-setup.ts), one per team. Nothing counts until it is confirmed.
 export const teamDraft = pgTable("team_draft", {

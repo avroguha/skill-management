@@ -42,9 +42,9 @@ export default async function Home() {
       info: "People who rated every skill their role asks for and sent them to their manager. In progress, not started and sent back do not count." },
     { label: "On target", value: fmtPct(k.onTargetPct), hint: `of ${k.required} required skill ratings`, href: insights({}),
       tone: pctBand(k.onTargetPct, engine.settings) === "good" ? "good" : pctBand(k.onTargetPct, engine.settings) === "watch" ? "warn" : k.onTargetPct == null ? "default" : "bad",
-      info: "Of every skill a person's role asks for, the share where their confirmed level reaches the target. Levels are never averaged: one expert does not hide four beginners." },
+      info: "Of every skill a person’s role asks for, the share where their confirmed level reaches the target. Levels are never averaged: one expert does not hide four beginners." },
     { label: "Team needs short", value: String(k.short), hint: `${k.nobody} with nobody at all`, tone: k.short ? "bad" : "good", href: insights({}),
-      info: "Team needs (\"N people at level L in skill S\") where the team has fewer people at that level than it needs. A need is set by the manager, or implied when two or more of a manager's people have a role that requires the skill." },
+      info: "Team needs (\"N people at level L in skill S\") where the team has fewer people at that level than it needs. A need is set by the manager, or implied when two or more of a manager’s people have a role that requires the skill." },
     { label: "Rest on one person", value: String(k.spof), hint: "needs only one person covers", tone: k.spof ? "warn" : "good", href: insights({}),
       info: "Team needs covered by exactly one person: if they are away or leave, the team has nobody at that level." },
   ] : [];
